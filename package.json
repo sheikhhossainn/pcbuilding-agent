@@ -1,0 +1,37 @@
+{
+  "name": "buildmypc",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "start:backend": "npx nodemon --watch backend backend/server.js",
+    "start:scraper": "powershell -Command \"cd scraper; .\\venv\\Scripts\\uvicorn main:app --reload --port 8000\"",
+    "start:all": "concurrently -c \"cyan,magenta,yellow\" -n \"frontend,backend,scraper\" \"npm run dev\" \"npm run start:backend\" \"npm run start:scraper\""
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.2.4",
+    "axios": "^1.16.0",
+    "html2pdf.js": "^0.14.0",
+    "lucide-react": "^1.14.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "tailwindcss": "^4.2.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.5.0",
+    "nodemon": "^3.1.14",
+    "vite": "^8.0.10"
+  }
+}

@@ -1,0 +1,592 @@
+[
+  {
+    "id": "cpu-001",
+    "category": "Processor",
+    "name": "AMD Ryzen 5 7600",
+    "price": 25500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Ryzen+5",
+    "specs": { "socket": "AM5", "tdp": 65, "cores": 6 },
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "cpu-002",
+    "category": "Processor",
+    "name": "AMD Ryzen 7 7800X3D",
+    "price": 54000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Ryzen+7",
+    "specs": { "socket": "AM5", "tdp": 120, "cores": 8 },
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "cpu-003",
+    "category": "Processor",
+    "name": "Intel Core i5-13400F",
+    "price": 23000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Core+i5",
+    "specs": { "socket": "LGA1700", "tdp": 65, "cores": 10 },
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "cpu-004",
+    "category": "Processor",
+    "name": "Intel Core i7-14700K",
+    "price": 52000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Core+i7",
+    "specs": { "socket": "LGA1700", "tdp": 125, "cores": 20 },
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "cpu-005",
+    "category": "Processor",
+    "name": "AMD Ryzen 5 5600",
+    "price": 14000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Ryzen+5+5600",
+    "specs": { "socket": "AM4", "tdp": 65, "cores": 6 },
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "cpu-006",
+    "category": "Processor",
+    "name": "Intel Core i3-12100F",
+    "price": 10500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Core+i3",
+    "specs": { "socket": "LGA1700", "tdp": 58, "cores": 4 },
+    "in_stock": true,
+    "tier": "budget"
+  },
+
+  {
+    "id": "mobo-001",
+    "category": "Motherboard",
+    "name": "MSI PRO B650M-A WIFI",
+    "price": 18000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=B650M+WIFI",
+    "specs": { "socket": "AM5", "ram_type": "DDR5" },
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "mobo-002",
+    "category": "Motherboard",
+    "name": "Gigabyte X670 AORUS ELITE AX",
+    "price": 35000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=X670+Aorus",
+    "specs": { "socket": "AM5", "ram_type": "DDR5" },
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "mobo-003",
+    "category": "Motherboard",
+    "name": "ASUS PRIME B760M-A WIFI",
+    "price": 17000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=B760M+WIFI",
+    "specs": { "socket": "LGA1700", "ram_type": "DDR5" },
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "mobo-004",
+    "category": "Motherboard",
+    "name": "MSI MAG Z790 TOMAHAWK WIFI",
+    "price": 32000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Z790+Tomahawk",
+    "specs": { "socket": "LGA1700", "ram_type": "DDR5" },
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "mobo-005",
+    "category": "Motherboard",
+    "name": "Gigabyte B450M DS3H V2",
+    "price": 8500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=B450M",
+    "specs": { "socket": "AM4", "ram_type": "DDR4" },
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "mobo-006",
+    "category": "Motherboard",
+    "name": "MSI PRO H610M-B",
+    "price": 9500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=H610M",
+    "specs": { "socket": "LGA1700", "ram_type": "DDR4" },
+    "in_stock": true,
+    "tier": "budget"
+  },
+
+  {
+    "id": "ram-001",
+    "category": "RAM",
+    "name": "Corsair Vengeance 32GB (2x16) DDR5 6000MHz",
+    "price": 14000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=DDR5+32GB",
+    "specs": { "ram_type": "DDR5" },
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "ram-002",
+    "category": "RAM",
+    "name": "G.Skill Trident Z5 RGB 64GB (2x32) DDR5 6400MHz",
+    "price": 32000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=DDR5+64GB",
+    "specs": { "ram_type": "DDR5" },
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "ram-003",
+    "category": "RAM",
+    "name": "Kingston FURY Beast 16GB (1x16) DDR5 5200MHz",
+    "price": 7000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=DDR5+16GB",
+    "specs": { "ram_type": "DDR5" },
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "ram-004",
+    "category": "RAM",
+    "name": "Corsair Vengeance LPX 16GB (2x8) DDR4 3200MHz",
+    "price": 5500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=DDR4+16GB",
+    "specs": { "ram_type": "DDR4" },
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "ram-005",
+    "category": "RAM",
+    "name": "G.Skill Ripjaws V 32GB (2x16) DDR4 3600MHz",
+    "price": 9500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=DDR4+32GB",
+    "specs": { "ram_type": "DDR4" },
+    "in_stock": true,
+    "tier": "mid"
+  },
+
+  {
+    "id": "storage-001",
+    "category": "Storage",
+    "name": "Samsung 980 PRO 1TB PCIe Gen4 NVMe",
+    "price": 10500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=1TB+NVMe",
+    "specs": {},
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "storage-002",
+    "category": "Storage",
+    "name": "Samsung 990 PRO 2TB PCIe Gen4 NVMe",
+    "price": 23000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=2TB+NVMe",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "storage-003",
+    "category": "Storage",
+    "name": "Crucial P3 Plus 1TB PCIe Gen4 NVMe",
+    "price": 8500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=1TB+NVMe",
+    "specs": {},
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "storage-004",
+    "category": "Storage",
+    "name": "Kingston NV2 500GB PCIe Gen4 NVMe",
+    "price": 4500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=500GB+NVMe",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "storage-005",
+    "category": "Storage",
+    "name": "Western Digital WD Blue 2TB HDD",
+    "price": 6000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=2TB+HDD",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+
+  {
+    "id": "gpu-001",
+    "category": "Graphics Card",
+    "name": "ZOTAC GAMING GeForce RTX 4060 8GB",
+    "price": 42000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=RTX+4060",
+    "specs": { "tdp": 115 },
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "gpu-002",
+    "category": "Graphics Card",
+    "name": "Gigabyte GeForce RTX 4070 SUPER 12GB",
+    "price": 85000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=RTX+4070+SUPER",
+    "specs": { "tdp": 220 },
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "gpu-003",
+    "category": "Graphics Card",
+    "name": "ASUS TUF Gaming GeForce RTX 4080 SUPER 16GB",
+    "price": 145000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=RTX+4080+SUPER",
+    "specs": { "tdp": 320 },
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "gpu-004",
+    "category": "Graphics Card",
+    "name": "Sapphire PULSE AMD Radeon RX 7600 8GB",
+    "price": 38000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=RX+7600",
+    "specs": { "tdp": 165 },
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "gpu-005",
+    "category": "Graphics Card",
+    "name": "ASRock AMD Radeon RX 6500 XT 4GB",
+    "price": 20000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=RX+6500+XT",
+    "specs": { "tdp": 107 },
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "gpu-006",
+    "category": "Graphics Card",
+    "name": "Nvidia GT 730 2GB",
+    "price": 5000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=GT+730",
+    "specs": { "tdp": 38 },
+    "in_stock": true,
+    "tier": "budget"
+  },
+
+  {
+    "id": "psu-001",
+    "category": "PSU",
+    "name": "Corsair RM750e 750W 80 Plus Gold",
+    "price": 12500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=750W+Gold",
+    "specs": { "wattage": 750 },
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "psu-002",
+    "category": "PSU",
+    "name": "Corsair RM1000x 1000W 80 Plus Gold",
+    "price": 22000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=1000W+Gold",
+    "specs": { "wattage": 1000 },
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "psu-003",
+    "category": "PSU",
+    "name": "Gigabyte P650B 650W 80 Plus Bronze",
+    "price": 6000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=650W+Bronze",
+    "specs": { "wattage": 650 },
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "psu-004",
+    "category": "PSU",
+    "name": "Thermaltake Litepower 550W",
+    "price": 4000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=550W",
+    "specs": { "wattage": 550 },
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "psu-005",
+    "category": "PSU",
+    "name": "Deepcool PK800D 800W 80 Plus Bronze",
+    "price": 8500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=800W+Bronze",
+    "specs": { "wattage": 800 },
+    "in_stock": true,
+    "tier": "mid"
+  },
+
+  {
+    "id": "cooler-001",
+    "category": "CPU Cooler",
+    "name": "DeepCool AK400",
+    "price": 3200,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Air+Cooler",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "cooler-002",
+    "category": "CPU Cooler",
+    "name": "NZXT Kraken Elite 360 RGB",
+    "price": 33000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=360mm+AIO",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "cooler-003",
+    "category": "CPU Cooler",
+    "name": "Corsair iCUE H100i RGB ELITE 240mm AIO",
+    "price": 14000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=240mm+AIO",
+    "specs": {},
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "cooler-004",
+    "category": "CPU Cooler",
+    "name": "Stock Cooler",
+    "price": 0,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Stock+Cooler",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "cooler-005",
+    "category": "CPU Cooler",
+    "name": "Noctua NH-D15",
+    "price": 12000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Noctua",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+
+  {
+    "id": "case-001",
+    "category": "Casing",
+    "name": "Corsair 4000D Airflow",
+    "price": 10500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=4000D",
+    "specs": {},
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "case-002",
+    "category": "Casing",
+    "name": "Lian Li O11 Dynamic EVO",
+    "price": 19500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=O11+Dynamic",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "case-003",
+    "category": "Casing",
+    "name": "Montech AIR 100 ARGB",
+    "price": 5500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=AIR+100",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "case-004",
+    "category": "Casing",
+    "name": "Value Top VT-M300",
+    "price": 3000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=VT-M300",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "case-005",
+    "category": "Casing",
+    "name": "NZXT H9 Flow",
+    "price": 19000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=H9+Flow",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+
+  {
+    "id": "mon-001",
+    "category": "Monitor",
+    "name": "LG 24MP400-B 24\" IPS 75Hz",
+    "price": 13500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=24+Inch+75Hz",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "mon-002",
+    "category": "Monitor",
+    "name": "Gigabyte G24F 2 24\" IPS 180Hz",
+    "price": 21000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=24+Inch+180Hz",
+    "specs": {},
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "mon-003",
+    "category": "Monitor",
+    "name": "LG 27GP850-B 27\" Nano IPS 2K 165Hz",
+    "price": 45000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=27+Inch+2K",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "mon-004",
+    "category": "Monitor",
+    "name": "Samsung Odyssey G9 49\" Ultrawide",
+    "price": 180000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=49+Inch+Ultrawide",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "mon-005",
+    "category": "Monitor",
+    "name": "Walton 21.5\" FHD",
+    "price": 8500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=21.5+Inch",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+
+  {
+    "id": "mouse-001",
+    "category": "Mouse",
+    "name": "Logitech G102 Lightsync",
+    "price": 2000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=G102",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "mouse-002",
+    "category": "Mouse",
+    "name": "Razer DeathAdder V2",
+    "price": 4500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=DeathAdder",
+    "specs": {},
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "mouse-003",
+    "category": "Mouse",
+    "name": "Logitech G Pro X Superlight",
+    "price": 14000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Superlight",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "mouse-004",
+    "category": "Mouse",
+    "name": "A4Tech OP-730D",
+    "price": 500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Standard+Mouse",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "mouse-005",
+    "category": "Mouse",
+    "name": "Fantech X17 Blake",
+    "price": 1500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=X17+Blake",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+
+  {
+    "id": "kb-001",
+    "category": "Keyboard",
+    "name": "A4Tech KRS-85",
+    "price": 600,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Standard+KB",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "kb-002",
+    "category": "Keyboard",
+    "name": "Royal Kludge RK61 Mechanical",
+    "price": 3500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=RK61",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  },
+  {
+    "id": "kb-003",
+    "category": "Keyboard",
+    "name": "Keychron K8 Pro",
+    "price": 10500,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Keychron+K8",
+    "specs": {},
+    "in_stock": true,
+    "tier": "mid"
+  },
+  {
+    "id": "kb-004",
+    "category": "Keyboard",
+    "name": "Logitech G915 TKL",
+    "price": 22000,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=G915+TKL",
+    "specs": {},
+    "in_stock": true,
+    "tier": "high"
+  },
+  {
+    "id": "kb-005",
+    "category": "Keyboard",
+    "name": "Redragon K552 Kumara",
+    "price": 3200,
+    "image": "https://placehold.co/400x400/eeeeee/333333?text=Kumara",
+    "specs": {},
+    "in_stock": true,
+    "tier": "budget"
+  }
+]
