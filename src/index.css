@@ -83,6 +83,28 @@ body {
   transform: translateX(4px);
 }
 
+.total-card {
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.total-card .text-3xl {
+  line-height: 1;
+}
+
+
+.chatbox-shell .loading-pill {
+  position: absolute;
+  left: 50%;
+  top: -46px;
+  transform: translateX(-50%);
+  z-index: 55;
+  pointer-events: none;
+}
+
 /* Loader */
 .typing-dot {
   animation: typing 1.4s infinite ease-in-out;

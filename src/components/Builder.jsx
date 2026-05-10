@@ -1,10 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import html2pdf from 'html2pdf.js';
 import { 
   Cpu, Layers, Database, HardDrive, Monitor, Zap, Fan, Box, 
-  Tv, MousePointer2, Keyboard, ShoppingCart, Save, FileDown, 
-  Trash2, Send, Loader2, Sparkles, AlertCircle, ExternalLink
+  Tv, MousePointer2, Keyboard, FileDown, 
+  Trash2, Send, Loader2, Sparkles, AlertCircle, ExternalLink, Key, X
 } from 'lucide-react';
 
 const CATEGORY_ICONS = {
@@ -54,19 +53,25 @@ function Builder() {
   const [loadingState, setLoadingState] = useState("idle"); // idle, analyzing, selecting, checking, success, error
   const [hideUnconfigured, setHideUnconfigured] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [customGroqKey, setCustomGroqKey] = useState(localStorage.getItem('customGroqKey') || "");
+  const [customGeminiKey, setCustomGeminiKey] = useState(localStorage.getItem('customGeminiKey') || "");
+  const [showSettings, setShowSettings] = useState(false);
   
   const builderRef = useRef();
+  const loadingTimersRef = useRef([]);
+  const abortControllerRef = useRef(null);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    localStorage.setItem('customGroqKey', customGroqKey);
+  }, [customGroqKey]);
+
+  useEffect(() => {
+    localStorage.setItem('customGeminiKey', customGeminiKey);
+  }, [customGeminiKey]);
 
   const handleDownloadPDF = () => {
-    const element = builderRef.current;
-    const opt = {
-      margin:       10,
-      filename:     'BuildMyPC_Invoice.pdf',
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-    html2pdf().set(opt).from(element).save();
+    window.print();
   };
 
   const handleClear = () => {
@@ -77,28 +82,64 @@ function Builder() {
     setLoadingState("idle");
   };
 
+  const clearLoadingTimers = () => {
+    loadingTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+    loadingTimersRef.current = [];
+  };
+
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    requestIdRef.current += 1;
+    setLoadingState("idle");
+    setErrorMsg("");
+    clearLoadingTimers();
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-
+    clearLoadingTimers();
     setLoadingState("analyzing");
     setErrorMsg("");
     
     // Simulate some steps before API returns
-    setTimeout(() => { if (loadingState !== 'error' && loadingState !== 'success') setLoadingState("selecting"); }, 1500);
-    setTimeout(() => { if (loadingState !== 'error' && loadingState !== 'success') setLoadingState("checking"); }, 3000);
+    const selectTimer = setTimeout(() => {
+      setLoadingState((prev) => (prev === 'error' || prev === 'success') ? prev : "selecting");
+    }, 1500);
+    const checkTimer = setTimeout(() => {
+      setLoadingState((prev) => (prev === 'error' || prev === 'success') ? prev : "checking");
+    }, 3000);
+    loadingTimersRef.current = [selectTimer, checkTimer];
 
     try {
+      const currentRequestId = requestIdRef.current + 1;
+      requestIdRef.current = currentRequestId;
       const requestPayload = { 
         message: chatInput, 
         site: selectedSite === 'custom' ? customSiteUrl : selectedSite,
-        apiProvider: selectedApi
+        apiProvider: selectedApi,
+        customKeys: {
+          groq: customGroqKey,
+          gemini: customGeminiKey
+        }
       };
-      const response = await axios.post('/api/build', requestPayload);
+      abortControllerRef.current = new AbortController();
+      const response = await axios.post('/api/build', requestPayload, {
+        signal: abortControllerRef.current.signal
+      });
+
+      if (currentRequestId !== requestIdRef.current) {
+        return;
+      }
       
       if (response.data.error) {
         setErrorMsg(response.data.error);
         setLoadingState("error");
+        clearLoadingTimers();
         return;
       }
 
@@ -106,10 +147,21 @@ function Builder() {
       setTotal(response.data.total);
       setExplanation(response.data.explanation);
       setLoadingState("success");
+      clearLoadingTimers();
       setChatInput(""); // clear input
     } catch (err) {
-      setErrorMsg(err.response?.data?.error || "Failed to connect to the AI builder.");
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || axios.isCancel(err)) {
+        setLoadingState("idle");
+        clearLoadingTimers();
+        return;
+      }
+      if (err.response?.status === 429) {
+        setErrorMsg("You've reached the free limit. Please wait 15 minutes, or enter your own API key in the settings to continue immediately.");
+      } else {
+        setErrorMsg(err.response?.data?.error || "Failed to connect to the AI builder.");
+      }
       setLoadingState("error");
+      clearLoadingTimers();
     }
   };
 
@@ -197,10 +249,11 @@ function Builder() {
     }
   };
 
+
   return (
     <div className="min-h-screen pb-32">
       {/* Header */}
-      <header className="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+      <header className="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between print:hidden">
         <div className="flex items-center gap-3">
           <Sparkles className="text-sky-400" size={28} />
           <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-blue-600">
@@ -250,18 +303,22 @@ function Builder() {
                   <option value="gemini">Gemini (2.5 Pro)</option>
                 </select>
              </div>
+             
+             <div className="w-px h-6 bg-slate-700"></div>
+             
+             <button 
+                onClick={() => setShowSettings(true)}
+                className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-800 rounded transition-colors border border-slate-600/50 hover:border-sky-500/50"
+                title="API Settings"
+             >
+                <Key size={18} />
+             </button>
           </div>
 
           {/* Action Buttons */}
           <div className="flex gap-2">
-            <button className="btn-secondary px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium" onClick={() => alert('Added to cart!')}>
-              <ShoppingCart size={16} /> Cart
-            </button>
-            <button className="btn-secondary px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium" onClick={() => alert('Build Saved!')}>
-              <Save size={16} /> Save
-            </button>
             <button onClick={handleDownloadPDF} className="btn-secondary px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium">
-              <FileDown size={16} /> PDF
+              <FileDown size={16} /> Print PDF
             </button>
             <button onClick={handleClear} className="btn-secondary px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium text-red-400 hover:text-red-300">
               <Trash2 size={16} /> Clear
@@ -288,7 +345,7 @@ function Builder() {
               </label>
             </div>
             
-            <div className="text-right bg-slate-800 p-4 rounded-lg border border-slate-700 min-w-[200px]">
+            <div className="total-card text-left bg-slate-800 p-3 rounded-lg border border-slate-700 min-w-[200px]">
               <div className="text-slate-400 text-sm mb-1">Total ({Object.values(build).filter(Boolean).length} items)</div>
               <div className="text-3xl font-bold text-sky-400">{formatPrice(total)}</div>
             </div>
@@ -336,12 +393,12 @@ function Builder() {
 
       </main>
 
-      {/* Chat Input Fixed Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 glass border-t border-slate-700/50 p-4 z-50">
-        <div className="max-w-4xl mx-auto relative">
+      {/* Fixed Chat Input */}
+      <div className="fixed bottom-0 left-0 right-0 glass border-t border-slate-700/50 p-4 z-50 print:hidden">
+        <div className="max-w-4xl mx-auto relative chatbox-shell">
           
           {loadingState !== 'idle' && loadingState !== 'success' && loadingState !== 'error' && (
-            <div className="absolute -top-12 left-0 right-0 flex justify-center">
+            <div className="loading-pill">
               <div className="bg-slate-800 text-sky-400 px-4 py-2 rounded-full border border-sky-500/30 shadow-lg shadow-sky-900/20 flex items-center gap-3 text-sm font-medium">
                 <Loader2 size={16} className="animate-spin" />
                 {getLoadingMessage()}
@@ -351,7 +408,7 @@ function Builder() {
 
           {/* Settings Row above Chat removed */}
 
-          <form onSubmit={handleSubmit} className="flex gap-3 relative items-end">
+          <form onSubmit={handleSubmit} className="flex gap-3 relative items-center">
             <textarea 
               className="flex-1 bg-slate-800/90 border border-slate-600 rounded-2xl px-6 py-4 text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all text-lg resize-none overflow-y-auto min-h-[60px] max-h-[200px]"
               placeholder="Describe your build... e.g. I need a gaming PC under 60,000 BDT"
@@ -372,16 +429,86 @@ function Builder() {
               }}
               disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
             />
-            <button 
-              type="submit" 
-              className="btn-primary rounded-full w-14 h-14 mb-1 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/20"
-              disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking' || !chatInput.trim()}
-            >
-              <Send size={20} />
-            </button>
+            {loadingState === 'idle' || loadingState === 'success' || loadingState === 'error' ? (
+              <button 
+                type="submit" 
+                className="btn-primary rounded-full w-14 h-14 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/20"
+                disabled={!chatInput.trim()}
+              >
+                <Send size={20} />
+              </button>
+            ) : (
+              <button 
+                type="button" 
+                onClick={handleStop}
+                className="bg-red-500 hover:bg-red-600 text-white rounded-full w-14 h-14 flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-500/20 transition-all"
+                title="Stop generation"
+              >
+                <div className="w-4 h-4 bg-white rounded-sm"></div>
+              </button>
+            )}
           </form>
         </div>
       </div>
+
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="glass-card bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-800">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <Key className="text-sky-400" size={20} />
+                API Settings
+              </h3>
+              <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <p className="text-sm text-slate-300">
+                To bypass rate limits, you can provide your own API keys. These are stored locally in your browser and are only sent to our backend during processing.
+              </p>
+              
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-400 flex items-center justify-between">
+                  Groq API Key
+                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline text-xs font-normal">Get a key</a>
+                </label>
+                <input 
+                  type="password"
+                  placeholder="gsk_..."
+                  value={customGroqKey}
+                  onChange={(e) => setCustomGroqKey(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-600 rounded px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-400 flex items-center justify-between">
+                  Google Gemini API Key
+                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline text-xs font-normal">Get a key</a>
+                </label>
+                <input 
+                  type="password"
+                  placeholder="AIza..."
+                  value={customGeminiKey}
+                  onChange={(e) => setCustomGeminiKey(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-600 rounded px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t border-slate-800 flex justify-end">
+              <button 
+                onClick={() => setShowSettings(false)}
+                className="btn-primary px-6 py-2 rounded-md font-medium"
+              >
+                Save & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
