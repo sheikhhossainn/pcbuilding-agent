@@ -13,7 +13,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 import rateLimit from 'express-rate-limit';
 
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());

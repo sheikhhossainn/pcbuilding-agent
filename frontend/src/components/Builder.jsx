@@ -43,6 +43,7 @@ const INITIAL_BUILD = {
 };
 
 function Builder() {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
   const [build, setBuild] = useState(INITIAL_BUILD);
   const [total, setTotal] = useState(0);
   const [explanation, setExplanation] = useState("");
@@ -128,7 +129,7 @@ function Builder() {
         }
       };
       abortControllerRef.current = new AbortController();
-      const response = await axios.post('/api/build', requestPayload, {
+      const response = await axios.post(`${apiBaseUrl}/api/build`, requestPayload, {
         signal: abortControllerRef.current.signal
       });
 
