@@ -1,4 +1,4 @@
-import Builder from "./components/builder"
+import Builder from "./components/Builder"
 function App() {
 
   return (
