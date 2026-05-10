@@ -2,6 +2,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import importlib
+import time
+
+# In-memory cache: key = "site:category" -> { "data": [...], "timestamp": float }
+_cache = {}
+CACHE_TTL = 30 * 60  # 30 minutes
 
 app = FastAPI(title="BuildMyPC Scraper API")
 
@@ -22,7 +27,10 @@ SUPPORTED_CATEGORIES = [
 async def scrape_products(
     site: str = Query(..., description="Site key (e.g. startech, techland) or a full URL for custom shops"),
     category: str = Query(..., description="The product category"),
-    in_stock_only: bool = Query(True, description="Return only in-stock items")
+    in_stock_only: bool = Query(True, description="Return only in-stock items"),
+    price_min: Optional[int] = Query(None, description="Minimum price filter"),
+    price_max: Optional[int] = Query(None, description="Maximum price filter"),
+    sort: Optional[str] = Query(None, description="Sort order: price_asc or price_desc")
 ):
     site = site.strip()
     category = category.lower().strip()
@@ -43,7 +51,24 @@ async def scrape_products(
         raise HTTPException(status_code=500, detail=f"Scraper for '{module_name}' is missing the scrape() function")
 
     try:
-        products = scraper_module.scrape(category, site) if is_custom_url else scraper_module.scrape(category)
+        cache_key = f"{module_name}:{category}:{price_min or 0}-{price_max or 0}:{sort or 'none'}"
+        now = time.time()
+        
+        # Check cache first
+        if cache_key in _cache and (now - _cache[cache_key]["timestamp"]) < CACHE_TTL:
+            products = _cache[cache_key]["data"]
+        else:
+            if is_custom_url:
+                products = scraper_module.scrape(category, site)
+            else:
+                products = scraper_module.scrape(
+                    category,
+                    price_min=price_min,
+                    price_max=price_max,
+                    sort_order=sort
+                )
+            _cache[cache_key] = {"data": products, "timestamp": now}
+        
         if in_stock_only:
             products = [p for p in products if p["in_stock"]]
         return {"site": site, "category": category, "products": products, "count": len(products)}
