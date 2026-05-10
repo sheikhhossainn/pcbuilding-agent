@@ -158,7 +158,9 @@ async function fetchPartsFromScraper(site, category, priceMin, priceMax, sortOrd
     if (priceMax !== undefined && priceMax !== null) params.set('price_max', Math.round(priceMax));
     if (sortOrder) params.set('sort', sortOrder);
 
-    const response = await fetch(`http://localhost:8000/scrape?${params.toString()}`);
+    const SCRAPER_BASE_URL = process.env.SCRAPER_URL || 'http://localhost:8000';
+    const response = await fetch(`${SCRAPER_BASE_URL}/scrape?${params.toString()}`);
+    
     if (!response.ok) return [];
     const data = await response.json();
     // Decorate with basic inferred specs so our compatibility rules don't crash
