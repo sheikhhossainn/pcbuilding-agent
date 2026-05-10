@@ -1,16 +1,85 @@
-# React + Vite
+# BuildMyPC
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+BuildMyPC is an AI powered PC configurator for the Bangladesh market. You type a request and it returns a full build with compatible parts and an explanation.
 
-Currently, two official plugins are available:
+## What You Need
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 18+ (recommended)
+- Python 3.10+ (for the scraper)
+- Git
 
-## React Compiler
+## Clone The Project
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+git clone https://github.com/sheikhhossainn/pcbuilding-agent.git
+cd pcbuilding-agent
+```
 
-## Expanding the ESLint configuration
+## Install Dependencies
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### 1) Frontend
+
+```bash
+cd frontend
+npm install
+```
+
+### 2) Backend (root)
+
+```bash
+cd ..
+npm install
+```
+
+### 3) Scraper (Python)
+
+```bash
+cd scraper
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+## Set Up API Keys
+
+Create a file at:
+
+```
+backend/.env
+```
+
+Add your keys:
+
+```
+GROQ_API_KEY=your_groq_key_here
+GEMINI_API_KEY=your_gemini_key_here
+```
+
+Where to get keys:
+- Groq: https://console.groq.com/keys
+- Gemini: https://aistudio.google.com/app/apikey
+
+## Run Everything
+
+From the repo root:
+
+```bash
+npm run start:all
+```
+
+This starts:
+- Frontend: http://localhost:5173
+- Backend: http://localhost:3001
+- Scraper: http://localhost:8000
+
+## How It Works (Simple)
+
+1) The frontend sends your prompt to the backend.
+2) The backend asks the AI for structured intent.
+3) The scraper collects live parts from shops.
+4) The backend builds a compatible PC and sends it back.
+
+## Common Issues
+
+- If you see rate limit errors, add your own API keys in the UI settings.
+- If the scraper shows no results, make sure the Python venv is activated and running.
