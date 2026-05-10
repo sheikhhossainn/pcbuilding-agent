@@ -16,7 +16,7 @@ BuildMyPC is a full-stack AI-powered PC configurator for the Bangladesh market. 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  Frontend (React + Vite)         :5173                  │
-│  src/components/builder.jsx                             │
+│  frontend/src/components/Builder.jsx                    │
 │  → POST /api/build  (proxied to :3001)                  │
 └──────────────────┬──────────────────────────────────────┘
                    │
@@ -50,7 +50,7 @@ This runs all three services concurrently:
 
 | Service | Command | Port |
 |---------|---------|------|
-| Frontend | `vite` | 5173 |
+| Frontend | `npm --prefix frontend run dev` | 5173 |
 | Backend | `node backend/server.js` | 3001 |
 | Scraper | `uvicorn main:app --reload` | 8000 |
 
@@ -63,9 +63,9 @@ This runs all three services concurrently:
 ### Frontend
 | File | Purpose |
 |------|---------|
-| `src/components/builder.jsx` | Main UI — chat input, site/AI selector, build results table |
-| `src/App.jsx` | Root app component |
-| `vite.config.js` | Vite config — proxies `/api/*` → `:3001` |
+| `frontend/src/components/Builder.jsx` | Main UI — chat input, site/AI selector, build results table |
+| `frontend/src/App.jsx` | Root app component |
+| `frontend/vite.config.js` | Vite config — proxies `/api/*` → `:3001` |
 
 ### Backend
 | File | Purpose |
@@ -77,8 +77,8 @@ This runs all three services concurrently:
 ### Scraper
 | File | Purpose |
 |------|---------|
-| `scraper/main.py` | FastAPI app — routes `/scrape?site=&category=` to correct scraper module, no caching |
-| `scraper/scrapers/startech.py` | StarTech scraper — paginates up to 3 pages per category |
+| `scraper/main.py` | FastAPI app — routes `/scrape?site=&category=` to correct scraper module |
+| `scraper/scrapers/startech.py` | StarTech scraper — paginates up to 10 pages per category |
 | `scraper/scrapers/techland.py` | TechLand scraper |
 | `scraper/scrapers/computermania.py` | ComputerMania scraper (core parts only — peripherals 403) |
 | `scraper/scrapers/generic.py` | Generic scraper for custom user-supplied URLs |
