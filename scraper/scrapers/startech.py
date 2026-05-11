@@ -57,28 +57,29 @@ def scrape_page(url: str, fetcher):
         else:
             image = ""
 
-        price_elem = get_first(item, ".p-item-price span")
-        price_text = price_elem.text.strip() if price_elem else ""
-        if not price_text or "Call for price" in price_text or "TBA" in price_text:
-            price_elem_main = get_first(item, ".p-item-price")
-            if price_elem_main:
-                price_text = price_elem_main.text.strip()
-
-        if not price_text:
-            for attr in ['data-price', 'data-original-price']:
-                if attr in item.attrib:
-                    price_text = item.attrib[attr]
+        # Price parsing
+        # Some listings show both new and old prices: "<span class=price-new>3900৳</span> <span class=price-old>3950৳</span>"
+        # Others show only a status (Up Coming / Out Of Stock) instead of a numeric price.
+        price = None
+        price_new_elem = get_first(item, ".p-item-price span.price-new")
+        if price_new_elem:
+            price = clean_price(price_new_elem.text.strip())
+        else:
+            # Pick the first span that contains digits (and ignore status-only spans)
+            for span in item.css(".p-item-price span"):
+                t = (span.text or "").strip()
+                if any(ch.isdigit() for ch in t):
+                    price = clean_price(t)
                     break
 
-        if "Call for price" in price_text or "TBA" in price_text:
-            price = None
-        else:
-            price = clean_price(price_text)
-
-        stock_elem = get_first(item, ".p-item-btn .btn")
+        # Stock detection
         in_stock = True
+        status_text = " ".join([s.text.strip().lower() for s in item.css(".p-item-price span") if s.text]).strip()
+        if "out of stock" in status_text or "up coming" in status_text:
+            in_stock = False
+        stock_elem = get_first(item, ".p-item-btn .btn")
         if stock_elem:
-            btn_text = stock_elem.text.lower()
+            btn_text = (stock_elem.text or "").lower()
             if "out of stock" in btn_text or "stock out" in btn_text:
                 in_stock = False
 
@@ -102,10 +103,16 @@ def scrape(category: str, price_min=None, price_max=None, sort_order=None):
     all_products = []
 
     sort_params = {}
-    if sort_order == "price_desc":
-        sort_params = {"sort": "p.price", "order": "DESC"}
-    elif sort_order == "price_asc":
-        sort_params = {"sort": "p.price", "order": "ASC"}
+    # IMPORTANT: For some StarTech categories, adding sort params makes the site replace
+    # numeric prices with status text like "Up Coming" in the HTML.
+    # We avoid server-side sorting for those categories and rely on client-side sorting
+    # in the backend instead.
+    NO_SERVER_SORT_CATEGORIES = {"ram", "storage"}
+    if category not in NO_SERVER_SORT_CATEGORIES:
+        if sort_order == "price_desc":
+            sort_params = {"sort": "p.price", "order": "DESC"}
+        elif sort_order == "price_asc":
+            sort_params = {"sort": "p.price", "order": "ASC"}
 
     filter_params = {}
     if price_min is not None:
@@ -113,7 +120,8 @@ def scrape(category: str, price_min=None, price_max=None, sort_order=None):
     if price_max is not None:
         filter_params["filter_max_price"] = int(price_max)
 
-    for page_num in range(1, MAX_PAGES + 1):
+    max_pages = 8 if category == "ram" else MAX_PAGES
+    for page_num in range(1, max_pages + 1):
         page_params = {"page": page_num} if page_num > 1 else {}
         url = build_url(base_url, {**sort_params, **filter_params, **page_params})
         page_products = scrape_page(url, fetcher)

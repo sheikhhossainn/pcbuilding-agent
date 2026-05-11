@@ -15,6 +15,10 @@ import rateLimit from 'express-rate-limit';
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Render (and most PaaS) run behind a reverse proxy and set X-Forwarded-For.
+// express-rate-limit validates this header unless trust proxy is enabled.
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 app.use((req, res, next) => {
@@ -233,11 +237,15 @@ function inferSpecs(category, name) {
         else if (n.includes('radeon') || n.includes('rx ')) specs.gpu_brand = 'amd';
         else specs.gpu_brand = 'unknown';
 
-        if (n.includes('4090')) specs.tdp = 450;
-        else if (n.includes('4080') || n.includes('7900')) specs.tdp = 320;
-        else if (n.includes('4070') || n.includes('7800')) specs.tdp = 220;
-        else if (n.includes('4060') || n.includes('7600')) specs.tdp = 160;
-        else specs.tdp = 150;
+      // Heuristic GPU power draw (rough) for PSU sizing.
+      // Keep conservative to avoid undersizing PSUs when models are newer than our mapping.
+      if (n.includes('4090')) specs.tdp = 450;
+      else if (n.includes('5090')) specs.tdp = 450;
+      else if (n.includes('4080') || n.includes('7900') || n.includes('5080')) specs.tdp = 320;
+      else if (n.includes('4070') || n.includes('7800') || n.includes('5070')) specs.tdp = 220;
+      else if (n.includes('4060') || n.includes('7600')) specs.tdp = 160;
+      else if (n.includes('5060')) specs.tdp = 180;
+      else specs.tdp = 180;
     }
 
     if (category === 'PSU') {
@@ -280,8 +288,9 @@ function inferSpecs(category, name) {
         'Motherboard': [0.05, 0.10],
         'RAM': [0.05, 0.08],
         'Storage': [0.03, 0.07],
-        'PSU': [0.02, 0.04],
-        'Casing': [0.01, 0.03],
+        // PSU is more important than casing for stability and upgrade headroom.
+        'PSU': [0.03, 0.06],
+        'Casing': [0.008, 0.02],
         'CPU Cooler': [0.01, 0.03],
         'Monitor': [0.05, 0.10],
         'Mouse': [0.005, 0.015],
@@ -294,8 +303,8 @@ function inferSpecs(category, name) {
         'Motherboard': [0.06, 0.12],
         'RAM': [0.08, 0.12],
         'Storage': [0.06, 0.10],
-        'PSU': [0.03, 0.05],
-        'Casing': [0.02, 0.04],
+        'PSU': [0.03, 0.06],
+        'Casing': [0.015, 0.03],
         'CPU Cooler': [0.01, 0.03],
         'Monitor': [0.05, 0.10],
         'Mouse': [0.005, 0.015],
@@ -308,8 +317,8 @@ function inferSpecs(category, name) {
         'Motherboard': [0.07, 0.12],
         'RAM': [0.08, 0.12],
         'Storage': [0.05, 0.10],
-        'PSU': [0.03, 0.05],
-        'Casing': [0.02, 0.04],
+        'PSU': [0.03, 0.06],
+        'Casing': [0.015, 0.03],
         'CPU Cooler': [0.01, 0.03],
         'Monitor': [0.06, 0.12],
         'Mouse': [0.01, 0.02],
@@ -322,8 +331,8 @@ function inferSpecs(category, name) {
         'Motherboard': [0.08, 0.12],
         'RAM': [0.10, 0.18],
         'Storage': [0.05, 0.10],
-        'PSU': [0.03, 0.05],
-        'Casing': [0.02, 0.04],
+        'PSU': [0.03, 0.06],
+        'Casing': [0.015, 0.03],
         'CPU Cooler': [0.01, 0.03],
         'Monitor': [0.08, 0.15],
         'Mouse': [0.01, 0.03],
@@ -372,7 +381,10 @@ function inferSpecs(category, name) {
   async function getPartsCached(cache, site, category, range, sortOrder) {
     const min = range?.min;
     const max = range?.max;
-    const key = `${category}:${min || 0}-${max || 0}:${sortOrder || 'none'}`;
+    // IMPORTANT: cache must be keyed by site too, otherwise inventories from different shops
+    // get mixed (e.g. TechLand monitor appearing in a StarTech build) and empty results from
+    // one shop can incorrectly cause "No X found" for another.
+    const key = `${(site || '').trim().toLowerCase()}:${category}:${min || 0}-${max || 0}:${sortOrder || 'none'}`;
     if (cache.has(key)) return cache.get(key);
 
     const parts = await fetchPartsFromScraper(site, category, min, max, sortOrder);
@@ -393,8 +405,9 @@ function inferSpecs(category, name) {
   async function selectWithFallback(cache, site, category, range, sortOrder, filterFn, budget) {
     let part = await selectPart(cache, site, category, range, sortOrder, filterFn);
     if (!part && range && range.max > 0) {
+      const overspendFactor = category === 'PSU' ? 1.5 : 1.25;
         // First try to find the cheapest part slightly above our max (minimize overspending)
-        const aboveRange = { min: range.max, max: Math.min(Math.round(range.max * 1.25), budget) };
+      const aboveRange = { min: range.max, max: Math.min(Math.round(range.max * overspendFactor), budget) };
         part = await selectPart(cache, site, category, aboveRange, 'price_asc', filterFn);
         if (!part) {
             // Then try to find the best part slightly below our min
@@ -403,7 +416,7 @@ function inferSpecs(category, name) {
         }
         if (!part) {
             // Ultimate fallback: take the cheapest item we can find in the expanded range to save budget
-            const survivalRange = { min: 0, max: Math.min(Math.round(range.max * 1.25), budget) };
+        const survivalRange = { min: 0, max: Math.min(Math.round(range.max * overspendFactor), budget) };
             part = await selectPart(cache, site, category, survivalRange, 'price_asc', filterFn);
         }
     }
@@ -420,6 +433,101 @@ function inferSpecs(category, name) {
       return !(n.includes('i3') || n.includes('ryzen 3') || n.includes('athlon'));
     }
     return true;
+  }
+
+  function cpuHasIntegratedGraphics(cpu) {
+    const n = (cpu?.name || '').toLowerCase();
+    const brand = (cpu?.specs?.brand || '').toLowerCase();
+
+    // AMD: Most desktop AM4 CPUs without a trailing "G" have no iGPU.
+    // We treat "####G" SKUs (e.g. 5600G, 4600G) and explicit "Radeon Graphics" naming as iGPU.
+    if (brand === 'amd') {
+      return /\b\d{4}g\b/.test(n) || n.includes('with radeon') || n.includes('radeon graphics') || n.includes('apu');
+    }
+
+    // Intel: Most non-F SKUs include an iGPU; F/KF indicate no iGPU.
+    if (brand === 'intel') {
+      if (/(\b|-)\d{4,5}f\b/.test(n)) return false; // e.g. 12400F, i5-10400F
+      if (n.includes(' kf')) return false;
+      return true;
+    }
+
+    // Unknown brand: don't block selection.
+    return true;
+  }
+
+  function getPsuWattageFloor(intent, cpu, gpu) {
+    const useCase = intent?.use_case || 'general';
+    const tier = intent?.tier || 'mid';
+
+    // Baseline floors by use-case and tier.
+    let floor = 500;
+    if (useCase === 'gaming' && gpu) {
+      floor = 650;
+      if (tier === 'high-end') floor = 750;
+      if (tier === 'budget') floor = 550;
+    }
+
+    // GPU-driven floors based on our inferred draw.
+    const gpuTdp = gpu?.specs?.tdp || 0;
+    if (gpuTdp >= 400) floor = Math.max(floor, 1000);
+    else if (gpuTdp >= 320) floor = Math.max(floor, 850);
+    else if (gpuTdp >= 250) floor = Math.max(floor, 750);
+    else if (gpuTdp >= 200) floor = Math.max(floor, 650);
+
+    // High CPU draw should not push us to tiny PSUs.
+    const cpuTdp = cpu?.specs?.tdp || 0;
+    if (cpuTdp >= 125 && gpu) floor = Math.max(floor, 650);
+
+    return floor;
+  }
+
+  function computeTargetPsuWattage(intent, cpu, gpu) {
+    const cpuTdp = cpu?.specs?.tdp || 65;
+    const gpuTdp = gpu?.specs?.tdp || 0;
+
+    // Extra headroom for transient spikes (especially gaming GPUs).
+    const useCase = intent?.use_case || 'general';
+    const multiplier = (useCase === 'gaming' && gpu) ? 1.4 : 1.3;
+    const additive = gpu ? 100 : 60;
+
+    const required = cpuTdp + gpuTdp;
+    const computed = (required * multiplier) + additive;
+    const floored = Math.max(computed, getPsuWattageFloor(intent, cpu, gpu));
+
+    // Round up to common PSU steps (50W).
+    return Math.ceil(floored / 50) * 50;
+  }
+
+  function getTargetSpendPct(intent) {
+    const tier = intent?.tier || 'mid';
+    // High-end users generally expect the budget to be utilized for better parts.
+    if (tier === 'high-end') return 0.97;
+    if (tier === 'budget') return 0.90;
+    return 0.93;
+  }
+
+  function getUpgradeWeight(intent, category) {
+    const useCase = intent?.use_case || 'general';
+    if (useCase === 'gaming') {
+      if (category === 'Graphics Card') return 6;
+      if (category === 'Monitor') return 5;
+      if (category === 'Processor') return 4;
+      if (category === 'RAM') return 3;
+      if (category === 'Storage') return 3;
+      if (category === 'Keyboard') return 2;
+      if (category === 'Mouse') return 1.5;
+      if (category === 'PSU') return 1;
+    }
+    // Default weighting for non-gaming.
+    if (category === 'Processor') return 5;
+    if (category === 'RAM') return 4;
+    if (category === 'Storage') return 3;
+    if (category === 'Monitor') return 3;
+    if (category === 'Keyboard') return 2;
+    if (category === 'Mouse') return 1.5;
+    if (category === 'PSU') return 1;
+    return 1;
   }
 
   function formatMinimumError(label, minRequired) {
@@ -504,6 +612,7 @@ function inferSpecs(category, name) {
     const cpuFilter = p => {
       const brandMatch = !intent.preferred_cpu_brand || p.specs.brand === intent.preferred_cpu_brand.toLowerCase();
       if (!brandMatch) return false;
+      if (noGpu && !cpuHasIntegratedGraphics(p)) return false;
       if (intent.ram_type === 'DDR4') return p.specs.socket === 'AM4' && isCpuBalanced(p, gpu);
       if (intent.ram_type === 'DDR5') return p.specs.socket === 'AM5' && isCpuBalanced(p, gpu);
       return isCpuBalanced(p, gpu);
@@ -511,7 +620,8 @@ function inferSpecs(category, name) {
 
     const cpu = await getCheapestPart(cache, site, 'Processor', budget, cpuFilter);
     if (!cpu) {
-      minimums.error = `No compatible ${intent.preferred_cpu_brand ? intent.preferred_cpu_brand.toUpperCase() : ''} CPU found.`.trim();
+      const base = `No compatible ${intent.preferred_cpu_brand ? intent.preferred_cpu_brand.toUpperCase() : ''} CPU found.`.trim();
+      minimums.error = noGpu ? `${base} For "no GPU" builds, the CPU must include integrated graphics.` : base;
       return minimums;
     }
     minimums.processor = cpu.price;
@@ -558,8 +668,7 @@ function inferSpecs(category, name) {
     }
     minimums.storage = storage.price;
 
-    const requiredTdp = (cpu.specs.tdp || 65) + (gpu?.specs?.tdp || 0);
-    const targetPsuWattage = (requiredTdp * 1.2) + 50;
+    const targetPsuWattage = computeTargetPsuWattage(intent, cpu, gpu);
     const psuFilter = p => p.specs.wattage >= targetPsuWattage;
     const psu = await getCheapestPart(cache, site, 'PSU', budget, psuFilter);
     if (!psu) {
@@ -774,6 +883,7 @@ app.post('/api/build', apiLimiter, async (req, res) => {
     const cpuCondition = (p) => {
       const brandMatch = !intent.preferred_cpu_brand || p.specs.brand === intent.preferred_cpu_brand.toLowerCase();
       if (!brandMatch) return false;
+      if (noGpu && !cpuHasIntegratedGraphics(p)) return false;
       if (intent.ram_type === 'DDR4') return p.specs.socket === 'AM4' && isCpuBalanced(p, selectedBuild["Graphics Card"]);
       if (intent.ram_type === 'DDR5') return p.specs.socket === 'AM5' && isCpuBalanced(p, selectedBuild["Graphics Card"]);
       return isCpuBalanced(p, selectedBuild["Graphics Card"]);
@@ -887,11 +997,8 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       return res.json({ error: "Could not find any GPU within your budget range. Try another site or reduce other specs." });
     }
 
-    // Step 4: PSU (cheapest adequate)
-    let requiredTdp = 0;
-    if (selectedBuild.Processor) requiredTdp += (selectedBuild.Processor.specs.tdp || 65);
-    if (selectedBuild["Graphics Card"]) requiredTdp += (selectedBuild["Graphics Card"].specs.tdp || 0);
-    const targetPsuWattage = (requiredTdp * 1.2) + 50;
+    // Step 4: PSU (adequate + conservative headroom)
+    const targetPsuWattage = computeTargetPsuWattage(intent, selectedBuild.Processor, selectedBuild["Graphics Card"]);
     const psuRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'PSU');
     const psuAllowedMax = coreBudget - totalCost - psuRemainingMin;
     if (psuAllowedMax <= 0) {
@@ -905,7 +1012,7 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       totalCost += selectedBuild.PSU.price;
     } else {
       console.error(`ERROR: Could not find adequate PSU (need ${targetPsuWattage}W)`);
-      return res.json({ error: "Could not find a PSU with adequate wattage. Try increasing budget." });
+      return res.json({ error: `Could not find a PSU with at least ${Math.round(targetPsuWattage)}W. Try increasing budget or switching sites.` });
     }
 
     // Step 5: Storage (essential)
@@ -964,7 +1071,8 @@ app.post('/api/build', apiLimiter, async (req, res) => {
     // Step 8: Select peripherals with guaranteed reserved budget from mustHaves
     // Monitor (if requested)
     if (intent.needs_monitor && peripheralMinimums.monitor > 0) {
-      const monitorRange = { min: 0, max: peripheralMinimums.monitor + 5000 };
+      const monitorSoftMax = Math.max(peripheralMinimums.monitor + 5000, budgetRanges['Monitor']?.max || 0);
+      const monitorRange = { min: 0, max: Math.min(monitorSoftMax, budget) };
       let monitor = null;
       
       if (intent.monitor_hz) {
@@ -998,7 +1106,8 @@ app.post('/api/build', apiLimiter, async (req, res) => {
 
     // Mouse (if requested)
     if (intent.needs_mouse && peripheralMinimums.mouse > 0) {
-      const mouseRange = { min: 0, max: peripheralMinimums.mouse + 2000 };
+      const mouseSoftMax = Math.max(peripheralMinimums.mouse + 2000, budgetRanges['Mouse']?.max || 0);
+      const mouseRange = { min: 0, max: Math.min(mouseSoftMax, budget) };
       const mouse = await selectWithFallback(partsCache, site, 'Mouse', mouseRange, 'price_desc', undefined, budget);
       if (mouse) {
         selectedBuild.Mouse = mouse;
@@ -1011,7 +1120,8 @@ app.post('/api/build', apiLimiter, async (req, res) => {
 
     // Keyboard (if requested)
     if (intent.needs_keyboard && peripheralMinimums.keyboard > 0) {
-      const keyboardRange = { min: 0, max: peripheralMinimums.keyboard + 2000 };
+      const keyboardSoftMax = Math.max(peripheralMinimums.keyboard + 2000, budgetRanges['Keyboard']?.max || 0);
+      const keyboardRange = { min: 0, max: Math.min(keyboardSoftMax, budget) };
       const keyboard = await selectWithFallback(partsCache, site, 'Keyboard', keyboardRange, 'price_desc', undefined, budget);
       if (keyboard) {
         selectedBuild.Keyboard = keyboard;
@@ -1024,22 +1134,30 @@ app.post('/api/build', apiLimiter, async (req, res) => {
 
     // Step 9: Rebalance if underspent (cap iterations to avoid infinite loops)
     console.log("\nPHASE 4: Rebalancing underspent budget...");
-    for (let i = 0; i < 3; i++) {
-      if (totalCost >= budget * 0.9) break;
+    const targetSpendPct = getTargetSpendPct(intent);
+    const maxRebalanceIterations = (intent.tier === 'high-end') ? 6 : 4;
+    for (let i = 0; i < maxRebalanceIterations; i++) {
+      if (totalCost >= budget * targetSpendPct) break;
       const remaining = budget - totalCost;
       if (remaining < 2000) break;
 
-      const upgradeCandidates = ['Graphics Card', 'Processor', 'RAM', 'Monitor', 'Storage'];
+      const upgradeCandidates = ['Graphics Card', 'Monitor', 'Processor', 'RAM', 'Storage', 'Keyboard', 'Mouse', 'PSU'];
       let best = null;
 
       upgradeCandidates.forEach(category => {
         const current = selectedBuild[category];
         if (!current) return;
 
-        const expandedMax = Math.min(Math.round(budget * 0.5), current.price + remaining); // Don't let single component exceed half budget
+        // Don't let any one component explode beyond its rough budget allocation.
+        // Still allow some flex so high-end budgets can be used.
+        const allocationCap = (budgetRanges?.[category]?.max || Math.round(budget * 0.5));
+        const expandedMax = Math.min(Math.round(allocationCap * 1.5), current.price + remaining, budget);
         const gap = expandedMax - current.price;
-        if (gap > 500 && (!best || gap > best.gap)) { // Minimum upgrade gap of 500 BDT
-          best = { category, possibleMax: expandedMax, gap };
+
+        const weight = getUpgradeWeight(intent, category);
+        const score = gap * weight;
+        if (gap > 500 && (!best || score > best.score)) {
+          best = { category, possibleMax: expandedMax, gap, score };
         }
       });
 
