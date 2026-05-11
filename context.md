@@ -247,10 +247,19 @@ SCRAPER_URL=https://your-scraper-service.onrender.com
 ## Known Constraints
 
 - **ComputerMania peripherals disabled** — their monitor/mouse/keyboard pages return 403.
-- **StarTech pagination** — scraper fetches up to 3 pages (~60–90 products) per category to catch full inventory.
+- **StarTech pagination truncation fix** — because scraper fetches only up to 3 pages (~75 items), using `price_asc` truncates expensive parts like AM5 boards or RTX 4080s. To fix this, `getCheapestPart` and Phase 2 now fetch both `price_asc` and `price_desc` when needed to guarantee access to the full spectrum of high-end and low-end parts.
 - **Scraper caching** — results can be up to ~30 minutes stale (by design) to reduce scraping load and rate-limit risk.
 - **`inferSpecs` heuristics** — socket/RAM type is inferred from product name strings; products with unusual naming may fall into `UNKNOWN` socket and be skipped by the compatibility engine.
 - **`UNKNOWN` socket blocking** — if a CPU or motherboard resolves to `UNKNOWN`, it is never matched to avoid pairing incompatible hardware.
+
+---
+
+## Chatbox & Stop Button UX
+
+- The fixed chatbox at the bottom uses a `<textarea>` that auto-grows as the user types, capped at **120px on mobile** (`max-h-[120px]`) and **200px on desktop** (`max-h-[200px]`).
+- The send/stop button is wrapped in a `self-center` container so it stays **vertically centered** relative to the textarea regardless of how tall the textarea grows.
+- **Stop button** uses `AbortController` to cancel the in-flight `axios` request when pressed. The catch block detects `CanceledError` / `ERR_CANCELED` and silently resets state to `idle`. A `requestIdRef` counter ensures stale responses from previously-aborted requests are ignored.
+- Loading-state timers (`setTimeout` for "Selecting..." -> "Checking...") include an `idle` guard so they never re-trigger after a stop.
 
 ---
 

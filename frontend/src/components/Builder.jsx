@@ -63,6 +63,13 @@ function Builder() {
   const abortControllerRef = useRef(null);
   const requestIdRef = useRef(0);
 
+  const getMaxChatboxHeight = () => {
+    // Keep the chatbox from becoming huge on mobile.
+    // Tailwind's `sm` breakpoint is 640px.
+    if (typeof window !== 'undefined' && window.innerWidth < 640) return 120;
+    return 200;
+  };
+
   useEffect(() => {
     localStorage.setItem('customGroqKey', customGroqKey);
   }, [customGroqKey]);
@@ -109,10 +116,10 @@ function Builder() {
     
     // Simulate some steps before API returns
     const selectTimer = setTimeout(() => {
-      setLoadingState((prev) => (prev === 'error' || prev === 'success') ? prev : "selecting");
+      setLoadingState((prev) => (prev === 'idle' || prev === 'error' || prev === 'success') ? prev : "selecting");
     }, 1500);
     const checkTimer = setTimeout(() => {
-      setLoadingState((prev) => (prev === 'error' || prev === 'success') ? prev : "checking");
+      setLoadingState((prev) => (prev === 'idle' || prev === 'error' || prev === 'success') ? prev : "checking");
     }, 3000);
     loadingTimersRef.current = [selectTimer, checkTimer];
 
@@ -177,23 +184,23 @@ function Builder() {
     const Icon = CATEGORY_ICONS[category] || Box;
 
     return (
-      <div key={category} className="component-row flex items-center justify-between p-4 mb-3 rounded-lg border border-slate-700 bg-slate-800/50">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="p-3 bg-slate-700 rounded-lg text-sky-400">
+      <div key={category} className="component-row flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 mb-3 rounded-lg border border-slate-700 bg-slate-800/50">
+        <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+          <div className="p-2.5 sm:p-3 bg-slate-700 rounded-lg text-sky-400 flex-shrink-0">
             <Icon size={24} />
           </div>
           
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-lg">{category}</span>
+          <div className="flex flex-col min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-base sm:text-lg">{category}</span>
               {isRequired && <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30">Required</span>}
               {dependencyStr && <span className="text-xs text-slate-400 italic">*{dependencyStr}</span>}
             </div>
             
             {item ? (
-              <div className="flex items-center gap-3 mt-1">
-                {item.image && <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded bg-white p-1" />}
-                <div className="text-sky-300 font-medium">{item.name}</div>
+              <div className="flex items-start sm:items-center gap-3 mt-1 min-w-0">
+                {item.image && <img src={item.image} alt={item.name} className="w-10 h-10 sm:w-12 sm:h-12 object-cover rounded bg-white p-1 flex-shrink-0" />}
+                <div className="text-sky-300 font-medium break-words min-w-0">{item.name}</div>
               </div>
             ) : (
               <div className="text-slate-500 text-sm mt-1">Not configured</div>
@@ -201,42 +208,38 @@ function Builder() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          {item ? (
-            <>
-              <div className="font-bold text-lg text-emerald-400">{formatPrice(item.price)}</div>
-              <div className="flex gap-2">
-                {item.url && (
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 text-slate-400 hover:text-sky-400 bg-slate-700 rounded transition-colors"
-                    title="View on store"
-                  >
-                    <ExternalLink size={18} />
-                  </a>
-                )}
-                <button 
-                  className="p-2 text-slate-400 hover:text-red-400 bg-slate-700 rounded transition-colors"
-                  title="Remove component"
-                  onClick={() => {
-                     const newBuild = {...build};
-                     newBuild[category] = null;
-                     setBuild(newBuild);
-                     setTotal(total - item.price);
-                  }}
+        {item ? (
+          <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 w-full sm:w-auto">
+            <div className="font-bold text-base sm:text-lg text-emerald-400 whitespace-nowrap">{formatPrice(item.price)}</div>
+            <div className="flex gap-2">
+              {item.url && (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 text-slate-400 hover:text-sky-400 bg-slate-700 rounded transition-colors"
+                  title="View on store"
                 >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="p-2 text-slate-600 bg-slate-700/50 rounded cursor-not-allowed" title="No component selected">
-              <ExternalLink size={18} />
+                  <ExternalLink size={18} />
+                </a>
+              )}
+              <button 
+                className="p-2 text-slate-400 hover:text-red-400 bg-slate-700 rounded transition-colors"
+                title="Remove component"
+                onClick={() => {
+                   const newBuild = {...build};
+                   newBuild[category] = null;
+                   setBuild(newBuild);
+                   setTotal(total - item.price);
+                }}
+              >
+                <Trash2 size={18} />
+              </button>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="hidden sm:block text-slate-600 text-sm">—</div>
+        )}
       </div>
     );
   };
@@ -252,9 +255,9 @@ function Builder() {
 
 
   return (
-    <div className="min-h-screen pb-32">
+    <div className="min-h-screen pb-[calc(10rem+env(safe-area-inset-bottom))] sm:pb-32">
       {/* Header */}
-      <header className="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between print:hidden">
+      <header className="glass sticky top-0 z-50 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
           <Sparkles className="text-sky-400" size={28} />
           <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-blue-600">
@@ -262,15 +265,15 @@ function Builder() {
           </h1>
         </div>
         
-        <div className="flex items-center gap-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 w-full sm:w-auto">
           {/* Settings Group */}
-          <div className="flex items-center gap-4 bg-slate-800/50 px-4 py-2 rounded-lg border border-slate-700/50">
-             <div className="flex items-center gap-2">
+           <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-3 sm:gap-4 bg-slate-800/50 px-3 sm:px-4 py-2 rounded-lg border border-slate-700/50 w-full sm:w-auto">
+             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Source:</span>
                <select 
                   value={selectedSite} 
                   onChange={(e) => setSelectedSite(e.target.value)}
-                  className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 transition-all cursor-pointer"
+                className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 transition-all cursor-pointer w-full sm:w-auto"
                   disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
                 >
                   <option value="startech">StarTech</option>
@@ -285,43 +288,43 @@ function Builder() {
                     placeholder="Enter shop URL..." 
                     value={customSiteUrl}
                     onChange={(e) => setCustomSiteUrl(e.target.value)}
-                    className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 w-48"
+                    className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 w-full sm:w-48"
                   />
                 )}
              </div>
 
-             <div className="w-px h-6 bg-slate-700"></div>
+             <div className="w-px h-6 bg-slate-700 hidden sm:block"></div>
 
-             <div className="flex items-center gap-2">
+             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">AI:</span>
-               <select 
-                  value={selectedApi} 
-                  onChange={(e) => setSelectedApi(e.target.value)}
-                  className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 transition-all cursor-pointer"
-                  disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
-                >
-                  <option value="groq">Groq (Llama 3)</option>
-                  <option value="gemini">Gemini (2.5 Pro)</option>
-                </select>
+               <div className="flex items-center gap-2 w-full sm:w-auto">
+                 <select 
+                    value={selectedApi} 
+                    onChange={(e) => setSelectedApi(e.target.value)}
+                    className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 transition-all cursor-pointer w-full sm:w-auto"
+                    disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
+                  >
+                    <option value="groq">Groq (Llama 3)</option>
+                    <option value="gemini">Gemini (2.5 Pro)</option>
+                  </select>
+
+                 <button 
+                    onClick={() => setShowSettings(true)}
+                    className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-800 rounded transition-colors border border-slate-600/50 hover:border-sky-500/50 flex-shrink-0"
+                    title="API Settings"
+                 >
+                    <Key size={18} />
+                 </button>
+               </div>
              </div>
-             
-             <div className="w-px h-6 bg-slate-700"></div>
-             
-             <button 
-                onClick={() => setShowSettings(true)}
-                className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-800 rounded transition-colors border border-slate-600/50 hover:border-sky-500/50"
-                title="API Settings"
-             >
-                <Key size={18} />
-             </button>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2">
-            <button onClick={handleDownloadPDF} className="btn-secondary px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium">
+          <div className="flex gap-2 w-full sm:w-auto">
+            <button onClick={handleDownloadPDF} className="btn-secondary flex-1 sm:flex-none px-3 py-2 sm:py-1.5 rounded-md flex items-center justify-center gap-2 text-sm font-medium">
               <FileDown size={16} /> Print PDF
             </button>
-            <button onClick={handleClear} className="btn-secondary px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium text-red-400 hover:text-red-300">
+            <button onClick={handleClear} className="btn-secondary flex-1 sm:flex-none px-3 py-2 sm:py-1.5 rounded-md flex items-center justify-center gap-2 text-sm font-medium text-red-400 hover:text-red-300">
               <Trash2 size={16} /> Clear
             </button>
           </div>
@@ -329,12 +332,12 @@ function Builder() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-5xl mx-auto mt-8 px-4" ref={builderRef}>
+      <main className="max-w-5xl mx-auto mt-6 sm:mt-8 px-3 sm:px-4" ref={builderRef}>
         
-        <div className="glass-card rounded-xl p-6 mb-8">
-          <div className="flex items-center justify-between border-b border-slate-700 pb-4 mb-6">
+        <div className="glass-card rounded-xl p-4 sm:p-6 mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-700 pb-4 mb-6 gap-4">
             <div>
-              <h2 className="text-3xl font-bold mb-2">PC Builder - Build Your Own PC</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold mb-2">PC Builder - Build Your Own PC</h2>
               <label className="flex items-center gap-2 cursor-pointer text-slate-400 text-sm">
                 <input 
                   type="checkbox" 
@@ -346,7 +349,7 @@ function Builder() {
               </label>
             </div>
             
-            <div className="total-card text-left bg-slate-800 p-3 rounded-lg border border-slate-700 min-w-[200px]">
+            <div className="total-card text-left bg-slate-800 p-3 rounded-lg border border-slate-700 w-full sm:w-auto sm:min-w-[200px]">
               <div className="text-slate-400 text-sm mb-1">Total ({Object.values(build).filter(Boolean).length} items)</div>
               <div className="text-3xl font-bold text-sky-400">{formatPrice(total)}</div>
             </div>
@@ -395,7 +398,7 @@ function Builder() {
       </main>
 
       {/* Fixed Chat Input */}
-      <div className="fixed bottom-0 left-0 right-0 glass border-t border-slate-700/50 p-4 z-50 print:hidden">
+      <div className="fixed bottom-0 left-0 right-0 glass border-t border-slate-700/50 p-3 sm:p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] z-50 print:hidden">
         <div className="max-w-4xl mx-auto relative chatbox-shell">
           
           {loadingState !== 'idle' && loadingState !== 'success' && loadingState !== 'error' && (
@@ -409,45 +412,55 @@ function Builder() {
 
           {/* Settings Row above Chat removed */}
 
-          <form onSubmit={handleSubmit} className="flex gap-3 relative items-center">
-            <textarea 
-              className="flex-1 bg-slate-800/90 border border-slate-600 rounded-2xl px-6 py-4 text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all text-lg resize-none overflow-y-auto min-h-[60px] max-h-[200px]"
-              placeholder="Describe your build... e.g. I need a gaming PC under 60,000 BDT"
-              value={chatInput}
-              rows={1}
-              onChange={(e) => {
+          <form onSubmit={handleSubmit} className="flex gap-3 relative">
+            <div className="relative flex-1">
+              {!chatInput && (
+               <div className="pointer-events-none absolute inset-0 flex items-center px-4 sm:px-6 text-slate-400 text-base sm:text-lg">
+                Describe your build... e.g. I need a gaming PC under 60,000 BDT
+               </div>
+              )}
+              <textarea 
+                className="w-full bg-slate-800/90 border border-slate-600 rounded-2xl px-4 sm:px-6 py-3 sm:py-4 text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all text-base sm:text-lg resize-none overflow-y-auto min-h-[52px] sm:min-h-[56px] max-h-[120px] sm:max-h-[200px]"
+               placeholder=""
+               aria-label="Build description"
+               value={chatInput}
+               rows={1}
+               onChange={(e) => {
                  setChatInput(e.target.value);
                  e.target.style.height = 'auto';
-                 e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
-              }}
-              onKeyDown={(e) => {
+                   e.target.style.height = Math.min(e.target.scrollHeight, getMaxChatboxHeight()) + 'px';
+               }}
+               onKeyDown={(e) => {
                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (chatInput.trim() && loadingState !== 'analyzing' && loadingState !== 'selecting' && loadingState !== 'checking') {
-                       handleSubmit(e);
-                    }
+                   e.preventDefault();
+                   if (chatInput.trim() && loadingState !== 'analyzing' && loadingState !== 'selecting' && loadingState !== 'checking') {
+                     handleSubmit(e);
+                   }
                  }
-              }}
-              disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
-            />
-            {loadingState === 'idle' || loadingState === 'success' || loadingState === 'error' ? (
-              <button 
-                type="submit" 
-                className="btn-primary rounded-full w-14 h-14 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/20"
-                disabled={!chatInput.trim()}
-              >
-                <Send size={20} />
-              </button>
-            ) : (
-              <button 
-                type="button" 
-                onClick={handleStop}
-                className="bg-red-500 hover:bg-red-600 text-white rounded-full w-14 h-14 flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-500/20 transition-all"
-                title="Stop generation"
-              >
-                <div className="w-4 h-4 bg-white rounded-sm"></div>
-              </button>
-            )}
+               }}
+               disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
+              />
+            </div>
+            <div className="flex items-center self-center">
+              {loadingState === 'idle' || loadingState === 'success' || loadingState === 'error' ? (
+                <button 
+                  type="submit" 
+                  className="btn-primary rounded-full w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/20"
+                  disabled={!chatInput.trim()}
+                >
+                  <Send size={20} />
+                </button>
+              ) : (
+                <button 
+                  type="button" 
+                  onClick={handleStop}
+                  className="bg-red-500 hover:bg-red-600 text-white rounded-full w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-500/20 transition-all"
+                  title="Stop generation"
+                >
+                  <div className="w-4 h-4 bg-white rounded-sm"></div>
+                </button>
+              )}
+            </div>
           </form>
         </div>
       </div>
@@ -456,7 +469,7 @@ function Builder() {
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="glass-card bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full shadow-2xl">
+          <div className="glass-card bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-slate-800">
               <h3 className="text-xl font-bold flex items-center gap-2">
                 <Key className="text-sky-400" size={20} />

@@ -8,6 +8,7 @@ body {
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 /* Custom scrollbar */
@@ -93,6 +94,12 @@ body {
 
 .total-card .text-3xl {
   line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .total-card {
+    height: auto;
+  }
 }
 
 
