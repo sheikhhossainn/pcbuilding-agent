@@ -160,8 +160,17 @@ async function fetchPartsFromScraper(site, category, priceMin, priceMax, sortOrd
 
     const SCRAPER_BASE_URL = process.env.SCRAPER_URL || 'http://localhost:8000';
     const response = await fetch(`${SCRAPER_BASE_URL}/scrape?${params.toString()}`);
-    
-    if (!response.ok) return [];
+
+    if (!response.ok) {
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch {
+        bodyText = '';
+      }
+      console.error(`[scraper] ${response.status} ${response.statusText} from ${SCRAPER_BASE_URL}/scrape?${params.toString()} :: ${bodyText}`);
+      return [];
+    }
     const data = await response.json();
     // Decorate with basic inferred specs so our compatibility rules don't crash
     return data.products.map(p => ({
@@ -1089,7 +1098,7 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       console.error(`  Motherboard: ${selectedBuild.Motherboard ? '✓' : '✗'}`);
       console.error(`  RAM: ${selectedBuild.RAM ? '✓' : '✗'}`);
       console.error(`  PSU: ${selectedBuild.PSU ? '✓' : '✗'}`);
-      console.error(`  Total spent: ${totalCost} BDT (cap was ${maxCoreComponentBudget} BDT)`);
+      console.error(`  Total spent: ${totalCost} BDT (core budget was ${coreBudget} BDT)`);
       return res.json({
          error: "I couldn't put together a fully compatible build within that exact budget from the live scraped parts. Please try adjusting your budget."
       });

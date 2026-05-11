@@ -1,12 +1,25 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
+from collections import OrderedDict
 import importlib
 import time
 
-# In-memory cache: key = "site:category" -> { "data": [...], "timestamp": float }
-_cache = {}
+# In-memory cache: key -> { "data": [...], "timestamp": float }
+# NOTE: bounded to avoid unbounded growth on long-running instances.
+_cache = OrderedDict()
 CACHE_TTL = 30 * 60  # 30 minutes
+MAX_CACHE_SIZE = 50  # max number of cached queries
+
+
+def set_cache(key: str, data):
+    # If key exists, refresh its insertion order.
+    if key in _cache:
+        del _cache[key]
+    elif len(_cache) >= MAX_CACHE_SIZE:
+        # Remove oldest entry
+        _cache.popitem(last=False)
+    _cache[key] = {"data": data, "timestamp": time.time()}
 
 app = FastAPI(title="BuildMyPC Scraper API")
 
@@ -22,6 +35,16 @@ SUPPORTED_CATEGORIES = [
     "cpu", "motherboard", "ram", "storage", "gpu",
     "psu", "casing", "cpu-cooler", "monitor", "mouse", "keyboard"
 ]
+
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "service": "BuildMyPC Scraper API",
+        "docs": "/docs",
+        "health": "/health",
+        "scrape": "/scrape"
+    }
 
 @app.get("/scrape")
 async def scrape_products(
@@ -44,8 +67,27 @@ async def scrape_products(
 
     try:
         scraper_module = importlib.import_module(f"scrapers.{module_name}")
-    except ImportError:
-        raise HTTPException(status_code=400, detail=f"Unsupported site: {site}")
+    except ModuleNotFoundError as e:
+        # If the missing module is the scraper module itself, treat it as an unsupported site (400).
+        # Otherwise it's a missing dependency inside that scraper (should be 500).
+        if e.name == f"scrapers.{module_name}":
+            raise HTTPException(status_code=400, detail=f"Unsupported site: {site}")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Scraper module '{module_name}' failed to import due to missing dependency: {e.name}. "
+                "Check Render build logs / requirements.txt."
+            ),
+        )
+    except ImportError as e:
+        # ImportError can also be raised by nested imports inside the scraper module.
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Scraper module '{module_name}' failed to import: {type(e).__name__}: {str(e)}. "
+                "Check Render build logs / requirements.txt."
+            ),
+        )
 
     if not hasattr(scraper_module, "scrape"):
         raise HTTPException(status_code=500, detail=f"Scraper for '{module_name}' is missing the scrape() function")
@@ -67,7 +109,7 @@ async def scrape_products(
                     price_max=price_max,
                     sort_order=sort
                 )
-            _cache[cache_key] = {"data": products, "timestamp": now}
+            set_cache(cache_key, products)
         
         if in_stock_only:
             products = [p for p in products if p["in_stock"]]

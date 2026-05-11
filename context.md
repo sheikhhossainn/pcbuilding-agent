@@ -27,7 +27,7 @@ BuildMyPC is a full-stack AI-powered PC configurator for the Bangladesh market. 
 │  2. Fetch parts from Scraper API for each category      │
 │  3. Run compatibility + budget engine                   │
 │  4. Generate explanation via LLM                        │
-│  → GET /scrape?site=&category=   (calls :8000)          │
+│  → GET /scrape?site=&category=   (calls SCRAPER_URL)    │
 └──────────────────┬──────────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────────┐
@@ -35,6 +35,7 @@ BuildMyPC is a full-stack AI-powered PC configurator for the Bangladesh market. 
 │  scraper/main.py                                        │
 │  → Dynamically loads scrapers/startech.py etc.          │
 │  → Returns product list (name, price, image, in_stock)  │
+│  → Endpoints: / (200), /health (200), /scrape (data)     │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -78,10 +79,14 @@ This runs all three services concurrently:
 | File | Purpose |
 |------|---------|
 | `scraper/main.py` | FastAPI app — routes `/scrape?site=&category=` to correct scraper module |
-| `scraper/scrapers/startech.py` | StarTech scraper — paginates up to 10 pages per category |
+| `scraper/scrapers/startech.py` | StarTech scraper — paginates up to 3 pages per category |
 | `scraper/scrapers/techland.py` | TechLand scraper |
 | `scraper/scrapers/computermania.py` | ComputerMania scraper (core parts only — peripherals 403) |
 | `scraper/scrapers/generic.py` | Generic scraper for custom user-supplied URLs |
+
+**Scraper notes:**
+- Uses an in-memory cache with a 30-minute TTL and a size cap to avoid unbounded growth.
+- `scraper/requirements.txt` includes extra Scrapling runtime deps (`curl_cffi`, `playwright`, `browserforge`) needed on fresh deploys.
 
 ---
 
@@ -226,6 +231,7 @@ Both are initialized at startup. The user can switch via the UI dropdown.
 ```
 GROQ_API_KEY=your_groq_key_here
 GEMINI_API_KEY=your_gemini_key_here
+SCRAPER_URL=https://your-scraper-service.onrender.com
 ```
 
 ---
@@ -234,5 +240,6 @@ GEMINI_API_KEY=your_gemini_key_here
 
 - **ComputerMania peripherals disabled** — their monitor/mouse/keyboard pages return 403.
 - **StarTech pagination** — scraper fetches up to 3 pages (~60–90 products) per category to catch full inventory.
+- **Scraper caching** — results can be up to ~30 minutes stale (by design) to reduce scraping load and rate-limit risk.
 - **`inferSpecs` heuristics** — socket/RAM type is inferred from product name strings; products with unusual naming may fall into `UNKNOWN` socket and be skipped by the compatibility engine.
 - **`UNKNOWN` socket blocking** — if a CPU or motherboard resolves to `UNKNOWN`, it is never matched to avoid pairing incompatible hardware.
