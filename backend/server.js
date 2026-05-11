@@ -84,15 +84,29 @@ function parseBudgetFromMessage(message) {
   if (!message) return null;
   const text = message.toLowerCase();
   const normalized = text.replace(/[,]/g, '');
-  const kMatch = normalized.match(/(\d+(?:\.\d+)?)\s*k\b/);
-  if (kMatch) {
-    const value = Math.round(parseFloat(kMatch[1]) * 1000);
+  
+  // Look for budget explicitly if possible (e.g. "budget 80k" or "80k bdt")
+  const budgetMatch = normalized.match(/budget\s*.*?(\d+(?:\.\d+)?)\s*k\b/) || normalized.match(/(\d+(?:\.\d+)?)\s*k\s*(?:bdt|tk|taka)/);
+  if (budgetMatch) {
+    const value = Math.round(parseFloat(budgetMatch[1]) * 1000);
     return Number.isFinite(value) ? value : null;
   }
-  const numberMatch = normalized.match(/\b(\d{2,7})\b/);
+
+  // Fallback to general K matching, but ignore common resolutions
+  const kMatches = [...normalized.matchAll(/(\d+(?:\.\d+)?)\s*k\b/g)];
+  for (const match of kMatches) {
+    const num = parseFloat(match[1]);
+    // Ignore 4k, 5k, 8k as they are usually resolutions. 
+    if (num !== 4 && num !== 5 && num !== 8) {
+      const value = Math.round(num * 1000);
+      if (value >= 15000) return value;
+    }
+  }
+
+  const numberMatch = normalized.match(/\b(\d{4,7})\b/);
   if (numberMatch) {
     const value = parseInt(numberMatch[1], 10);
-    return Number.isFinite(value) ? value : null;
+    if (value >= 15000) return value;
   }
   return null;
 }
