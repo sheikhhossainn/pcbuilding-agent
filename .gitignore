@@ -38,3 +38,12 @@ __pycache__/
 .Python
 env/
 .env/
+
+# Scraper State & Generated Data
+scraper/sync_state.json
+backend/parts.json
+*.json
+!package.json
+!package-lock.json
+!jsconfig.json
+!.vscode/extensions.json

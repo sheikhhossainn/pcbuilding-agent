@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { 
   Cpu, Layers, Database, HardDrive, Monitor, Zap, Fan, Box, 
-  Tv, MousePointer2, Keyboard, FileDown, 
-  Trash2, Send, Loader2, Sparkles, AlertCircle, ExternalLink, Key, X
+  Tv, MousePointer2, Keyboard, BatteryCharging, FileDown, 
+  Trash2, Send, Loader2, Sparkles, AlertCircle, AlertTriangle, ExternalLink, Key, X
 } from 'lucide-react';
 
 const CATEGORY_ICONS = {
@@ -17,7 +17,8 @@ const CATEGORY_ICONS = {
   "Casing": Box,
   "Monitor": Tv,
   "Mouse": MousePointer2,
-  "Keyboard": Keyboard
+  "Keyboard": Keyboard,
+  "UPS": BatteryCharging
 };
 
 const CORE_CATEGORIES = [
@@ -25,7 +26,7 @@ const CORE_CATEGORIES = [
 ];
 
 const PERIPHERAL_CATEGORIES = [
-  "Monitor", "Mouse", "Keyboard"
+  "Monitor", "Mouse", "Keyboard", "UPS"
 ];
 
 const INITIAL_BUILD = {
@@ -39,7 +40,8 @@ const INITIAL_BUILD = {
   "Casing": null,
   "Monitor": null,
   "Mouse": null,
-  "Keyboard": null
+  "Keyboard": null,
+  "UPS": null
 };
 
 function Builder() {
@@ -54,6 +56,7 @@ function Builder() {
   const [loadingState, setLoadingState] = useState("idle"); // idle, analyzing, selecting, checking, success, error
   const [hideUnconfigured, setHideUnconfigured] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [buildWarnings, setBuildWarnings] = useState([]);
   const [customGroqKey, setCustomGroqKey] = useState(localStorage.getItem('customGroqKey') || "");
   const [customGeminiKey, setCustomGeminiKey] = useState(localStorage.getItem('customGeminiKey') || "");
   const [showSettings, setShowSettings] = useState(false);
@@ -87,6 +90,7 @@ function Builder() {
     setTotal(0);
     setExplanation("");
     setErrorMsg("");
+    setBuildWarnings([]);
     setLoadingState("idle");
   };
 
@@ -154,6 +158,7 @@ function Builder() {
       setBuild({...INITIAL_BUILD, ...response.data.build});
       setTotal(response.data.total);
       setExplanation(response.data.explanation);
+      setBuildWarnings(response.data.warnings || []);
       setLoadingState("success");
       clearLoadingTimers();
       setChatInput(""); // clear input
@@ -186,7 +191,7 @@ function Builder() {
     return (
       <div key={category} className="component-row flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 mb-3 rounded-lg border border-slate-700 bg-slate-800/50">
         <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
-          <div className="p-2.5 sm:p-3 bg-slate-700 rounded-lg text-sky-400 flex-shrink-0">
+          <div className="p-2.5 sm:p-3 bg-slate-700 rounded-lg text-sky-400 shrink-0">
             <Icon size={24} />
           </div>
           
@@ -199,8 +204,8 @@ function Builder() {
             
             {item ? (
               <div className="flex items-start sm:items-center gap-3 mt-1 min-w-0">
-                {item.image && <img src={item.image} alt={item.name} className="w-10 h-10 sm:w-12 sm:h-12 object-cover rounded bg-white p-1 flex-shrink-0" />}
-                <div className="text-sky-300 font-medium break-words min-w-0">{item.name}</div>
+                {item.image && <img src={item.image} alt={item.name} className="w-10 h-10 sm:w-12 sm:h-12 object-cover rounded bg-white p-1 shrink-0" />}
+                <div className="text-sky-300 font-medium wrap-break-word min-w-0">{item.name}</div>
               </div>
             ) : (
               <div className="text-slate-500 text-sm mt-1">Not configured</div>
@@ -260,7 +265,7 @@ function Builder() {
       <header className="glass sticky top-0 z-50 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
           <Sparkles className="text-sky-400" size={28} />
-          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-blue-600">
+          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-linear-to-r from-sky-400 to-blue-600">
             BuildMyPC
           </h1>
         </div>
@@ -310,7 +315,7 @@ function Builder() {
 
                  <button 
                     onClick={() => setShowSettings(true)}
-                    className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-800 rounded transition-colors border border-slate-600/50 hover:border-sky-500/50 flex-shrink-0"
+                    className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-800 rounded transition-colors border border-slate-600/50 hover:border-sky-500/50 shrink-0"
                     title="API Settings"
                  >
                     <Key size={18} />
@@ -349,7 +354,7 @@ function Builder() {
               </label>
             </div>
             
-            <div className="total-card text-left bg-slate-800 p-3 rounded-lg border border-slate-700 w-full sm:w-auto sm:min-w-[200px]">
+            <div className="total-card text-left bg-slate-800 p-3 rounded-lg border border-slate-700 w-full sm:w-auto sm:min-w-50">
               <div className="text-slate-400 text-sm mb-1">Total ({Object.values(build).filter(Boolean).length} items)</div>
               <div className="text-3xl font-bold text-sky-400">{formatPrice(total)}</div>
             </div>
@@ -357,7 +362,7 @@ function Builder() {
 
           {errorMsg && (
             <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3 text-red-400">
-              <AlertCircle className="mt-0.5 flex-shrink-0" size={20} />
+              <AlertCircle className="mt-0.5 shrink-0" size={20} />
               <p>{errorMsg}</p>
             </div>
           )}
@@ -392,6 +397,20 @@ function Builder() {
             <p className="text-slate-300 leading-relaxed">
               {explanation}
             </p>
+            {buildWarnings.length > 0 && (
+              <div className="mt-4 space-y-2">
+                {buildWarnings.map((warning, i) => (
+                  <div key={i} className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
+                    warning.includes('INCOMPATIBLE') 
+                      ? 'bg-red-500/10 border border-red-500/30 text-red-400' 
+                      : 'bg-amber-500/10 border border-amber-500/30 text-amber-400'
+                  }`}>
+                    <AlertTriangle className="mt-0.5 shrink-0" size={16} />
+                    <span>{warning}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -420,7 +439,7 @@ function Builder() {
                </div>
               )}
               <textarea 
-                className="w-full bg-slate-800/90 border border-slate-600 rounded-2xl px-4 sm:px-6 py-3 sm:py-4 text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all text-base sm:text-lg resize-none overflow-y-auto min-h-[52px] sm:min-h-[56px] max-h-[120px] sm:max-h-[200px]"
+                className="w-full bg-slate-800/90 border border-slate-600 rounded-2xl px-4 sm:px-6 py-3 sm:py-4 text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all text-base sm:text-lg resize-none overflow-y-auto min-h-13 sm:min-h-14 max-h-30 sm:max-h-50"
                placeholder=""
                aria-label="Build description"
                value={chatInput}
@@ -445,7 +464,7 @@ function Builder() {
               {loadingState === 'idle' || loadingState === 'success' || loadingState === 'error' ? (
                 <button 
                   type="submit" 
-                  className="btn-primary rounded-full w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/20"
+                  className="btn-primary rounded-full w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20"
                   disabled={!chatInput.trim()}
                 >
                   <Send size={20} />
@@ -454,7 +473,7 @@ function Builder() {
                 <button 
                   type="button" 
                   onClick={handleStop}
-                  className="bg-red-500 hover:bg-red-600 text-white rounded-full w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-500/20 transition-all"
+                  className="bg-red-500 hover:bg-red-600 text-white rounded-full w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center shrink-0 shadow-lg shadow-red-500/20 transition-all"
                   title="Stop generation"
                 >
                   <div className="w-4 h-4 bg-white rounded-sm"></div>
@@ -468,7 +487,7 @@ function Builder() {
 
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-100 flex items-center justify-center p-4">
           <div className="glass-card bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-slate-800">
               <h3 className="text-xl font-bold flex items-center gap-2">

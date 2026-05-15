@@ -1,16 +1,22 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
 import { GoogleGenAI } from '@google/genai';
 import Groq from 'groq-sdk';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createClient } from '@supabase/supabase-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '.env') });
-import rateLimit from 'express-rate-limit';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // can use anon or service
+const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -30,11 +36,14 @@ app.use((req, res, next) => {
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 requests per window
+  max: 5, // Production default - 5 requests per 15 min
   message: { error: "You've reached the free limit of 5 builds per 15 minutes. Please wait, or enter your own API key in the settings to continue immediately." },
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
+    // Skip rate limiting for test endpoint
+    if (req.path === '/api/test/build') return true;
+    // Skip for requests with custom API keys
     return (req.body && req.body.customKeys && (req.body.customKeys.groq || req.body.customKeys.gemini));
   }
 });
@@ -57,6 +66,7 @@ Extract the user's requirements and return ONLY a valid JSON object, no explanat
   "needs_mouse": boolean,
   "needs_keyboard": boolean,
   "monitor_hz": number or null,
+  "storage_tb": number or null,
   "rgb_needed": boolean,
   "components_user_has": [],
   "preferred_brands": [],
@@ -76,6 +86,7 @@ Rules:
 - tier: "budget" if budget < 40000 or user says cheap/budget, "high-end" if budget >= 150000 or user says high end/premium/very high/best, otherwise "mid"
 - If user mentions NVIDIA/RTX/GeForce set preferred_gpu_brand to "nvidia"; if user mentions Radeon/RX set preferred_gpu_brand to "amd"
 - If user mentions a specific monitor refresh rate (e.g. 240Hz, 144Hz) set monitor_hz to that number
+- If user mentions storage capacity like "2TB", "1TB", "512GB", set storage_tb: "2TB" → 2, "1TB" → 1, "512GB" → 0.5
 - no_gpu: Set to true if user says "no GPU", "without GPU", "don't need GPU", "no graphics card", "integrated graphics only", or explicitly states they want office/general use with tight budget
 - Return ONLY valid JSON
 `;
@@ -137,6 +148,18 @@ function applyIntentOverrides(intent, message) {
   const hz = parseMonitorHz(message);
   if (hz) intent.monitor_hz = hz;
 
+  // Parse storage capacity from user message
+  const storageTbMatch = text.match(/(\d+)\s*tb/);
+  if (storageTbMatch) {
+    intent.storage_tb = parseInt(storageTbMatch[1], 10);
+  } else {
+    const storageGbMatch = text.match(/(\d+)\s*gb\s*(?:ssd|hdd|nvme|storage|m\.2)/);
+    if (storageGbMatch) {
+      const gb = parseInt(storageGbMatch[1], 10);
+      if (gb >= 128) intent.storage_tb = gb / 1000;
+    }
+  }
+
   if (text.includes('nvidia') || text.includes('rtx') || text.includes('geforce')) {
     intent.preferred_gpu_brand = 'nvidia';
     intent.no_gpu = false;
@@ -161,43 +184,61 @@ const CATEGORY_MAPPING = {
   'CPU Cooler': 'cpu-cooler',
   'Monitor': 'monitor',
   'Mouse': 'mouse',
-  'Keyboard': 'keyboard'
+  'Keyboard': 'keyboard',
+  'UPS': 'ups'
 };
 
 
 async function fetchPartsFromScraper(site, category, priceMin, priceMax, sortOrder) {
   try {
-    console.log(`[scraper] Fetching ${category} (min=${priceMin ?? 'none'}, max=${priceMax ?? 'none'}, sort=${sortOrder || 'none'})`);
-    const params = new URLSearchParams({
-      site: site,
-      category: CATEGORY_MAPPING[category]
-    });
-    if (priceMin !== undefined && priceMin !== null) params.set('price_min', Math.round(priceMin));
-    if (priceMax !== undefined && priceMax !== null) params.set('price_max', Math.round(priceMax));
-    if (sortOrder) params.set('sort', sortOrder);
-
-    const SCRAPER_BASE_URL = process.env.SCRAPER_URL || 'http://localhost:8000';
-    const response = await fetch(`${SCRAPER_BASE_URL}/scrape?${params.toString()}`);
-
-    if (!response.ok) {
-      let bodyText = '';
-      try {
-        bodyText = await response.text();
-      } catch {
-        bodyText = '';
-      }
-      console.error(`[scraper] ${response.status} ${response.statusText} from ${SCRAPER_BASE_URL}/scrape?${params.toString()} :: ${bodyText}`);
-      return [];
+    if (!supabase) {
+        console.error("Supabase not configured!");
+        return [];
     }
-    const data = await response.json();
-    // Decorate with basic inferred specs so our compatibility rules don't crash
-    return data.products.map(p => ({
-      ...p,
-      category: category,
-      specs: inferSpecs(category, p.name)
-    }));
+    const dbCategory = CATEGORY_MAPPING[category];
+    let query = supabase
+      .from('components')
+      .select('*')
+      .eq('site', site)
+      .eq('category', dbCategory)
+      .eq('in_stock', true);
+
+    if (priceMin !== undefined && priceMin !== null) query = query.gte('price', Math.round(priceMin));
+    if (priceMax !== undefined && priceMax !== null) query = query.lte('price', Math.round(priceMax));
+    
+    if (sortOrder === 'price_asc') {
+        query = query.order('price', { ascending: true });
+    } else {
+        query = query.order('price', { ascending: false });
+    }
+
+    const { data, error } = await query;
+    if (error) {
+        console.error(`[supabase] error for ${dbCategory}:`, error);
+        return [];
+    }
+    
+    return data.map(p => {
+        const enrichedSpecs = { ...p.specs };
+        const inferred = inferSpecs(category, p.name);
+        // Merge inferred specs (socket, brand, etc.) with existing specs from DB
+        Object.keys(inferred).forEach(key => {
+            if (!enrichedSpecs[key]) {
+                enrichedSpecs[key] = inferred[key];
+            }
+        });
+        return {
+            name: p.name,
+            price: p.price,
+            image: p.image,
+            url: p.url,
+            in_stock: p.in_stock,
+            category: category,
+            specs: enrichedSpecs
+        };
+    });
   } catch (e) {
-    console.error(`Failed to fetch ${category} from ${site}`, e);
+    console.error(`Failed to fetch ${category} from Supabase`, e);
     return [];
   }
 }
@@ -213,10 +254,10 @@ function inferSpecs(category, name) {
     }
 
     if (category === 'Processor' || category === 'Motherboard') {
-        if (n.includes('am5') || n.includes('b650') || n.includes('x670') || n.includes('a620') || n.includes('x870') || n.match(/ryzen [579] (7|8|9)\d{3}/)) {
+        if (n.includes('am5') || n.includes('b650') || n.includes('x670') || n.includes('a620') || n.includes('x870') || n.match(/ryzen [579] 7\d{3}/) || n.match(/ryzen [579] 8\d{3}/) || n.match(/ryzen [579] 9[0-9]{3}/)) {
             specs.socket = 'AM5';
             specs.ram_type = 'DDR5';
-        } else if (n.includes('am4') || n.includes('b450') || n.includes('b550') || n.includes('x570') || n.includes('a320') || n.includes('a520') || n.match(/ryzen [3579] (3|4|5)\d{3}/) || n.includes('4600g') || n.includes('5600g') || n.includes('5700g')) {
+        } else if (n.includes('am4') || n.includes('b450') || n.includes('b550') || n.includes('x570') || n.includes('a320') || n.includes('a520') || n.match(/ryzen [3579] [3456]\d{3}/) || n.includes('4600g') || n.includes('5600g') || n.includes('5700g')) {
             specs.socket = 'AM4';
             specs.ram_type = 'DDR4';
         } else if (n.includes('lga1700') || n.includes('lga 1700') || n.includes('h610') || n.includes('b660') || n.includes('b760') || n.includes('z690') || n.includes('z790') || n.match(/1[234][14679]00/)) {
@@ -265,13 +306,63 @@ function inferSpecs(category, name) {
     }
 
     if (category === 'PSU') {
-        const match = n.match(/(\d+)\s*(w\b|watt)/i);
-        if (match) specs.wattage = parseInt(match[1]);
-        else specs.wattage = 500;
+        // Try explicit wattage markers first (e.g. "750W", "500 Watt")
+        let wattMatch = n.match(/(\d+)\s*(?:w\b|watt)/i);
+        if (!wattMatch) {
+          // Fallback: find 3-4 digit numbers in valid PSU wattage range
+          // Catches "450M", "P750", "CX650M", "RM850x" naming patterns
+          const candidates = [...n.matchAll(/(\d{3,4})/g)];
+          for (const c of candidates) {
+            const w = parseInt(c[1]);
+            if (w >= 300 && w <= 1600) { wattMatch = c; break; }
+          }
+        }
+        if (wattMatch) {
+          const w = parseInt(wattMatch[1]);
+          specs.wattage = (w >= 300 && w <= 1600) ? w : 500;
+        } else {
+          specs.wattage = 500;
+        }
     }
 
     return specs;
 }
+
+  // Reject ancient/office-grade GPUs for demanding workloads
+  function isGpuAdequateForUseCase(gpu, useCase) {
+    if (!gpu) return true;
+    const n = gpu.name.toLowerCase();
+
+    // Reject GPUs with DDR3 VRAM — too old for any real workload
+    if (n.includes('ddr3')) return false;
+
+    // Reject GT series (not GTX/RTX) for editing and gaming — these are display adapters, not GPUs
+    if (useCase === 'editing' || useCase === 'gaming') {
+      // GT 610, GT 710, GT 730, GT 1030 etc. are office-only
+      if (/\bgt\s*\d/i.test(n) && !/gtx/i.test(n) && !/gts/i.test(n)) return false;
+      // Reject Radeon HD 5000/6000 series (ancient)
+      if (/\bhd\s*[56]\d{3}/i.test(n)) return false;
+      // Require at least 4GB VRAM for editing
+      if (useCase === 'editing') {
+        const vramMatch = n.match(/(\d+)\s*gb/);
+        if (vramMatch && parseInt(vramMatch[1]) < 4) return false;
+      }
+    }
+    return true;
+  }
+
+  // Extract storage capacity in GB from product name
+  function parseStorageCapacityGB(name) {
+    const n = name.toLowerCase();
+    const tbMatch = n.match(/(\d+(?:\.\d+)?)\s*tb/);
+    if (tbMatch) return parseFloat(tbMatch[1]) * 1000;
+    const gbMatch = n.match(/(\d+)\s*gb/);
+    if (gbMatch) {
+      const gb = parseInt(gbMatch[1]);
+      if (gb >= 120) return gb;
+    }
+    return 0;
+  }
 
   function buildRange(budget, minPct, maxPct, priority) {
     return {
@@ -415,19 +506,6 @@ function inferSpecs(category, name) {
   async function selectPart(cache, site, category, range, sortOrder, filterFn) {
     let parts = await getPartsCached(cache, site, category, range, sortOrder);
     let candidates = filterFn ? parts.filter(filterFn) : parts;
-    if (candidates.length > 0) return candidates[0];
-
-    // Fallback: If pagination truncated the results, try fetching from the opposite end of the sort order
-    const oppositeSortOrder = sortOrder === 'price_asc' ? 'price_desc' : 'price_asc';
-    parts = await getPartsCached(cache, site, category, range, oppositeSortOrder);
-    candidates = filterFn ? parts.filter(filterFn) : parts;
-    
-    // Respect the originally requested sort order when returning the best match
-    if (sortOrder === 'price_asc') {
-      candidates.sort((a, b) => a.price - b.price);
-    } else {
-      candidates.sort((a, b) => b.price - a.price);
-    }
     return candidates[0] || null;
   }
 
@@ -455,12 +533,18 @@ function inferSpecs(category, name) {
   function isCpuBalanced(cpu, gpu) {
     if (!gpu) return true;
     const n = cpu.name.toLowerCase();
-    if (gpu.price >= 140000) {
+    
+    // For ultra-high-end GPUs (extremely expensive), require higher-end CPU
+    // But be permissive - allow Ryzen 5/i5 for most scenarios
+    if (gpu.price >= 500000) {
       return n.includes('i9') || n.includes('i7') || n.includes('ryzen 9') || n.includes('ryzen 7');
     }
+    
+    // For high-end GPUs, just avoid low-end CPUs
     if (gpu.price >= 90000) {
       return !(n.includes('i3') || n.includes('ryzen 3') || n.includes('athlon'));
     }
+    
     return true;
   }
 
@@ -498,10 +582,13 @@ function inferSpecs(category, name) {
     }
 
     // GPU-driven floors based on our inferred draw.
+    // More realistic floors - RTX 5080 should work with 750W
     const gpuTdp = gpu?.specs?.tdp || 0;
-    if (gpuTdp >= 400) floor = Math.max(floor, 1000);
-    else if (gpuTdp >= 320) floor = Math.max(floor, 850);
-    else if (gpuTdp >= 250) floor = Math.max(floor, 750);
+    if (gpuTdp >= 450) floor = Math.max(floor, 1000);
+    else if (gpuTdp >= 400) floor = Math.max(floor, 850);
+    else if (gpuTdp >= 350) floor = Math.max(floor, 800);
+    else if (gpuTdp >= 320) floor = Math.max(floor, 750);
+    else if (gpuTdp >= 250) floor = Math.max(floor, 700);
     else if (gpuTdp >= 200) floor = Math.max(floor, 650);
 
     // High CPU draw should not push us to tiny PSUs.
@@ -596,12 +683,6 @@ function inferSpecs(category, name) {
   async function getCheapestPart(cache, site, category, budget, filterFn) {
     let parts = await getPartsCached(cache, site, category, { min: 0, max: budget }, 'price_asc');
     let candidates = filterFn ? parts.filter(filterFn) : parts;
-    if (candidates.length > 0) return candidates[0];
-
-    // Fallback: If pagination truncated high-end items (like AM5 boards) from the price_asc list, try price_desc
-    parts = await getPartsCached(cache, site, category, { min: 0, max: budget }, 'price_desc');
-    candidates = filterFn ? parts.filter(filterFn) : parts;
-    candidates.sort((a, b) => a.price - b.price);
     return candidates[0] || null;
   }
 
@@ -726,7 +807,20 @@ function inferSpecs(category, name) {
     }
     minimums.ram = ram.price;
 
-    const storage = await getCheapestPart(cache, site, 'Storage', budget);
+    // If user requested specific capacity, find cheapest matching storage
+    const storageCapFilter = intent.storage_tb
+      ? (p => {
+          const capGB = parseStorageCapacityGB(p.name);
+          const requiredGB = intent.storage_tb * 1000;
+          return capGB >= requiredGB * 0.9; // Allow 10% tolerance (e.g. 960GB for 1TB)
+        })
+      : undefined;
+    let storage = await getCheapestPart(cache, site, 'Storage', budget, storageCapFilter);
+    if (!storage && storageCapFilter) {
+      // Fall back to any storage if requested capacity not available
+      console.warn(`⚠ No ${intent.storage_tb}TB storage found, falling back to any storage`);
+      storage = await getCheapestPart(cache, site, 'Storage', budget);
+    }
     if (!storage) {
       minimums.error = "No storage found in the available inventory.";
       return minimums;
@@ -934,7 +1028,10 @@ app.post('/api/build', apiLimiter, async (req, res) => {
         return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
       }
       const gpuRange = { min: 0, max: gpuAllowedMax };
-      const gpuFilter = p => !intent.preferred_gpu_brand || p.specs.gpu_brand === intent.preferred_gpu_brand.toLowerCase();
+      const gpuFilter = p => {
+        if (intent.preferred_gpu_brand && p.specs.gpu_brand !== intent.preferred_gpu_brand.toLowerCase()) return false;
+        return isGpuAdequateForUseCase(p, intent.use_case);
+      };
       selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', gpuFilter, gpuAllowedMax);
       if (!selectedBuild["Graphics Card"] && intent.preferred_gpu_brand) {
         selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', undefined, gpuAllowedMax);
@@ -969,14 +1066,8 @@ app.post('/api/build', apiLimiter, async (req, res) => {
     const cpuCandidates = (await getPartsCached(partsCache, site, 'Processor', cpuRange, 'price_desc'))
       .filter(cpuCondition);
       
-    // Fetch both ascending and descending to ensure we don't miss mid/high-end parts that got truncated
-    const mobosAsc = await getPartsCached(partsCache, site, 'Motherboard', { min: 0, max: coreBudget }, 'price_asc');
-    const mobosDesc = await getPartsCached(partsCache, site, 'Motherboard', { min: 0, max: coreBudget }, 'price_desc');
-    const mobosUpToCoreBudget = [...mobosAsc, ...mobosDesc].sort((a, b) => a.price - b.price);
-
-    const ramsAsc = await getPartsCached(partsCache, site, 'RAM', { min: 0, max: coreBudget }, 'price_asc');
-    const ramsDesc = await getPartsCached(partsCache, site, 'RAM', { min: 0, max: coreBudget }, 'price_desc');
-    const ramsUpToCoreBudget = [...ramsAsc, ...ramsDesc].sort((a, b) => a.price - b.price);
+    const mobosUpToCoreBudget = await getPartsCached(partsCache, site, 'Motherboard', { min: 0, max: coreBudget }, 'price_asc');
+    const ramsUpToCoreBudget = await getPartsCached(partsCache, site, 'RAM', { min: 0, max: coreBudget }, 'price_asc');
 
     selectedBuild.Processor = null;
     let preselectedMotherboard = null;
@@ -1107,7 +1198,9 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       return true;
     };
 
-    selectedBuild.RAM = await selectWithFallback(partsCache, site, 'RAM', ramRange, 'price_desc', ramCondition, ramAllowedMax);
+    // Use price_asc for RAM — pick cheapest matching kit first, Phase 4 upgrades if budget allows
+    // Prevents picking 31K RGB RAM when 6K basic kit is identical functionally
+    selectedBuild.RAM = await selectWithFallback(partsCache, site, 'RAM', ramRange, 'price_asc', ramCondition, ramAllowedMax);
     if (!selectedBuild.RAM && intent.ram_gb) {
       console.error(`FAILED: Could not find ${intent.ram_gb}GB ${selectedBuild.Motherboard.specs.ram_type} RAM`);
       return res.json({ error: `Could not find ${intent.ram_gb}GB ${selectedBuild.Motherboard.specs.ram_type} RAM in stock. Try adjusting RAM capacity or try a different site.` });
@@ -1127,7 +1220,10 @@ app.post('/api/build', apiLimiter, async (req, res) => {
         return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
       }
       const gpuRange = { min: 0, max: gpuAllowedMax };
-      const gpuFilter = p => !intent.preferred_gpu_brand || p.specs.gpu_brand === intent.preferred_gpu_brand.toLowerCase();
+      const gpuFilter = p => {
+        if (intent.preferred_gpu_brand && p.specs.gpu_brand !== intent.preferred_gpu_brand.toLowerCase()) return false;
+        return isGpuAdequateForUseCase(p, intent.use_case);
+      };
       selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', gpuFilter, gpuAllowedMax);
       if (!selectedBuild["Graphics Card"] && intent.preferred_gpu_brand) {
         selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', undefined, gpuAllowedMax);
@@ -1161,14 +1257,27 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       return res.json({ error: `Could not find a PSU with at least ${Math.round(targetPsuWattage)}W. Try increasing budget or switching sites.` });
     }
 
-    // Step 5: Storage (essential)
+    // Step 5: Storage (essential — respect user's capacity requirement)
     const storageRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'Storage');
     const storageAllowedMax = coreBudget - totalCost - storageRemainingMin;
     if (storageAllowedMax <= 0) {
       return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
     }
     const storageRange = { min: 0, max: storageAllowedMax };
-    selectedBuild.Storage = await selectWithFallback(partsCache, site, 'Storage', storageRange, 'price_desc', undefined, storageAllowedMax);
+    const storageCapacityFilter = intent.storage_tb
+      ? (p => {
+          const capGB = parseStorageCapacityGB(p.name);
+          const requiredGB = intent.storage_tb * 1000;
+          return capGB >= requiredGB * 0.9;
+        })
+      : undefined;
+    // Use price_asc when capacity is specified (pick cheapest matching capacity)
+    const storageSortOrder = intent.storage_tb ? 'price_asc' : 'price_desc';
+    selectedBuild.Storage = await selectWithFallback(partsCache, site, 'Storage', storageRange, storageSortOrder, storageCapacityFilter, storageAllowedMax);
+    if (!selectedBuild.Storage && storageCapacityFilter) {
+      console.warn(`⚠ No ${intent.storage_tb}TB storage within budget, trying any storage`);
+      selectedBuild.Storage = await selectWithFallback(partsCache, site, 'Storage', storageRange, 'price_desc', undefined, storageAllowedMax);
+    }
     if (selectedBuild.Storage) {
       console.log(`✓ Storage: ${selectedBuild.Storage.name} - ${selectedBuild.Storage.price} BDT`);
       totalCost += selectedBuild.Storage.price;
@@ -1326,6 +1435,7 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       if (best.category === 'Graphics Card') {
         filterFn = p => {
           if (intent.preferred_gpu_brand && p.specs.gpu_brand !== intent.preferred_gpu_brand.toLowerCase()) return false;
+          if (!isGpuAdequateForUseCase(p, intent.use_case)) return false;
           // Prevent breaking PSU compatibility when upgrading GPU.
           const psuOk = selectedBuild.PSU?.specs?.wattage
             ? selectedBuild.PSU.specs.wattage >= computeTargetPsuWattage(intent, selectedBuild.Processor, p)
@@ -1376,6 +1486,11 @@ app.post('/api/build', apiLimiter, async (req, res) => {
         };
       } else if (best.category === 'PSU') {
         filterFn = p => p.specs.wattage >= computeTargetPsuWattage(intent, selectedBuild.Processor, selectedBuild["Graphics Card"]);
+      } else if (best.category === 'Storage' && intent.storage_tb) {
+        filterFn = p => {
+          const capGB = parseStorageCapacityGB(p.name);
+          return capGB >= intent.storage_tb * 1000 * 0.9;
+        };
       }
 
       const upgraded = await selectPart(partsCache, site, best.category, upgradeRange, 'price_desc', filterFn);
@@ -1385,6 +1500,67 @@ app.post('/api/build', apiLimiter, async (req, res) => {
         totalCost += upgraded.price;
         console.log(`  Upgraded ${best.category}: ${upgraded.name} (+${upgraded.price - currentPart.price} BDT)`);
       }
+    }
+
+    // ─── POST-BUILD VALIDATION ────────────────────────────────────────
+    // Generate compatibility warnings to include in the response
+    const buildWarnings = [];
+
+    // Check storage capacity vs user request
+    if (intent.storage_tb && selectedBuild.Storage) {
+      const actualCapGB = parseStorageCapacityGB(selectedBuild.Storage.name);
+      const requestedGB = intent.storage_tb * 1000;
+      if (actualCapGB < requestedGB * 0.9) {
+        buildWarnings.push(`You requested ${intent.storage_tb}TB storage but the selected drive is ${actualCapGB >= 1000 ? (actualCapGB/1000).toFixed(1) + 'TB' : actualCapGB + 'GB'}. No ${intent.storage_tb}TB drive was available within budget.`);
+      }
+    }
+
+    // Check GPU adequacy for use case
+    if (selectedBuild["Graphics Card"]) {
+      if (!isGpuAdequateForUseCase(selectedBuild["Graphics Card"], intent.use_case)) {
+        buildWarnings.push(`The selected GPU may not be powerful enough for ${intent.use_case}. Consider increasing your budget for a better GPU.`);
+      }
+    }
+
+    // Check PSU adequacy
+    if (selectedBuild.PSU && selectedBuild.Processor) {
+      const requiredW = computeTargetPsuWattage(intent, selectedBuild.Processor, selectedBuild["Graphics Card"]);
+      const actualW = selectedBuild.PSU.specs?.wattage || 0;
+      if (actualW < requiredW * 0.85) {
+        buildWarnings.push(`PSU (${actualW}W) may be insufficient. Recommended: ${Math.round(requiredW)}W for this CPU+GPU combination.`);
+      }
+    }
+
+    // Check RAM matches request
+    if (intent.ram_gb && selectedBuild.RAM) {
+      const ramName = selectedBuild.RAM.name.toLowerCase();
+      const half = intent.ram_gb / 2;
+      const hasRequestedGB = ramName.includes(`${intent.ram_gb}gb`) || ramName.includes(`${intent.ram_gb} gb`)
+        || ramName.includes(`2x${half}gb`) || ramName.includes(`2x${half} gb`);
+      if (!hasRequestedGB) {
+        buildWarnings.push(`You requested ${intent.ram_gb}GB RAM but the selected kit may differ. Check the product listing.`);
+      }
+    }
+
+    // Check CPU-Motherboard socket match (safety net)
+    if (selectedBuild.Processor && selectedBuild.Motherboard) {
+      if (selectedBuild.Processor.specs.socket !== selectedBuild.Motherboard.specs.socket) {
+        buildWarnings.push(`⚠ INCOMPATIBLE: CPU socket (${selectedBuild.Processor.specs.socket}) does not match motherboard (${selectedBuild.Motherboard.specs.socket}).`);
+      }
+    }
+
+    // Check RAM type compatibility
+    if (selectedBuild.RAM && selectedBuild.Motherboard) {
+      const moboRamType = selectedBuild.Motherboard.specs.ram_type;
+      const selectedRamType = selectedBuild.RAM.specs.ram_type;
+      if (moboRamType && moboRamType !== 'UNKNOWN' && selectedRamType && selectedRamType !== moboRamType) {
+        buildWarnings.push(`⚠ INCOMPATIBLE: RAM type (${selectedRamType}) does not match motherboard (${moboRamType}).`);
+      }
+    }
+
+    if (buildWarnings.length > 0) {
+      console.log('\nBuild Warnings:');
+      buildWarnings.forEach(w => console.warn(`  ⚠ ${w}`));
     }
 
     // Validate if core build is basically functional
@@ -1417,7 +1593,9 @@ Write a short explanation (3-5 sentences) that justifies the build AND explicitl
 - RAM type matches motherboard (DDR4/DDR5)
 - PSU wattage is sufficient for estimated CPU/GPU draw
 - GPU requirement met (or no GPU requested)
+- Whether storage capacity matches what user requested
 Avoid generic fluff and do not mention parts that are not selected.
+${buildWarnings.length > 0 ? '\nIMPORTANT WARNINGS to mention:\n' + buildWarnings.join('\n') : ''}
 `;
 
     const fetchExplanation = async (provider) => {
@@ -1457,7 +1635,8 @@ Avoid generic fluff and do not mention parts that are not selected.
       build: selectedBuild,
       total: totalCost,
       explanation: explanation,
-      intent: intent
+      intent: intent,
+      warnings: buildWarnings
     });
 
   } catch (error) {

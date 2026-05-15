@@ -13,7 +13,8 @@ URL_MAP = {
     "cpu-cooler": "https://www.techlandbd.com/pc-components/cpu-cooler",
     "monitor": "https://www.techlandbd.com/monitor-and-display",
     "mouse": "https://www.techlandbd.com/accessories/shop-computer-mouse",
-    "keyboard": "https://www.techlandbd.com/accessories/computer-keyboard"
+    "keyboard": "https://www.techlandbd.com/accessories/computer-keyboard",
+    "ups": "https://www.techlandbd.com/ups"
 }
 
 def clean_price(price_str):
@@ -172,7 +173,7 @@ def scrape(category: str, price_min=None, price_max=None, sort_order=None):
     if price_max is not None:
         filter_params["filter_max_price"] = int(price_max)
 
-    for page_num in range(1, MAX_PAGES + 1):
+    for page_num in range(1, 50 + 1): # Increase limit drastically to fetch all
         page_params = {"page": page_num} if page_num > 1 else {}
         url = build_url(base_url, {**sort_params, **filter_params, **page_params})
         page = fetcher.get(url)
