@@ -6,8 +6,8 @@
   "scripts": {
     "start:frontend": "npm --prefix frontend run dev",
     "start:backend": "npx nodemon --watch backend backend/server.js",
-    "start:scraper": "powershell -Command \"cd scraper; .\\venv\\Scripts\\uvicorn main:app --reload --port 8000\"",
-    "start:all": "concurrently -c \"cyan,magenta,yellow\" -n \"frontend,backend,scraper\" \"npm run start:frontend\" \"npm run start:backend\" \"npm run start:scraper\""
+    "start:scraper": "powershell -Command \"cd scraper; .\\venv\\Scripts\\python sync_db.py\"",
+    "start:all": "concurrently -c \"cyan,magenta\" -n \"frontend,backend\" \"npm run start:frontend\" \"npm run start:backend\""
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

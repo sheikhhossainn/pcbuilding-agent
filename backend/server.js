@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
@@ -54,41 +55,36 @@ Extract the user's requirements and return ONLY a valid JSON object, no explanat
 
 {
   "budget_bdt": number or null,
-  "use_case": "gaming" | "editing" | "office" | "general",
-  "tier": "budget" | "mid" | "high-end",
+  "component_strategy": {
+    "Monitor": { "weight": number, "required_keywords": ["keyword1"], "exclude_keywords": [], "structured_reqs": { "min_hz": 60 }, "required": boolean },
+    "Processor": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
+    "Motherboard": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
+    "RAM": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": { "min_gb": 16 }, "required": boolean },
+    "Graphics Card": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
+    "Storage": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": { "min_tb": 1 }, "required": boolean },
+    "PSU": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": { "min_wattage": 500 }, "required": boolean },
+    "Casing": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
+    "CPU Cooler": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
+    "Mouse": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
+    "Keyboard": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean }
+  },
   "preferred_site": "startech" | "techland" | "computermania" | null,
   "preferred_cpu_brand": "amd" | "intel" | null,
   "preferred_gpu_brand": "nvidia" | "amd" | null,
-  "no_gpu": boolean,
-  "ram_gb": number or null,
-  "ram_type": "DDR4" | "DDR5" | null,
-  "needs_monitor": boolean,
-  "needs_mouse": boolean,
-  "needs_keyboard": boolean,
-  "monitor_hz": number or null,
-  "storage_tb": number or null,
-  "rgb_needed": boolean,
-  "components_user_has": [],
-  "preferred_brands": [],
-  "other_notes": ""
+  "use_case": "gaming" | "editing" | "office" | "general",
+  "explanation_of_strategy": "string explaining the allocation and keywords"
 }
 
 Rules:
-- Normalize budget written as "50k", "৫০ হাজার", "50,000" all to a number
-- If use case is unclear default to "general"
-- "simulation" tasks like Proteus, Multisim, MATLAB = use_case "office"
-- "UI/UX", "design", "web development", "frontend", "graphic design" = use_case "general" (light workload)
-- Prioritize CPU and RAM over GPU for office/simulation builds
-- If no site is preferred, default preferred_site to "startech"
-- Default needs_monitor, needs_mouse, needs_keyboard to true unless user explicitly says they already have them
-- If user says DDR4, set ram_type to "DDR4"; DDR4 = AM4 socket (Ryzen 5000 series and older)
-- If user says DDR5, set ram_type to "DDR5"; DDR5 = AM5 socket (Ryzen 7000 series and newer)
-- tier: "budget" if budget < 40000 or user says cheap/budget, "high-end" if budget >= 150000 or user says high end/premium/very high/best, otherwise "mid"
-- If user mentions NVIDIA/RTX/GeForce set preferred_gpu_brand to "nvidia"; if user mentions Radeon/RX set preferred_gpu_brand to "amd"
-- If user mentions a specific monitor refresh rate (e.g. 240Hz, 144Hz) set monitor_hz to that number
-- If user mentions storage capacity like "2TB", "1TB", "512GB", set storage_tb: "2TB" → 2, "1TB" → 1, "512GB" → 0.5
-- no_gpu: Set to true if user says "no GPU", "without GPU", "don't need GPU", "no graphics card", "integrated graphics only", or explicitly states they want office/general use with tight budget
-- Return ONLY valid JSON
+- component_strategy MUST include all 11 categories: Processor, Motherboard, RAM, Storage, Graphics Card, PSU, Casing, CPU Cooler, Monitor, Mouse, Keyboard.
+- Weights dictate how the leftover budget is distributed. Give higher weights to more important components (e.g. GPU for gaming, Monitor for editing). Total weight can be any number.
+- Keyword Constraints: Limit \`required_keywords\` to 1-2 standard retail terms. NEVER use subjective adjectives (e.g., "fast", "silent", "cheap"). For example, use "IPS" or "144Hz" for Monitor, "Ryzen 5" for Processor.
+- Structured First: If a requirement is numerical (e.g., 16GB RAM, 750W PSU), place it in \`structured_reqs\` (e.g., \`min_gb: 16\`, \`min_tb: 1\`, \`min_hz: 144\`, \`min_wattage: 750\`), NOT in \`required_keywords\`.
+- Exclusions: If the user explicitly doesn't want something (e.g., "no RGB"), use \`exclude_keywords\`.
+- no_gpu: If user says "no GPU" or "without GPU", set \`required: false\` and \`weight: 0\` for "Graphics Card".
+- If user says DDR4/DDR5, put it in Motherboard and RAM \`required_keywords\` or \`exclude_keywords\` to enforce generation.
+- Default needs_monitor, needs_mouse, needs_keyboard to true (required: true) unless user explicitly says they already have them (then set \`required: false\`).
+- Return ONLY valid JSON.
 `;
 
 function parseBudgetFromMessage(message) {
@@ -136,40 +132,61 @@ function applyIntentOverrides(intent, message) {
   if (parsedBudget) {
     const currentBudget = Number.isFinite(intent.budget_bdt) ? intent.budget_bdt : 0;
     const delta = Math.abs(parsedBudget - currentBudget);
-    if (!currentBudget || delta >= Math.max(5000, currentBudget * 0.15)) {
+    if (!currentBudget || delta >= Math.max(2000, currentBudget * 0.05)) {
       intent.budget_bdt = parsedBudget;
     }
   }
+  
+  if (!intent.component_strategy) return;
+  const strat = intent.component_strategy;
+  
+  const addKeyword = (cat, kw) => {
+      if (strat[cat]) {
+          strat[cat].required_keywords = strat[cat].required_keywords || [];
+          if (!strat[cat].required_keywords.some(k => k.toLowerCase() === kw.toLowerCase())) {
+              strat[cat].required_keywords.push(kw);
+          }
+      }
+  };
 
-  if (text.includes('ddr5')) intent.ram_type = 'DDR5';
-  if (text.includes('ddr4')) intent.ram_type = 'DDR4';
-  if (text.includes('16gb')) intent.ram_gb = 16;
+  const addStructured = (cat, key, val) => {
+      if (strat[cat]) {
+          strat[cat].structured_reqs = strat[cat].structured_reqs || {};
+          strat[cat].structured_reqs[key] = val;
+      }
+  };
+
+  if (text.includes('ddr5')) { addKeyword('Motherboard', 'DDR5'); addKeyword('RAM', 'DDR5'); }
+  if (text.includes('ddr4')) { addKeyword('Motherboard', 'DDR4'); addKeyword('RAM', 'DDR4'); }
+  if (text.includes('16gb')) addStructured('RAM', 'min_gb', 16);
 
   const hz = parseMonitorHz(message);
-  if (hz) intent.monitor_hz = hz;
+  if (hz) addStructured('Monitor', 'min_hz', hz);
 
-  // Parse storage capacity from user message
   const storageTbMatch = text.match(/(\d+)\s*tb/);
   if (storageTbMatch) {
-    intent.storage_tb = parseInt(storageTbMatch[1], 10);
+    addStructured('Storage', 'min_tb', parseInt(storageTbMatch[1], 10));
   } else {
     const storageGbMatch = text.match(/(\d+)\s*gb\s*(?:ssd|hdd|nvme|storage|m\.2)/);
     if (storageGbMatch) {
       const gb = parseInt(storageGbMatch[1], 10);
-      if (gb >= 128) intent.storage_tb = gb / 1000;
+      if (gb >= 128) addStructured('Storage', 'min_tb', gb / 1000);
     }
   }
 
   if (text.includes('nvidia') || text.includes('rtx') || text.includes('geforce')) {
     intent.preferred_gpu_brand = 'nvidia';
-    intent.no_gpu = false;
+    if (strat['Graphics Card']) strat['Graphics Card'].required = true;
   }
   if (text.includes('radeon') || text.includes('rx ')) {
     intent.preferred_gpu_brand = 'amd';
-    intent.no_gpu = false;
+    if (strat['Graphics Card']) strat['Graphics Card'].required = true;
   }
   if (text.includes('no gpu') || text.includes('without gpu') || text.includes('no graphics')) {
-    intent.no_gpu = true;
+    if (strat['Graphics Card']) {
+        strat['Graphics Card'].required = false;
+        strat['Graphics Card'].weight = 0;
+    }
   }
 }
 
@@ -351,6 +368,33 @@ function inferSpecs(category, name) {
     return true;
   }
 
+  // Helper to determine if a CPU has an integrated GPU
+  function cpuHasIntegratedGraphics(p) {
+    if (!p) return false;
+    const n = p.name.toLowerCase();
+    if (n.includes('amd') || n.includes('ryzen') || n.includes('athlon') || n.includes('radeon')) {
+      return n.includes('g ') || n.includes('ge ') || n.includes('g-') || n.endsWith('g') || n.endsWith('ge') || n.includes('8700g') || n.includes('8600g') || n.includes('8500g') || n.includes('8300g');
+    }
+    if (n.includes('intel') || n.includes('core') || n.includes('pentium')) {
+      return !n.includes('f ') && !n.includes('f-') && !n.endsWith('f') && !n.includes('kf');
+    }
+    return true; // Fail-open
+  }
+
+  // Helper to prevent CPU/GPU bottlenecks
+  function isCpuBalanced(cpu, gpu) {
+    if (!gpu || !cpu) return true;
+    const n = cpu.name.toLowerCase();
+    if (gpu.price >= 220000) {
+      // Only i9/Ryzen 9 allowed above this price
+      if (!n.includes('i9') && !n.includes('ryzen 9')) return false;
+    } else if (gpu.price >= 140000) {
+      // i7/Ryzen 7 minimum above this price
+      if (!n.includes('i9') && !n.includes('i7') && !n.includes('ryzen 9') && !n.includes('ryzen 7')) return false;
+    }
+    return true;
+  }
+
   // Extract storage capacity in GB from product name
   function parseStorageCapacityGB(name) {
     const n = name.toLowerCase();
@@ -364,116 +408,84 @@ function inferSpecs(category, name) {
     return 0;
   }
 
-  function buildRange(budget, minPct, maxPct, priority) {
-    return {
-      min: Math.round(budget * minPct),
-      max: Math.round(budget * maxPct),
-      priority: priority
+  function getQualityFloorFilter(strategy) {
+    return (p) => {
+      if (!strategy) return true;
+      // Structured Reqs
+      if (strategy.structured_reqs) {
+        if (strategy.structured_reqs.min_wattage && (p.specs.wattage || 0) < strategy.structured_reqs.min_wattage) return false;
+        if (strategy.structured_reqs.min_gb) {
+            const name = p.name.toLowerCase();
+            const gb = strategy.structured_reqs.min_gb;
+            const half = gb / 2;
+            const gbMatch = name.includes(`${gb}gb`) || name.includes(`${gb} gb`) || name.includes(`2x${half}gb`) || name.includes(`2x${half} gb`) || name.includes(`${gb}g `);
+            if (!gbMatch) return false;
+        }
+        if (strategy.structured_reqs.min_tb) {
+            const capGB = parseStorageCapacityGB(p.name);
+            if (capGB < strategy.structured_reqs.min_tb * 1000 * 0.9) return false;
+        }
+        if (strategy.structured_reqs.min_hz) {
+            const parsedHz = parseMonitorHz(p.name);
+            const actualHz = parsedHz !== null ? parsedHz : 60; // Assume 60Hz if not explicitly stated in name
+            if (actualHz < strategy.structured_reqs.min_hz) return false;
+        }
+      }
+      // Exclude
+      const pName = p.name.toLowerCase();
+      if (strategy.exclude_keywords && strategy.exclude_keywords.length > 0) {
+        for (const kw of strategy.exclude_keywords) {
+          if (pName.includes(kw.toLowerCase())) return false;
+        }
+      }
+      // Require
+      if (strategy.required_keywords && strategy.required_keywords.length > 0) {
+        for (const kw of strategy.required_keywords) {
+          if (!pName.includes(kw.toLowerCase())) return false;
+        }
+      }
+      return true;
     };
   }
 
-  function adjustRatio([minPct, maxPct], tier) {
-    let scale = 1.0;
-    if (tier === 'high-end') scale = 1.15;
-    if (tier === 'budget') scale = 0.9;
-    const min = Math.max(0, minPct * scale);
-    const max = Math.min(0.6, maxPct * scale);
-    return [min, Math.max(min, max)];
-  }
+  function getPsuWattageFloor(intent, cpu, gpu) {
+    const useCase = intent?.use_case || 'general';
+    const tier = intent?.tier || 'mid';
 
-  function calculateBudgetRanges(budget, intent) {
-    const useCase = intent.use_case || 'general';
-    const tier = intent.tier || 'mid';
-    const noGpu = intent.no_gpu || false;
-
-    let ratios = {};
-
-    if (useCase === 'gaming' && !noGpu) {
-      ratios = {
-        'Graphics Card': [0.30, 0.38],
-        'Processor': [0.15, 0.25],
-        'Motherboard': [0.05, 0.10],
-        'RAM': [0.05, 0.08],
-        'Storage': [0.03, 0.07],
-        // PSU is more important than casing for stability and upgrade headroom.
-        'PSU': [0.03, 0.06],
-        'Casing': [0.008, 0.02],
-        'CPU Cooler': [0.01, 0.03],
-        'Monitor': [0.05, 0.10],
-        'Mouse': [0.005, 0.015],
-        'Keyboard': [0.005, 0.015]
-      };
-    } else if (useCase === 'editing' && !noGpu) {
-      ratios = {
-        'Graphics Card': [0.20, 0.30],
-        'Processor': [0.20, 0.30],
-        'Motherboard': [0.06, 0.12],
-        'RAM': [0.08, 0.12],
-        'Storage': [0.06, 0.10],
-        'PSU': [0.03, 0.06],
-        'Casing': [0.015, 0.03],
-        'CPU Cooler': [0.01, 0.03],
-        'Monitor': [0.05, 0.10],
-        'Mouse': [0.005, 0.015],
-        'Keyboard': [0.005, 0.015]
-      };
-    } else if (useCase === 'general' && !noGpu) {
-      ratios = {
-        'Graphics Card': [0.12, 0.22],
-        'Processor': [0.18, 0.26],
-        'Motherboard': [0.07, 0.12],
-        'RAM': [0.08, 0.12],
-        'Storage': [0.05, 0.10],
-        'PSU': [0.03, 0.06],
-        'Casing': [0.015, 0.03],
-        'CPU Cooler': [0.01, 0.03],
-        'Monitor': [0.06, 0.12],
-        'Mouse': [0.01, 0.02],
-        'Keyboard': [0.01, 0.02]
-      };
-    } else {
-      ratios = {
-        'Graphics Card': [0.0, 0.0],
-        'Processor': [0.22, 0.30],
-        'Motherboard': [0.08, 0.12],
-        'RAM': [0.10, 0.18],
-        'Storage': [0.05, 0.10],
-        'PSU': [0.03, 0.06],
-        'Casing': [0.015, 0.03],
-        'CPU Cooler': [0.01, 0.03],
-        'Monitor': [0.08, 0.15],
-        'Mouse': [0.01, 0.03],
-        'Keyboard': [0.01, 0.03]
-      };
+    let floor = 500;
+    if (useCase === 'gaming' && gpu) {
+      floor = 650;
+      if (tier === 'high-end') floor = 750;
+      if (tier === 'budget') floor = 550;
     }
 
-    const priorities = {
-      'Graphics Card': 1,
-      'Processor': 1,
-      'Motherboard': 2,
-      'RAM': 2,
-      'PSU': 2,
-      'Storage': 3,
-      'Casing': 3,
-      'CPU Cooler': 3,
-      'Monitor': 3,
-      'Mouse': 3,
-      'Keyboard': 3
-    };
+    const gpuTdp = gpu?.specs?.tdp || 0;
+    if (gpuTdp >= 450) floor = Math.max(floor, 1000);
+    else if (gpuTdp >= 400) floor = Math.max(floor, 850);
+    else if (gpuTdp >= 350) floor = Math.max(floor, 800);
+    else if (gpuTdp >= 320) floor = Math.max(floor, 750);
+    else if (gpuTdp >= 250) floor = Math.max(floor, 700);
+    else if (gpuTdp >= 200) floor = Math.max(floor, 650);
 
-    const ranges = {};
-    Object.keys(priorities).forEach(category => {
-      const ratio = ratios[category] || [0, 0];
-      const [minPct, maxPct] = adjustRatio(ratio, tier);
-      ranges[category] = buildRange(budget, minPct, maxPct, priorities[category]);
-    });
+    const cpuTdp = cpu?.specs?.tdp || 0;
+    if (cpuTdp >= 125 && gpu) floor = Math.max(floor, 650);
 
-    if (intent.needs_monitor === false) ranges['Monitor'] = buildRange(budget, 0, 0, priorities['Monitor']);
-    if (intent.needs_mouse === false) ranges['Mouse'] = buildRange(budget, 0, 0, priorities['Mouse']);
-    if (intent.needs_keyboard === false) ranges['Keyboard'] = buildRange(budget, 0, 0, priorities['Keyboard']);
-    if (noGpu) ranges['Graphics Card'] = buildRange(budget, 0, 0, priorities['Graphics Card']);
+    return floor;
+  }
 
-    return ranges;
+  function computeTargetPsuWattage(intent, cpu, gpu) {
+    const cpuTdp = cpu?.specs?.tdp || 65;
+    const gpuTdp = gpu?.specs?.tdp || 0;
+
+    const useCase = intent?.use_case || 'general';
+    const multiplier = (useCase === 'gaming' && gpu) ? 1.4 : 1.3;
+    const additive = gpu ? 100 : 60;
+
+    const required = cpuTdp + gpuTdp;
+    const computed = (required * multiplier) + additive;
+    const floored = Math.max(computed, getPsuWattageFloor(intent, cpu, gpu));
+
+    return Math.ceil(floored / 50) * 50;
   }
 
   function sortParts(parts, sortOrder) {
@@ -488,18 +500,16 @@ function inferSpecs(category, name) {
   async function getPartsCached(cache, site, category, range, sortOrder) {
     const min = range?.min;
     const max = range?.max;
-    // IMPORTANT: cache must be keyed by site too, otherwise inventories from different shops
-    // get mixed (e.g. TechLand monitor appearing in a StarTech build) and empty results from
-    // one shop can incorrectly cause "No X found" for another.
     const key = `${(site || '').trim().toLowerCase()}:${category}:${min || 0}-${max || 0}:${sortOrder || 'none'}`;
-    if (cache.has(key)) return cache.get(key);
+    const entry = cache.get(key);
+    if (entry && Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
 
     const parts = await fetchPartsFromScraper(site, category, min, max, sortOrder);
     let filtered = parts.filter(p => p.price !== null && p.in_stock);
     if (min !== undefined && min !== null) filtered = filtered.filter(p => p.price >= min);
     if (max !== undefined && max !== null) filtered = filtered.filter(p => p.price <= max);
     sortParts(filtered, sortOrder || 'price_desc');
-    cache.set(key, filtered);
+    cache.set(key, { data: filtered, ts: Date.now() });
     return filtered;
   }
 
@@ -513,171 +523,18 @@ function inferSpecs(category, name) {
     let part = await selectPart(cache, site, category, range, sortOrder, filterFn);
     if (!part && range && range.max > 0) {
       const overspendFactor = category === 'PSU' ? 1.5 : 1.25;
-        // First try to find the cheapest part slightly above our max (minimize overspending)
       const aboveRange = { min: range.max, max: Math.min(Math.round(range.max * overspendFactor), budget) };
         part = await selectPart(cache, site, category, aboveRange, 'price_asc', filterFn);
         if (!part) {
-            // Then try to find the best part slightly below our min
             const belowRange = { min: 0, max: range.min };
             part = await selectPart(cache, site, category, belowRange, 'price_desc', filterFn);
         }
         if (!part) {
-            // Ultimate fallback: take the cheapest item we can find in the expanded range to save budget
         const survivalRange = { min: 0, max: Math.min(Math.round(range.max * overspendFactor), budget) };
             part = await selectPart(cache, site, category, survivalRange, 'price_asc', filterFn);
         }
     }
     return part;
-  }
-
-  function isCpuBalanced(cpu, gpu) {
-    if (!gpu) return true;
-    const n = cpu.name.toLowerCase();
-    
-    // For ultra-high-end GPUs (extremely expensive), require higher-end CPU
-    // But be permissive - allow Ryzen 5/i5 for most scenarios
-    if (gpu.price >= 500000) {
-      return n.includes('i9') || n.includes('i7') || n.includes('ryzen 9') || n.includes('ryzen 7');
-    }
-    
-    // For high-end GPUs, just avoid low-end CPUs
-    if (gpu.price >= 90000) {
-      return !(n.includes('i3') || n.includes('ryzen 3') || n.includes('athlon'));
-    }
-    
-    return true;
-  }
-
-  function cpuHasIntegratedGraphics(cpu) {
-    const n = (cpu?.name || '').toLowerCase();
-    const brand = (cpu?.specs?.brand || '').toLowerCase();
-
-    // AMD: Most desktop AM4 CPUs without a trailing "G" have no iGPU.
-    // We treat "####G" SKUs (e.g. 5600G, 4600G) and explicit "Radeon Graphics" naming as iGPU.
-    if (brand === 'amd') {
-      return /\b\d{4}g\b/.test(n) || n.includes('with radeon') || n.includes('radeon graphics') || n.includes('apu');
-    }
-
-    // Intel: Most non-F SKUs include an iGPU; F/KF indicate no iGPU.
-    if (brand === 'intel') {
-      if (/(\b|-)\d{4,5}f\b/.test(n)) return false; // e.g. 12400F, i5-10400F
-      if (n.includes(' kf')) return false;
-      return true;
-    }
-
-    // Unknown brand: don't block selection.
-    return true;
-  }
-
-  function getPsuWattageFloor(intent, cpu, gpu) {
-    const useCase = intent?.use_case || 'general';
-    const tier = intent?.tier || 'mid';
-
-    // Baseline floors by use-case and tier.
-    let floor = 500;
-    if (useCase === 'gaming' && gpu) {
-      floor = 650;
-      if (tier === 'high-end') floor = 750;
-      if (tier === 'budget') floor = 550;
-    }
-
-    // GPU-driven floors based on our inferred draw.
-    // More realistic floors - RTX 5080 should work with 750W
-    const gpuTdp = gpu?.specs?.tdp || 0;
-    if (gpuTdp >= 450) floor = Math.max(floor, 1000);
-    else if (gpuTdp >= 400) floor = Math.max(floor, 850);
-    else if (gpuTdp >= 350) floor = Math.max(floor, 800);
-    else if (gpuTdp >= 320) floor = Math.max(floor, 750);
-    else if (gpuTdp >= 250) floor = Math.max(floor, 700);
-    else if (gpuTdp >= 200) floor = Math.max(floor, 650);
-
-    // High CPU draw should not push us to tiny PSUs.
-    const cpuTdp = cpu?.specs?.tdp || 0;
-    if (cpuTdp >= 125 && gpu) floor = Math.max(floor, 650);
-
-    return floor;
-  }
-
-  function computeTargetPsuWattage(intent, cpu, gpu) {
-    const cpuTdp = cpu?.specs?.tdp || 65;
-    const gpuTdp = gpu?.specs?.tdp || 0;
-
-    // Extra headroom for transient spikes (especially gaming GPUs).
-    const useCase = intent?.use_case || 'general';
-    const multiplier = (useCase === 'gaming' && gpu) ? 1.4 : 1.3;
-    const additive = gpu ? 100 : 60;
-
-    const required = cpuTdp + gpuTdp;
-    const computed = (required * multiplier) + additive;
-    const floored = Math.max(computed, getPsuWattageFloor(intent, cpu, gpu));
-
-    // Round up to common PSU steps (50W).
-    return Math.ceil(floored / 50) * 50;
-  }
-
-  function getBudgetOverspendAllowance(budget) {
-    // Allow a small controlled overspend to better match real-world part price steps.
-    // Example: 60k budget can land around 61–62k.
-    const b = Number.isFinite(budget) ? budget : 0;
-    return Math.round(Math.min(12000, Math.max(1000, b * 0.03)));
-  }
-
-  function getUnderspendTolerance(budget) {
-    // Aim to get very close to the budget; tolerate small gaps when inventory is coarse.
-    const b = Number.isFinite(budget) ? budget : 0;
-    return Math.round(Math.min(1500, Math.max(300, b * 0.005)));
-  }
-
-  function getCategoryShareCap(budget, intent, category) {
-    const b = Number.isFinite(budget) ? budget : 0;
-    const useCase = intent?.use_case || 'general';
-    const noGpu = intent?.no_gpu || false;
-
-    if (category === 'Graphics Card') return Math.round(b * ((useCase === 'gaming' && !noGpu) ? 0.75 : 0.60));
-    if (category === 'Processor') return Math.round(b * 0.55);
-    if (category === 'Monitor') return Math.round(b * 0.55);
-    if (category === 'Motherboard') return Math.round(b * 0.40);
-    if (category === 'RAM') return Math.round(b * 0.35);
-    if (category === 'Storage') return Math.round(b * 0.35);
-    if (category === 'PSU') return Math.round(b * 0.30);
-    if (category === 'CPU Cooler') return Math.round(b * 0.25);
-    if (category === 'Casing') return Math.round(b * 0.25);
-    if (category === 'Keyboard') return Math.round(b * 0.20);
-    if (category === 'Mouse') return Math.round(b * 0.15);
-    return Math.round(b * 0.35);
-  }
-
-  function getUpgradeWeight(intent, category) {
-    const useCase = intent?.use_case || 'general';
-    if (useCase === 'gaming') {
-      if (category === 'Graphics Card') return 6;
-      if (category === 'Monitor') return 5;
-      if (category === 'Processor') return 4;
-      if (category === 'Motherboard') return 2.5;
-      if (category === 'RAM') return 3;
-      if (category === 'Storage') return 3;
-      if (category === 'Keyboard') return 2;
-      if (category === 'Mouse') return 1.5;
-      if (category === 'PSU') return 1;
-      if (category === 'CPU Cooler') return 1;
-      if (category === 'Casing') return 0.6;
-    }
-    // Default weighting for non-gaming.
-    if (category === 'Processor') return 5;
-    if (category === 'Motherboard') return 3;
-    if (category === 'RAM') return 4;
-    if (category === 'Storage') return 3;
-    if (category === 'Monitor') return 3;
-    if (category === 'Keyboard') return 2;
-    if (category === 'Mouse') return 1.5;
-    if (category === 'PSU') return 1;
-    if (category === 'CPU Cooler') return 1;
-    if (category === 'Casing') return 0.7;
-    return 1;
-  }
-
-  function formatMinimumError(label, minRequired) {
-    return `Your request needs at least ${minRequired} BDT to cover minimum ${label} parts. Please increase budget or relax requirements.`;
   }
 
   async function getCheapestPart(cache, site, category, budget, filterFn) {
@@ -686,214 +543,125 @@ function inferSpecs(category, name) {
     return candidates[0] || null;
   }
 
-  async function calculatePeripheralMinimums(cache, site, intent, budget) {
-    const minimums = {
-      monitor: 0,
-      mouse: 0,
-      keyboard: 0,
-      total: 0,
-      error: null
-    };
-
-    if (intent.needs_monitor) {
-      const monitorFilter = intent.monitor_hz
-        ? (p => {
-            const n = p.name.toLowerCase();
-            return n.includes(`${intent.monitor_hz}hz`) || n.includes(`${intent.monitor_hz} hz`);
-          })
-        : undefined;
-      const monitor = await getCheapestPart(cache, site, 'Monitor', budget, monitorFilter);
-      if (!monitor && intent.monitor_hz) {
-        minimums.error = `No ${intent.monitor_hz}Hz monitor found within the available inventory.`;
-        return minimums;
+  async function calculateFloorPrices(cache, site, blueprint, budget) {
+    let totalFloor = 0;
+    let error = null;
+    const minimums = {};
+    
+    const categories = Object.keys(blueprint.component_strategy || {});
+    
+    for (const category of categories) {
+      const strategy = blueprint.component_strategy[category];
+      if (!strategy || !strategy.required || (site === 'computermania' && ['Monitor', 'Mouse', 'Keyboard'].includes(category))) {
+        minimums[category] = 0;
+        continue;
       }
-      const fallbackMonitor = monitor || await getCheapestPart(cache, site, 'Monitor', budget);
-      minimums.monitor = fallbackMonitor ? fallbackMonitor.price : 20000;
-    }
+      
+      // Keyword Degradation Safety Net loop
+      let keywordsToTry = [...(strategy.required_keywords || [])];
+      let part = null;
+      
+      while (true) {
+        const tempStrategy = { ...strategy, required_keywords: keywordsToTry };
+        const baseFilter = getQualityFloorFilter(tempStrategy);
+        const filterFn = (p) => {
+           if (!baseFilter(p)) return false;
+           if (category === 'Processor') {
+              const brandMatch = !blueprint.preferred_cpu_brand || p.specs.brand === blueprint.preferred_cpu_brand.toLowerCase();
+              if (!brandMatch) return false;
+              if (!p.specs.socket || p.specs.socket === 'UNKNOWN') return false;
 
-    if (intent.needs_mouse) {
-      const mouse = await getCheapestPart(cache, site, 'Mouse', budget);
-      minimums.mouse = mouse ? mouse.price : 4000;
+              const noGpu = blueprint.no_gpu || (blueprint.component_strategy?.['Graphics Card'] && !blueprint.component_strategy['Graphics Card'].required) || false;
+              if (noGpu && !cpuHasIntegratedGraphics(p)) return false;
+              const ramStrategy = blueprint.component_strategy['RAM'] || {};
+              const requestedRamType = (ramStrategy.required_keywords || []).find(k => k.toLowerCase() === 'ddr4' || k.toLowerCase() === 'ddr5');
+              if (requestedRamType) {
+                  const reqType = requestedRamType.toUpperCase();
+                  if (reqType === 'DDR5' && (p.specs.socket === 'AM4' || p.specs.socket === 'LGA1200' || p.specs.socket === 'LGA1151')) return false;
+                  if (reqType === 'DDR4' && p.specs.socket === 'AM5') return false;
+                  if (reqType === 'DDR3' && (p.specs.socket === 'AM4' || p.specs.socket === 'AM5' || p.specs.socket === 'LGA1700')) return false;
+              }
+           }
+           if (category === 'Motherboard') {
+              if (p.specs.socket === 'UNKNOWN') return false;
+              const ramStrategy = blueprint.component_strategy['RAM'] || {};
+              const requestedRamType = (ramStrategy.required_keywords || []).find(k => k.toLowerCase() === 'ddr4' || k.toLowerCase() === 'ddr5');
+              if (requestedRamType) {
+                  const reqType = requestedRamType.toUpperCase();
+                  if (p.specs.ram_type && p.specs.ram_type !== 'UNKNOWN' && p.specs.ram_type !== reqType) return false;
+                  if (p.specs.socket === 'LGA1700' && p.specs.ram_type === 'UNKNOWN') return false;
+              }
+           }
+           if (category === 'PSU') {
+              const estimatedTarget = computeTargetPsuWattage(blueprint, null, null);
+              if (p.specs.wattage < estimatedTarget) return false;
+           }
+           return true;
+        };
+        part = await getCheapestPart(cache, site, category, budget, filterFn);
+        
+        if (part) {
+          break; // found it
+        } else if (keywordsToTry.length > 0) {
+          const dropped = keywordsToTry.pop();
+          console.warn(`Dropped keyword '${dropped}' for ${category} to find matching part`);
+        } else {
+          break; // out of keywords
+        }
+      }
+      
+      if (!part) {
+        const reqs = (strategy.required_keywords && strategy.required_keywords.length > 0) ? strategy.required_keywords.join(", ") : "specific features";
+        error = `To meet your specific requirements (e.g., ${reqs}) for ${category}, no matching part was found in the current inventory. Please relax your requirements.`;
+        break;
+      }
+      
+      minimums[category] = part.price;
+      totalFloor += part.price;
     }
-
-    if (intent.needs_keyboard) {
-      const keyboard = await getCheapestPart(cache, site, 'Keyboard', budget);
-      minimums.keyboard = keyboard ? keyboard.price : 5000;
+    
+    if (!error && totalFloor > budget) {
+        error = `To meet your specific requirements, the absolute minimum cost from current inventory is ${totalFloor} BDT. Your budget is ${budget} BDT. Please increase your budget or relax your requirements.`;
     }
-
-    minimums.total = minimums.monitor + minimums.mouse + minimums.keyboard;
-    return minimums;
+    
+    return { minimums, totalFloor, error };
   }
+const globalPartsCache = new Map();
+const CACHE_TTL_MS = 30 * 60 * 1000;
+const sanitizeKey = (k) => (typeof k === 'string' && k.length < 200) ? k.trim() : null;
 
-  async function calculateCoreMinimums(cache, site, intent, budget, noGpu) {
-    const minimums = {
-      processor: 0,
-      motherboard: 0,
-      ram: 0,
-      storage: 0,
-      psu: 0,
-      casing: 0,
-      cpuCooler: 0,
-      coolerMin: 0,
-      gpu: 0,
-      total: 0,
-      error: null,
-      coolerRequired: false
-    };
-
-    let gpu = null;
-    if (!noGpu) {
-      const gpuFilter = p => !intent.preferred_gpu_brand || p.specs.gpu_brand === intent.preferred_gpu_brand.toLowerCase();
-      gpu = await getCheapestPart(cache, site, 'Graphics Card', budget, gpuFilter);
-      if (!gpu && intent.preferred_gpu_brand) {
-        gpu = await getCheapestPart(cache, site, 'Graphics Card', budget);
-      }
-      if (!gpu) {
-        minimums.error = "No GPU found in the available inventory.";
-        return minimums;
-      }
-      minimums.gpu = gpu.price;
-    }
-
-    const cpuFilter = p => {
-      const brandMatch = !intent.preferred_cpu_brand || p.specs.brand === intent.preferred_cpu_brand.toLowerCase();
-      if (!brandMatch) return false;
-      if (noGpu && !cpuHasIntegratedGraphics(p)) return false;
-      if (intent.ram_type === 'DDR4') return p.specs.socket === 'AM4' && isCpuBalanced(p, gpu);
-      if (intent.ram_type === 'DDR5') return p.specs.socket === 'AM5' && isCpuBalanced(p, gpu);
-      return isCpuBalanced(p, gpu);
-    };
-
-    const cpu = await getCheapestPart(cache, site, 'Processor', budget, cpuFilter);
-    if (!cpu) {
-      const base = `No compatible ${intent.preferred_cpu_brand ? intent.preferred_cpu_brand.toUpperCase() : ''} CPU found.`.trim();
-      minimums.error = noGpu ? `${base} For "no GPU" builds, the CPU must include integrated graphics.` : base;
-      return minimums;
-    }
-    minimums.processor = cpu.price;
-
-    const moboFilter = p => {
-      if (p.specs.socket === 'UNKNOWN' || cpu.specs.socket === 'UNKNOWN') return false;
-      const socketMatch = p.specs.socket === cpu.specs.socket;
-      if (intent.ram_type) return socketMatch && p.specs.ram_type === intent.ram_type;
-      return socketMatch;
-    };
-
-    const motherboard = await getCheapestPart(cache, site, 'Motherboard', budget, moboFilter);
-    if (!motherboard) {
-      minimums.error = `No compatible ${cpu.specs.socket} motherboard found.`;
-      return minimums;
-    }
-    minimums.motherboard = motherboard.price;
-
-    const ramFilter = p => {
-      if (intent.ram_type && p.specs.ram_type !== intent.ram_type) return false;
-      if (intent.ram_gb) {
-        const name = p.name.toLowerCase();
-        const half = intent.ram_gb / 2;
-        return name.includes(`${intent.ram_gb}gb`)
-          || name.includes(`${intent.ram_gb} gb`)
-          || name.includes(`2x${half}gb`)
-          || name.includes(`2x${half} gb`)
-          || name.includes(`${intent.ram_gb}g `);
-      }
-      return true;
-    };
-
-    const ram = await getCheapestPart(cache, site, 'RAM', budget, ramFilter);
-    if (!ram) {
-      minimums.error = `No compatible RAM found for ${intent.ram_type || 'requested'}.`;
-      return minimums;
-    }
-    minimums.ram = ram.price;
-
-    // If user requested specific capacity, find cheapest matching storage
-    const storageCapFilter = intent.storage_tb
-      ? (p => {
-          const capGB = parseStorageCapacityGB(p.name);
-          const requiredGB = intent.storage_tb * 1000;
-          return capGB >= requiredGB * 0.9; // Allow 10% tolerance (e.g. 960GB for 1TB)
-        })
-      : undefined;
-    let storage = await getCheapestPart(cache, site, 'Storage', budget, storageCapFilter);
-    if (!storage && storageCapFilter) {
-      // Fall back to any storage if requested capacity not available
-      console.warn(`⚠ No ${intent.storage_tb}TB storage found, falling back to any storage`);
-      storage = await getCheapestPart(cache, site, 'Storage', budget);
-    }
-    if (!storage) {
-      minimums.error = "No storage found in the available inventory.";
-      return minimums;
-    }
-    minimums.storage = storage.price;
-
-    const targetPsuWattage = computeTargetPsuWattage(intent, cpu, gpu);
-    const psuFilter = p => p.specs.wattage >= targetPsuWattage;
-    const psu = await getCheapestPart(cache, site, 'PSU', budget, psuFilter);
-    if (!psu) {
-      minimums.error = `No PSU found with at least ${Math.round(targetPsuWattage)}W.`;
-      return minimums;
-    }
-    minimums.psu = psu.price;
-
-    const casing = await getCheapestPart(cache, site, 'Casing', budget);
-    if (!casing) {
-      minimums.error = "No casing found in the available inventory.";
-      return minimums;
-    }
-    minimums.casing = casing.price;
-
-    const cooler = await getCheapestPart(cache, site, 'CPU Cooler', budget);
-    if (cooler) {
-      minimums.coolerMin = cooler.price;
-      if (cpu.specs.tdp >= 105) {
-        minimums.cpuCooler = cooler.price;
-        minimums.coolerRequired = true;
-      }
-    }
-
-    minimums.total = minimums.processor + minimums.motherboard + minimums.ram
-      + minimums.storage + minimums.psu + minimums.casing + minimums.cpuCooler + minimums.gpu;
-
-    return minimums;
+// Periodic cleanup of expired cache entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of globalPartsCache.entries()) {
+    if (now - entry.ts >= CACHE_TTL_MS) globalPartsCache.delete(key);
   }
-
-  function getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, excludeCategory) {
-    let sum = 0;
-    const add = (category, value) => {
-      if (excludeCategory !== category) sum += value;
-    };
-
-    if (!selectedBuild.Processor) add('Processor', coreMinimums.processor);
-    if (!selectedBuild.Motherboard) add('Motherboard', coreMinimums.motherboard);
-    if (!selectedBuild.RAM) add('RAM', coreMinimums.ram);
-    if (!selectedBuild.Storage) add('Storage', coreMinimums.storage);
-    if (!selectedBuild.PSU) add('PSU', coreMinimums.psu);
-    if (!selectedBuild.Casing) add('Casing', coreMinimums.casing);
-    if (!noGpu && !selectedBuild["Graphics Card"]) add('Graphics Card', coreMinimums.gpu);
-    if (needsCooler && !selectedBuild["CPU Cooler"]) add('CPU Cooler', coreMinimums.coolerMin);
-
-    return sum;
-  }
+}, CACHE_TTL_MS);
 
 app.post('/api/build', apiLimiter, async (req, res) => {
   try {
     const { message, site: bodySite, customKeys = {} } = req.body;
     console.log("[build] Incoming request");
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
+    if (!message || message.length > 2000) {
+      return res.status(400).json({ error: 'Message is required and must be under 2000 characters.' });
+    }
+    if (bodySite && !['startech', 'techland', 'computermania'].includes(bodySite)) {
+      return res.status(400).json({ error: 'Invalid site selected' });
+    }
+    if (customKeys && typeof customKeys !== 'object') {
+      return res.status(400).json({ error: 'Invalid customKeys format' });
     }
 
     const apiProvider = req.body.apiProvider || 'groq';
 
     const getGroqClient = () => {
-       const key = customKeys.groq || process.env.GROQ_API_KEY;
+       const key = sanitizeKey(customKeys.groq) || process.env.GROQ_API_KEY;
        if (!key) throw new Error("Groq API key is missing");
        return new Groq({ apiKey: key });
     };
 
     const getGeminiClient = () => {
-       const key = customKeys.gemini || process.env.GEMINI_API_KEY;
+       const key = sanitizeKey(customKeys.gemini) || process.env.GEMINI_API_KEY;
        if (!key) throw new Error("Gemini API key is missing");
        return new GoogleGenAI({ apiKey: key });
     };
@@ -960,14 +728,17 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       });
     }
 
-    const site = bodySite || intent.preferred_site || "startech";
+    const VALID_SITES = ['startech', 'techland', 'computermania'];
+    const site = (VALID_SITES.includes(bodySite) ? bodySite : null)
+      || (VALID_SITES.includes(intent.preferred_site) ? intent.preferred_site : null)
+      || 'startech';
+
     console.log(`Building PC from ${site} for ${intent.budget_bdt} BDT`);
 
     const budget = intent.budget_bdt;
-    const budgetCeiling = budget + getBudgetOverspendAllowance(budget);
-    const noGpu = intent.no_gpu || false;
-    const budgetRanges = calculateBudgetRanges(budget, intent);
-    const partsCache = new Map();
+    const budgetCeiling = budget + Math.min(budget * 0.03, 12000);
+    const noGpu = intent.no_gpu || (intent.component_strategy && intent.component_strategy['Graphics Card'] && !intent.component_strategy['Graphics Card'].required) || false;
+    const partsCache = globalPartsCache;
 
     let selectedBuild = {
       Processor: null,
@@ -985,420 +756,226 @@ app.post('/api/build', apiLimiter, async (req, res) => {
 
     let totalCost = 0;
 
-    // PHASE 1: Calculate dynamic minimum budgets for core and peripherals
-    console.log("PHASE 1: Calculating minimum required budgets...");
-    const coreMinimums = await calculateCoreMinimums(partsCache, site, intent, budget, noGpu);
-    if (coreMinimums.error) {
-      return res.json({ error: coreMinimums.error });
+    console.log("PHASE 1 & 2: Dynamic Blueprint Reality Check & Weighted Budget Allocation");
+    const floorCheck = await calculateFloorPrices(partsCache, site, intent, budgetCeiling);
+    if (floorCheck.error) {
+        return res.json({ error: floorCheck.error });
     }
 
-    const peripheralMinimums = await calculatePeripheralMinimums(partsCache, site, intent, budget);
-    if (peripheralMinimums.error) {
-      return res.json({ error: peripheralMinimums.error });
+    let totalWeight = 0;
+    const categories = Object.keys(intent.component_strategy || {});
+    for (const cat of categories) {
+        if (intent.component_strategy[cat] && intent.component_strategy[cat].required && !(site === 'computermania' && ['Monitor', 'Mouse', 'Keyboard'].includes(cat))) {
+            totalWeight += intent.component_strategy[cat].weight || 1;
+        }
     }
-
-    const minimumRequired = coreMinimums.total + peripheralMinimums.total;
-    if (minimumRequired > budgetCeiling) {
-      return res.json({ error: formatMinimumError("core + peripherals", minimumRequired) });
+    
+    const leftoverBudget = Math.max(0, budgetCeiling - floorCheck.totalFloor);
+    const dynamicBudgets = {};
+    for (const cat of categories) {
+        if (intent.component_strategy[cat] && intent.component_strategy[cat].required && !(site === 'computermania' && ['Monitor', 'Mouse', 'Keyboard'].includes(cat))) {
+            const weight = intent.component_strategy[cat].weight || 1;
+            dynamicBudgets[cat] = Math.round(floorCheck.minimums[cat] + ((weight / totalWeight) * leftoverBudget));
+        } else {
+            dynamicBudgets[cat] = 0;
+        }
     }
-
-    const coreBudget = budgetCeiling - peripheralMinimums.total;
 
     console.log("=".repeat(60));
-    console.log(`Total Budget: ${budget} BDT`);
-    console.log(`Core Minimum: ${coreMinimums.total} BDT`);
-    console.log(`Peripheral Minimum: ${peripheralMinimums.total} BDT`);
-    console.log(`Core Component Budget: ${coreBudget} BDT`);
+    console.log(`Total Budget: ${budget} BDT (Ceiling: ${budgetCeiling})`);
+    console.log(`Total Floor Price: ${floorCheck.totalFloor} BDT`);
+    console.log(`Leftover Budget: ${leftoverBudget} BDT`);
+    console.log("Dynamic Budgets:", dynamicBudgets);
     console.log("=".repeat(60));
 
-    // Recompute budget ranges for core components only
-    const coreOnlyIntent = { ...intent, needs_monitor: false, needs_mouse: false, needs_keyboard: false };
-    const coreRanges = calculateBudgetRanges(coreBudget, coreOnlyIntent);
+    console.log("\nPHASE 3: Selecting components using Dynamic Budgets...");
+    
     let needsCooler = false;
 
-    const anchorCategory = (intent.use_case === 'gaming' && !noGpu) ? 'Graphics Card' : 'Processor';
-
-    console.log("\nPHASE 2: Selecting core components from " + coreBudget + " BDT...");
-    
-    // Step 1: Anchor selection
-    if (anchorCategory === 'Graphics Card') {
-      const remainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'Graphics Card');
-      const gpuAllowedMax = coreBudget - totalCost - remainingMin;
-      if (gpuAllowedMax <= 0) {
-        return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-      }
-      const gpuRange = { min: 0, max: gpuAllowedMax };
-      const gpuFilter = p => {
-        if (intent.preferred_gpu_brand && p.specs.gpu_brand !== intent.preferred_gpu_brand.toLowerCase()) return false;
-        return isGpuAdequateForUseCase(p, intent.use_case);
-      };
-      selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', gpuFilter, gpuAllowedMax);
-      if (!selectedBuild["Graphics Card"] && intent.preferred_gpu_brand) {
-        selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', undefined, gpuAllowedMax);
-      }
-      if (selectedBuild["Graphics Card"]) {
-        console.log(`✓ GPU (Anchor): ${selectedBuild["Graphics Card"].name} - ${selectedBuild["Graphics Card"].price} BDT`);
-        totalCost += selectedBuild["Graphics Card"].price;
-      }
-    }
-
-    // Step 2: CPU -> Motherboard -> RAM chain
-    const cpuCondition = (p) => {
-      const brandMatch = !intent.preferred_cpu_brand || p.specs.brand === intent.preferred_cpu_brand.toLowerCase();
-      if (!brandMatch) return false;
-      // If we can't infer the CPU socket, we can't safely match a motherboard.
-      if (!p.specs.socket || p.specs.socket === 'UNKNOWN') return false;
-      if (noGpu && !cpuHasIntegratedGraphics(p)) return false;
-      if (intent.ram_type === 'DDR4') return p.specs.socket === 'AM4' && isCpuBalanced(p, selectedBuild["Graphics Card"]);
-      if (intent.ram_type === 'DDR5') return p.specs.socket === 'AM5' && isCpuBalanced(p, selectedBuild["Graphics Card"]);
-      return isCpuBalanced(p, selectedBuild["Graphics Card"]);
-    };
-
-    const cpuRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'Processor');
-    const cpuAllowedMax = coreBudget - totalCost - cpuRemainingMin;
-    if (cpuAllowedMax <= 0) {
-      return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-    }
-    const cpuRange = { min: 0, max: cpuAllowedMax };
-
-    // CPU selection must be motherboard-feasible, otherwise we can pick an expensive/new socket CPU
-    // (e.g. AM5) with no matching board available inside the remaining budget.
-    const cpuCandidates = (await getPartsCached(partsCache, site, 'Processor', cpuRange, 'price_desc'))
-      .filter(cpuCondition);
-      
-    const mobosUpToCoreBudget = await getPartsCached(partsCache, site, 'Motherboard', { min: 0, max: coreBudget }, 'price_asc');
-    const ramsUpToCoreBudget = await getPartsCached(partsCache, site, 'RAM', { min: 0, max: coreBudget }, 'price_asc');
-
-    selectedBuild.Processor = null;
-    let preselectedMotherboard = null;
-    for (const cpuCandidate of cpuCandidates.slice(0, 20)) {
-      const candidateNeedsCooler = needsCooler || (cpuCandidate?.specs?.tdp || 0) >= 105;
-      const tempBuild = { ...selectedBuild, Processor: cpuCandidate };
-      const moboRemainingMinTemp = getRemainingCoreMinimum(coreMinimums, tempBuild, noGpu, candidateNeedsCooler, 'Motherboard');
-      const moboAllowedMaxTemp = coreBudget - (totalCost + cpuCandidate.price) - moboRemainingMinTemp;
-      if (moboAllowedMaxTemp <= 0) continue;
-
-      const moboOk = mobosUpToCoreBudget.find(m => {
-        if (!m || !m.in_stock || m.price == null) return false;
-        if (m.price > moboAllowedMaxTemp) return false;
-        if (m.specs.socket === 'UNKNOWN' || cpuCandidate.specs.socket === 'UNKNOWN') return false;
-        if (m.specs.socket !== cpuCandidate.specs.socket) return false;
-        if (intent.ram_type && m.specs.ram_type !== intent.ram_type) return false;
-        return true;
-      });
-
-      if (!moboOk) continue;
-
-      // Also ensure we can actually buy matching RAM within the remaining budget.
-      const tempBuildWithMobo = { ...selectedBuild, Processor: cpuCandidate, Motherboard: moboOk };
-      const ramRemainingMinTemp = getRemainingCoreMinimum(coreMinimums, tempBuildWithMobo, noGpu, candidateNeedsCooler, 'RAM');
-      const ramAllowedMaxTemp = coreBudget - (totalCost + cpuCandidate.price + moboOk.price) - ramRemainingMinTemp;
-      if (ramAllowedMaxTemp <= 0) continue;
-
-      const desiredRamType = intent.ram_type || (moboOk.specs?.ram_type && moboOk.specs.ram_type !== 'UNKNOWN' ? moboOk.specs.ram_type : null);
-      const ramOk = ramsUpToCoreBudget.find(r => {
-        if (!r || !r.in_stock || r.price == null) return false;
-        if (r.price > ramAllowedMaxTemp) return false;
-        if (desiredRamType && r.specs.ram_type !== desiredRamType) return false;
-        if (!intent.ram_gb) return true;
-        const name = (r.name || '').toLowerCase();
-        const half = intent.ram_gb / 2;
-        return name.includes(`${intent.ram_gb}gb`)
-          || name.includes(`${intent.ram_gb} gb`)
-          || name.includes(`2x${half}gb`)
-          || name.includes(`2x${half} gb`)
-          || name.includes(`${intent.ram_gb}g `);
-      });
-
-      if (!ramOk) continue;
-
-      selectedBuild.Processor = cpuCandidate;
-      preselectedMotherboard = moboOk;
-      break;
-    }
-
-    if (!selectedBuild.Processor) {
-      // Fallback to original selection behavior (may still fail later if inventory is constrained).
-      selectedBuild.Processor = await selectWithFallback(partsCache, site, 'Processor', cpuRange, 'price_desc', cpuCondition, cpuAllowedMax);
-    }
-    if (!selectedBuild.Processor && intent.preferred_cpu_brand) {
-      console.error(`FAILED: Could not find compatible ${intent.preferred_cpu_brand.toUpperCase()} processor within core budget`);
-      return res.json({ error: `Could not find a compatible ${intent.preferred_cpu_brand.toUpperCase()} processor within your budget range. Try increasing your budget.` });
-    }
-    if (!selectedBuild.Processor) {
-      console.error(`FAILED: Could not find any processor within core budget`);
-      return res.json({ error: "Could not find a compatible processor within your budget range. Try increasing your budget." });
-    }
-    console.log(`✓ Processor: ${selectedBuild.Processor.name} - ${selectedBuild.Processor.price} BDT`);
-    totalCost += selectedBuild.Processor.price;
-    if (selectedBuild.Processor.specs.tdp >= 105) {
-      needsCooler = true;
-    }
-
-    // If we already found a feasible motherboard during CPU lookahead, lock it in now.
-    if (preselectedMotherboard) {
-      selectedBuild.Motherboard = preselectedMotherboard;
-      console.log(`✓ Motherboard: ${selectedBuild.Motherboard.name} - ${selectedBuild.Motherboard.price} BDT`);
-      totalCost += selectedBuild.Motherboard.price;
-    }
-
-    if (!selectedBuild.Motherboard) {
-      const moboRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'Motherboard');
-      const moboAllowedMax = coreBudget - totalCost - moboRemainingMin;
-      if (moboAllowedMax <= 0) {
-        return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-      }
-      // Motherboard inventory pricing often doesn't fit clean ratio caps, especially at lower budgets.
-      // Use the computed allowed max (which still preserves minimum headroom for remaining parts).
-      const moboRange = { min: 0, max: moboAllowedMax };
-      const moboCondition = p => {
-        if (p.specs.socket === 'UNKNOWN' || selectedBuild.Processor.specs.socket === 'UNKNOWN') return false;
-        const socketMatch = p.specs.socket === selectedBuild.Processor.specs.socket;
-        if (intent.ram_type) return socketMatch && p.specs.ram_type === intent.ram_type;
-        return socketMatch;
-      };
-
-      selectedBuild.Motherboard = await selectWithFallback(partsCache, site, 'Motherboard', moboRange, 'price_desc', moboCondition, moboAllowedMax);
-      if (!selectedBuild.Motherboard && selectedBuild.Processor.specs.socket === 'AM5') {
-        const expandedMax = Math.max(moboRange.max, Math.round(moboAllowedMax * 1.1));
-        const expandedRange = { min: moboRange.min, max: expandedMax };
-        console.log(`Motherboard not found in range [${moboRange.min}, ${moboRange.max}]. Trying expanded range [${expandedRange.min}, ${expandedRange.max}]...`);
-        selectedBuild.Motherboard = await selectPart(partsCache, site, 'Motherboard', expandedRange, 'price_desc', moboCondition);
-      }
-      if (!selectedBuild.Motherboard) {
-        console.error(`FAILED: Could not find matching motherboard for ${selectedBuild.Processor.specs.socket}`);
-        return res.json({ error: `Found a CPU but couldn't find a matching ${selectedBuild.Processor.specs.socket} Motherboard. Try a different site.` });
-      }
-      console.log(`✓ Motherboard: ${selectedBuild.Motherboard.name} - ${selectedBuild.Motherboard.price} BDT`);
-      totalCost += selectedBuild.Motherboard.price;
-    }
-
-    const ramRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'RAM');
-    const ramAllowedMax = coreBudget - totalCost - ramRemainingMin;
-    if (ramAllowedMax <= 0) {
-      return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-    }
-    const ramRange = { min: 0, max: ramAllowedMax };
-    const ramCondition = p => {
-      const desiredRamType = intent.ram_type
-        || (selectedBuild.Motherboard?.specs?.ram_type && selectedBuild.Motherboard.specs.ram_type !== 'UNKNOWN'
-          ? selectedBuild.Motherboard.specs.ram_type
-          : null);
-      if (desiredRamType && p.specs.ram_type !== desiredRamType) return false;
-      if (intent.ram_gb) {
-        const name = p.name.toLowerCase();
-        const half = intent.ram_gb / 2;
-        const gbMatch = name.includes(`${intent.ram_gb}gb`)
-          || name.includes(`${intent.ram_gb} gb`)
-          || name.includes(`2x${half}gb`)
-          || name.includes(`2x${half} gb`)
-          || name.includes(`${intent.ram_gb}g `);
-        return gbMatch;
-      }
-      return true;
-    };
-
-    // Use price_asc for RAM — pick cheapest matching kit first, Phase 4 upgrades if budget allows
-    // Prevents picking 31K RGB RAM when 6K basic kit is identical functionally
-    selectedBuild.RAM = await selectWithFallback(partsCache, site, 'RAM', ramRange, 'price_asc', ramCondition, ramAllowedMax);
-    if (!selectedBuild.RAM && intent.ram_gb) {
-      console.error(`FAILED: Could not find ${intent.ram_gb}GB ${selectedBuild.Motherboard.specs.ram_type} RAM`);
-      return res.json({ error: `Could not find ${intent.ram_gb}GB ${selectedBuild.Motherboard.specs.ram_type} RAM in stock. Try adjusting RAM capacity or try a different site.` });
-    }
-    if (!selectedBuild.RAM) {
-      console.error(`FAILED: Could not find any compatible RAM`);
-      return res.json({ error: `Could not find compatible RAM. Try a different site or increase budget.` });
-    }
-    console.log(`✓ RAM: ${selectedBuild.RAM.name} (${intent.ram_gb || 'any'}GB) - ${selectedBuild.RAM.price} BDT`);
-    totalCost += selectedBuild.RAM.price;
-
-    // Step 3: GPU if needed and not already selected
-    if (!noGpu && !selectedBuild["Graphics Card"] && coreRanges['Graphics Card'].max > 0) {
-      const gpuRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'Graphics Card');
-      const gpuAllowedMax = coreBudget - totalCost - gpuRemainingMin;
-      if (gpuAllowedMax <= 0) {
-        return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-      }
-      const gpuRange = { min: 0, max: gpuAllowedMax };
-      const gpuFilter = p => {
-        if (intent.preferred_gpu_brand && p.specs.gpu_brand !== intent.preferred_gpu_brand.toLowerCase()) return false;
-        return isGpuAdequateForUseCase(p, intent.use_case);
-      };
-      selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', gpuFilter, gpuAllowedMax);
-      if (!selectedBuild["Graphics Card"] && intent.preferred_gpu_brand) {
-        selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', undefined, gpuAllowedMax);
-      }
-      if (selectedBuild["Graphics Card"]) {
-        console.log(`✓ GPU: ${selectedBuild["Graphics Card"].name} - ${selectedBuild["Graphics Card"].price} BDT`);
-        totalCost += selectedBuild["Graphics Card"].price;
-      }
-    }
-
-    if (!noGpu && !selectedBuild["Graphics Card"]) {
-      console.error(`ERROR: No GPU found for gaming build`);
-      return res.json({ error: "Could not find any GPU within your budget range. Try another site or reduce other specs." });
-    }
-
-    // Step 4: PSU (adequate + conservative headroom)
-    const targetPsuWattage = computeTargetPsuWattage(intent, selectedBuild.Processor, selectedBuild["Graphics Card"]);
-    const psuRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'PSU');
-    const psuAllowedMax = coreBudget - totalCost - psuRemainingMin;
-    if (psuAllowedMax <= 0) {
-      return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-    }
-    const psuRange = { min: 0, max: psuAllowedMax };
-    const psuCondition = p => p.specs.wattage >= targetPsuWattage;
-    selectedBuild.PSU = await selectWithFallback(partsCache, site, 'PSU', psuRange, 'price_asc', psuCondition, psuAllowedMax);
-    if (selectedBuild.PSU) {
-      console.log(`✓ PSU: ${selectedBuild.PSU.name} - ${selectedBuild.PSU.price} BDT`);
-      totalCost += selectedBuild.PSU.price;
-    } else {
-      console.error(`ERROR: Could not find adequate PSU (need ${targetPsuWattage}W)`);
-      return res.json({ error: `Could not find a PSU with at least ${Math.round(targetPsuWattage)}W. Try increasing budget or switching sites.` });
-    }
-
-    // Step 5: Storage (essential — respect user's capacity requirement)
-    const storageRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'Storage');
-    const storageAllowedMax = coreBudget - totalCost - storageRemainingMin;
-    if (storageAllowedMax <= 0) {
-      return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-    }
-    const storageRange = { min: 0, max: storageAllowedMax };
-    const storageCapacityFilter = intent.storage_tb
-      ? (p => {
-          const capGB = parseStorageCapacityGB(p.name);
-          const requiredGB = intent.storage_tb * 1000;
-          return capGB >= requiredGB * 0.9;
-        })
-      : undefined;
-    // Use price_asc when capacity is specified (pick cheapest matching capacity)
-    const storageSortOrder = intent.storage_tb ? 'price_asc' : 'price_desc';
-    selectedBuild.Storage = await selectWithFallback(partsCache, site, 'Storage', storageRange, storageSortOrder, storageCapacityFilter, storageAllowedMax);
-    if (!selectedBuild.Storage && storageCapacityFilter) {
-      console.warn(`⚠ No ${intent.storage_tb}TB storage within budget, trying any storage`);
-      selectedBuild.Storage = await selectWithFallback(partsCache, site, 'Storage', storageRange, 'price_desc', undefined, storageAllowedMax);
-    }
-    if (selectedBuild.Storage) {
-      console.log(`✓ Storage: ${selectedBuild.Storage.name} - ${selectedBuild.Storage.price} BDT`);
-      totalCost += selectedBuild.Storage.price;
-    }
-
-    // Step 6: CPU Cooler (if TDP >= 105W and budget available)
-    if (selectedBuild.Processor && selectedBuild.Processor.specs.tdp >= 105) {
-      const coolerRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'CPU Cooler');
-      const coolerAllowedMax = coreBudget - totalCost - coolerRemainingMin;
-      if (coolerAllowedMax <= 0) {
-        return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-      }
-      const coolerRange = { min: 0, max: coolerAllowedMax };
-      const cooler = await selectWithFallback(partsCache, site, 'CPU Cooler', coolerRange, 'price_desc', undefined, coolerAllowedMax);
-      if (cooler) {
-        selectedBuild["CPU Cooler"] = cooler;
-        console.log(`✓ CPU Cooler: ${cooler.name} - ${cooler.price} BDT`);
-        totalCost += cooler.price;
-      }
-    }
-
-    // Step 7: Casing (if budget available)
-    const casingRemainingMin = getRemainingCoreMinimum(coreMinimums, selectedBuild, noGpu, needsCooler, 'Casing');
-    const casingAllowedMax = coreBudget - totalCost - casingRemainingMin;
-    if (casingAllowedMax <= 0) {
-      return res.json({ error: formatMinimumError("core components", coreMinimums.total + peripheralMinimums.total) });
-    }
-    const casingRange = { min: 0, max: casingAllowedMax };
-    if (casingRange.max > 0) {
-      const casing = await selectWithFallback(partsCache, site, 'Casing', casingRange, 'price_desc', undefined, casingAllowedMax);
-      if (casing) {
-        selectedBuild.Casing = casing;
-        console.log(`✓ Casing: ${casing.name} - ${casing.price} BDT`);
-        totalCost += casing.price;
-      }
-    }
-
-    if (totalCost > coreBudget) {
-      return res.json({
-        error: "Core components exceeded the available budget after reserving peripherals. Try reducing requirements or increasing budget."
-      });
-    }
-
-    console.log("\nPHASE 3: Selecting peripherals with reserved budget...");
-
-    // Step 8: Select peripherals with guaranteed reserved budget from mustHaves
-    // Monitor (if requested)
-    if (intent.needs_monitor && peripheralMinimums.monitor > 0) {
-      const reserveForMouse = (intent.needs_mouse && !selectedBuild.Mouse) ? peripheralMinimums.mouse : 0;
-      const reserveForKeyboard = (intent.needs_keyboard && !selectedBuild.Keyboard) ? peripheralMinimums.keyboard : 0;
-      const monitorAllowedMax = Math.max(0, (budgetCeiling - totalCost) - reserveForMouse - reserveForKeyboard);
-      const monitorSoftMax = Math.max(peripheralMinimums.monitor + 5000, budgetRanges['Monitor']?.max || 0);
-      const monitorRange = { min: 0, max: Math.min(monitorSoftMax, monitorAllowedMax) };
-      let monitor = null;
-      
-      if (intent.monitor_hz) {
-        const hzCondition = p => {
-          const n = p.name.toLowerCase();
-          return n.includes(`${intent.monitor_hz}hz`) || n.includes(`${intent.monitor_hz} hz`);
+    // CPU
+    if (dynamicBudgets['Processor'] > 0) {
+        const cpuAllowedMax = dynamicBudgets['Processor'];
+        const cpuRange = { min: 0, max: cpuAllowedMax };
+        const cpuCondition = (p) => {
+          const brandMatch = !intent.preferred_cpu_brand || p.specs.brand === intent.preferred_cpu_brand.toLowerCase();
+          if (!brandMatch) return false;
+          if (!p.specs.socket || p.specs.socket === 'UNKNOWN') return false;
+          if (noGpu && !cpuHasIntegratedGraphics(p)) return false;
+          
+          // Enforce RAM compatibility if the LLM required a specific RAM type
+          const ramStrategy = intent.component_strategy['RAM'] || {};
+          const requestedRamType = (ramStrategy.required_keywords || []).find(k => k.toLowerCase() === 'ddr4' || k.toLowerCase() === 'ddr5');
+          if (requestedRamType) {
+              const reqType = requestedRamType.toUpperCase();
+              if (reqType === 'DDR5' && (p.specs.socket === 'AM4' || p.specs.socket === 'LGA1200' || p.specs.socket === 'LGA1151')) return false;
+              if (reqType === 'DDR4' && p.specs.socket === 'AM5') return false;
+              if (reqType === 'DDR3' && (p.specs.socket === 'AM4' || p.specs.socket === 'AM5' || p.specs.socket === 'LGA1700')) return false;
+          }
+          return getQualityFloorFilter(intent.component_strategy['Processor'])(p);
         };
-        monitor = await selectWithFallback(partsCache, site, 'Monitor', monitorRange, 'price_desc', hzCondition, monitorAllowedMax);
-      }
-      
-      if (!monitor) {
-        const gamingCondition = p => {
-          const n = p.name.toLowerCase();
-          return n.includes('144hz') || n.includes('165hz') || n.includes('240hz') || n.includes('360hz') || n.includes('gaming');
+        selectedBuild.Processor = await selectWithFallback(partsCache, site, 'Processor', cpuRange, 'price_desc', cpuCondition, cpuAllowedMax);
+        if (selectedBuild.Processor) {
+            console.log(`✓ Processor: ${selectedBuild.Processor.name} - ${selectedBuild.Processor.price} BDT`);
+            totalCost += selectedBuild.Processor.price;
+            if (selectedBuild.Processor.specs.tdp >= 105) needsCooler = true;
+        } else {
+            return res.json({ error: "Could not find a compatible Processor within the allocated budget." });
+        }
+    }
+
+    // Motherboard
+    if (dynamicBudgets['Motherboard'] > 0 && selectedBuild.Processor) {
+        const moboAllowedMax = dynamicBudgets['Motherboard'];
+        const moboRange = { min: 0, max: moboAllowedMax };
+        const moboCondition = p => {
+          if (p.specs.socket === 'UNKNOWN') return false;
+          if (p.specs.socket !== selectedBuild.Processor.specs.socket) return false;
+          
+          const ramStrategy = intent.component_strategy['RAM'] || {};
+          const requestedRamType = (ramStrategy.required_keywords || []).find(k => k.toLowerCase() === 'ddr4' || k.toLowerCase() === 'ddr5');
+          if (requestedRamType) {
+              if (p.specs.socket === 'LGA1700' && p.specs.ram_type === 'UNKNOWN') return false;
+          }
+          return getQualityFloorFilter(intent.component_strategy['Motherboard'])(p);
         };
-        monitor = await selectWithFallback(partsCache, site, 'Monitor', monitorRange, 'price_desc', gamingCondition, monitorAllowedMax);
-      }
-      
-      if (!monitor) {
-        monitor = await selectWithFallback(partsCache, site, 'Monitor', monitorRange, 'price_asc', undefined, monitorAllowedMax);
-      }
-      
-      if (monitor) {
-        selectedBuild.Monitor = monitor;
-        console.log(`✓ Monitor: ${monitor.name} - ${monitor.price} BDT`);
-        totalCost += monitor.price;
-      } else {
-        console.warn(`⚠ WARNING: Could not find monitor within reserved budget of ${peripheralMinimums.monitor} BDT`);
-      }
+        selectedBuild.Motherboard = await selectWithFallback(partsCache, site, 'Motherboard', moboRange, 'price_desc', moboCondition, moboAllowedMax);
+        if (!selectedBuild.Motherboard) {
+            // Expand range slightly if we missed by a few bucks
+            const expandedRange = { min: 0, max: Math.round(moboAllowedMax * 1.1) };
+            selectedBuild.Motherboard = await selectPart(partsCache, site, 'Motherboard', expandedRange, 'price_desc', moboCondition);
+        }
+        if (selectedBuild.Motherboard) {
+            if (selectedBuild.Motherboard.specs.ram_type === 'UNKNOWN' && selectedBuild.Processor) {
+              selectedBuild.Motherboard.specs.ram_type = selectedBuild.Processor.specs.ram_type;
+            }
+            console.log(`✓ Motherboard: ${selectedBuild.Motherboard.name} - ${selectedBuild.Motherboard.price} BDT`);
+            totalCost += selectedBuild.Motherboard.price;
+        } else {
+            return res.json({ error: `Could not find a compatible ${selectedBuild.Processor.specs.socket} Motherboard within allocated budget.` });
+        }
     }
 
-    // Mouse (if requested)
-    if (intent.needs_mouse && peripheralMinimums.mouse > 0) {
-      const reserveForKeyboard = (intent.needs_keyboard && !selectedBuild.Keyboard) ? peripheralMinimums.keyboard : 0;
-      const mouseAllowedMax = Math.max(0, (budgetCeiling - totalCost) - reserveForKeyboard);
-      const mouseSoftMax = Math.max(peripheralMinimums.mouse + 2000, budgetRanges['Mouse']?.max || 0);
-      const mouseRange = { min: 0, max: Math.min(mouseSoftMax, mouseAllowedMax) };
-      const mouse = await selectWithFallback(partsCache, site, 'Mouse', mouseRange, 'price_desc', undefined, mouseAllowedMax);
-      if (mouse) {
-        selectedBuild.Mouse = mouse;
-        console.log(`✓ Mouse: ${mouse.name} - ${mouse.price} BDT`);
-        totalCost += mouse.price;
-      } else {
-        console.warn(`⚠ WARNING: Could not find mouse within reserved budget of ${peripheralMinimums.mouse} BDT`);
-      }
+    // RAM
+    if (dynamicBudgets['RAM'] > 0) {
+        const ramAllowedMax = dynamicBudgets['RAM'];
+        const ramRange = { min: 0, max: ramAllowedMax };
+        const ramCondition = p => {
+          const desiredRamType = selectedBuild.Motherboard?.specs?.ram_type && selectedBuild.Motherboard.specs.ram_type !== 'UNKNOWN'
+              ? selectedBuild.Motherboard.specs.ram_type : null;
+          if (desiredRamType && p.specs.ram_type !== desiredRamType) return false;
+          return getQualityFloorFilter(intent.component_strategy['RAM'])(p);
+        };
+        selectedBuild.RAM = await selectWithFallback(partsCache, site, 'RAM', ramRange, 'price_asc', ramCondition, ramAllowedMax);
+        if (selectedBuild.RAM) {
+            console.log(`✓ RAM: ${selectedBuild.RAM.name} - ${selectedBuild.RAM.price} BDT`);
+            totalCost += selectedBuild.RAM.price;
+        } else {
+            return res.json({ error: "Could not find compatible RAM within allocated budget." });
+        }
     }
 
-    // Keyboard (if requested)
-    if (intent.needs_keyboard && peripheralMinimums.keyboard > 0) {
-      const keyboardAllowedMax = Math.max(0, budgetCeiling - totalCost);
-      const keyboardSoftMax = Math.max(peripheralMinimums.keyboard + 2000, budgetRanges['Keyboard']?.max || 0);
-      const keyboardRange = { min: 0, max: Math.min(keyboardSoftMax, keyboardAllowedMax) };
-      const keyboard = await selectWithFallback(partsCache, site, 'Keyboard', keyboardRange, 'price_desc', undefined, keyboardAllowedMax);
-      if (keyboard) {
-        selectedBuild.Keyboard = keyboard;
-        console.log(`✓ Keyboard: ${keyboard.name} - ${keyboard.price} BDT`);
-        totalCost += keyboard.price;
-      } else {
-        console.warn(`⚠ WARNING: Could not find keyboard within reserved budget of ${peripheralMinimums.keyboard} BDT`);
-      }
+    // Graphics Card
+    const gpuStrategy = intent.component_strategy['Graphics Card'];
+    if (gpuStrategy && gpuStrategy.required && !noGpu) {
+        const gpuAllowedMax = dynamicBudgets['Graphics Card'];
+        const gpuRange = { min: 0, max: gpuAllowedMax };
+        const gpuFilter = p => {
+            if (intent.preferred_gpu_brand && p.specs.gpu_brand !== intent.preferred_gpu_brand.toLowerCase()) return false;
+            if (!isGpuAdequateForUseCase(p, intent.use_case)) return false;
+            if (!isCpuBalanced(selectedBuild.Processor, p)) return false;
+            return getQualityFloorFilter(intent.component_strategy['Graphics Card'])(p);
+        };
+        selectedBuild["Graphics Card"] = await selectWithFallback(partsCache, site, 'Graphics Card', gpuRange, 'price_desc', gpuFilter, gpuAllowedMax);
+        if (selectedBuild["Graphics Card"]) {
+            console.log(`✓ GPU: ${selectedBuild["Graphics Card"].name} - ${selectedBuild["Graphics Card"].price} BDT`);
+            totalCost += selectedBuild["Graphics Card"].price;
+        }
     }
 
-    // Step 9: Rebalance if underspent (cap iterations to avoid infinite loops)
+    // PSU
+    if (dynamicBudgets['PSU'] > 0) {
+        const targetPsuWattage = computeTargetPsuWattage(intent, selectedBuild.Processor, selectedBuild["Graphics Card"]);
+        const psuAllowedMax = dynamicBudgets['PSU'];
+        const psuRange = { min: 0, max: psuAllowedMax };
+        const psuCondition = p => p.specs.wattage >= targetPsuWattage && getQualityFloorFilter(intent.component_strategy['PSU'])(p);
+        selectedBuild.PSU = await selectWithFallback(partsCache, site, 'PSU', psuRange, 'price_asc', psuCondition, psuAllowedMax);
+        if (selectedBuild.PSU) {
+            console.log(`✓ PSU: ${selectedBuild.PSU.name} - ${selectedBuild.PSU.price} BDT`);
+            totalCost += selectedBuild.PSU.price;
+        } else {
+            return res.json({ error: `Could not find a PSU with at least ${Math.round(targetPsuWattage)}W.` });
+        }
+    }
+
+    // Storage
+    if (dynamicBudgets['Storage'] > 0) {
+        const storageAllowedMax = dynamicBudgets['Storage'];
+        const storageRange = { min: 0, max: storageAllowedMax };
+        selectedBuild.Storage = await selectWithFallback(partsCache, site, 'Storage', storageRange, 'price_desc', getQualityFloorFilter(intent.component_strategy['Storage']), storageAllowedMax);
+        if (selectedBuild.Storage) {
+            console.log(`✓ Storage: ${selectedBuild.Storage.name} - ${selectedBuild.Storage.price} BDT`);
+            totalCost += selectedBuild.Storage.price;
+        }
+    }
+
+    // CPU Cooler
+    if (dynamicBudgets['CPU Cooler'] > 0 || needsCooler) {
+        const coolerAllowedMax = dynamicBudgets['CPU Cooler'] || 5000;
+        if (coolerAllowedMax > 0) {
+            const coolerRange = { min: 0, max: coolerAllowedMax };
+            const cooler = await selectWithFallback(partsCache, site, 'CPU Cooler', coolerRange, 'price_desc', getQualityFloorFilter(intent.component_strategy['CPU Cooler'] || {}), coolerAllowedMax);
+            if (cooler) {
+                selectedBuild["CPU Cooler"] = cooler;
+                console.log(`✓ CPU Cooler: ${cooler.name} - ${cooler.price} BDT`);
+                totalCost += cooler.price;
+            }
+        }
+    }
+
+    // Casing
+    if (dynamicBudgets['Casing'] > 0) {
+        const casingAllowedMax = dynamicBudgets['Casing'];
+        const casingRange = { min: 0, max: casingAllowedMax };
+        const casing = await selectWithFallback(partsCache, site, 'Casing', casingRange, 'price_desc', getQualityFloorFilter(intent.component_strategy['Casing']), casingAllowedMax);
+        if (casing) {
+            selectedBuild.Casing = casing;
+            console.log(`✓ Casing: ${casing.name} - ${casing.price} BDT`);
+            totalCost += casing.price;
+        }
+    }
+
+    // Peripherals
+    if (dynamicBudgets['Monitor'] > 0) {
+        const monMax = dynamicBudgets['Monitor'];
+        selectedBuild.Monitor = await selectWithFallback(partsCache, site, 'Monitor', {min:0, max:monMax}, 'price_desc', getQualityFloorFilter(intent.component_strategy['Monitor']), monMax);
+        if (selectedBuild.Monitor) {
+            console.log(`✓ Monitor: ${selectedBuild.Monitor.name} - ${selectedBuild.Monitor.price} BDT`);
+            totalCost += selectedBuild.Monitor.price;
+        }
+    }
+    if (dynamicBudgets['Mouse'] > 0) {
+        const mouseMax = dynamicBudgets['Mouse'];
+        selectedBuild.Mouse = await selectWithFallback(partsCache, site, 'Mouse', {min:0, max:mouseMax}, 'price_desc', getQualityFloorFilter(intent.component_strategy['Mouse']), mouseMax);
+        if (selectedBuild.Mouse) {
+            console.log(`✓ Mouse: ${selectedBuild.Mouse.name} - ${selectedBuild.Mouse.price} BDT`);
+            totalCost += selectedBuild.Mouse.price;
+        }
+    }
+    if (dynamicBudgets['Keyboard'] > 0) {
+        const keyMax = dynamicBudgets['Keyboard'];
+        selectedBuild.Keyboard = await selectWithFallback(partsCache, site, 'Keyboard', {min:0, max:keyMax}, 'price_desc', getQualityFloorFilter(intent.component_strategy['Keyboard']), keyMax);
+        if (selectedBuild.Keyboard) {
+            console.log(`✓ Keyboard: ${selectedBuild.Keyboard.name} - ${selectedBuild.Keyboard.price} BDT`);
+            totalCost += selectedBuild.Keyboard.price;
+        }
+    }
+
     console.log("\nPHASE 4: Rebalancing underspent budget...");
-    const underspendTolerance = getUnderspendTolerance(budget);
+    const underspendTolerance = Math.min(budget * 0.005, 1500);
     const targetMinSpend = Math.max(0, budget - underspendTolerance);
 
-    const maxRebalanceIterations = (intent.tier === 'high-end') ? 7 : 6;
+    const isHighEnd = intent.budget_bdt >= 150000;
+    const maxRebalanceIterations = isHighEnd ? 7 : 6;
     for (let i = 0; i < maxRebalanceIterations; i++) {
       if (totalCost >= targetMinSpend) break;
       const remaining = budgetCeiling - totalCost;
@@ -1410,15 +987,20 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       upgradeCandidates.forEach(category => {
         const current = selectedBuild[category];
         if (!current) return;
+        
+        const strategy = intent.component_strategy[category];
+        if (!strategy || !strategy.required) return;
 
-        const shareCap = getCategoryShareCap(budget, intent, category);
-        const expandedMax = Math.min(current.price + remaining, budgetCeiling, shareCap);
+        // The AI-defined weight becomes the multiplier for the gap
+        const weight = strategy.weight || 1;
+        
+        // Allowed max is the existing dynamic budget + remaining
+        const expandedMax = Math.min(current.price + remaining, budgetCeiling);
         const gap = expandedMax - current.price;
-
-        const weight = getUpgradeWeight(intent, category);
         const score = gap * weight;
+        
         if (gap > 200 && (!best || score > best.score)) {
-          best = { category, possibleMax: expandedMax, gap, score };
+          best = { category, possibleMax: expandedMax, gap, score, filter: getQualityFloorFilter(strategy) };
         }
       });
 
@@ -1431,16 +1013,16 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       };
       if (upgradeRange.max <= upgradeRange.min) break;
 
-      let filterFn;
+      let filterFn = best.filter;
       if (best.category === 'Graphics Card') {
         filterFn = p => {
           if (intent.preferred_gpu_brand && p.specs.gpu_brand !== intent.preferred_gpu_brand.toLowerCase()) return false;
           if (!isGpuAdequateForUseCase(p, intent.use_case)) return false;
-          // Prevent breaking PSU compatibility when upgrading GPU.
+          if (!isCpuBalanced(selectedBuild.Processor, p)) return false;
           const psuOk = selectedBuild.PSU?.specs?.wattage
             ? selectedBuild.PSU.specs.wattage >= computeTargetPsuWattage(intent, selectedBuild.Processor, p)
             : true;
-          return psuOk;
+          return psuOk && best.filter(p);
         };
       } else if (best.category === 'Processor') {
         filterFn = p => {
@@ -1448,11 +1030,10 @@ app.post('/api/build', apiLimiter, async (req, res) => {
           const socketMatch = selectedBuild.Motherboard ? p.specs.socket === selectedBuild.Motherboard.specs.socket : true;
           if (!brandMatch || !socketMatch) return false;
           if (noGpu && !cpuHasIntegratedGraphics(p)) return false;
-          // Prevent breaking PSU compatibility when upgrading CPU.
           const psuOk = selectedBuild.PSU?.specs?.wattage
             ? selectedBuild.PSU.specs.wattage >= computeTargetPsuWattage(intent, p, selectedBuild["Graphics Card"])
             : true;
-          return psuOk;
+          return psuOk && best.filter(p);
         };
       } else if (best.category === 'Motherboard') {
         filterFn = p => {
@@ -1461,36 +1042,19 @@ app.post('/api/build', apiLimiter, async (req, res) => {
           if (p.specs.socket !== selectedBuild.Processor.specs.socket) return false;
           const desiredRamType = selectedBuild.RAM?.specs?.ram_type || intent.ram_type;
           if (desiredRamType && p.specs.ram_type !== 'UNKNOWN' && p.specs.ram_type !== desiredRamType) return false;
-          return true;
+          if (desiredRamType && p.specs.socket === 'LGA1700' && p.specs.ram_type === 'UNKNOWN') return false;
+          return best.filter(p);
         };
       } else if (best.category === 'RAM') {
         filterFn = p => {
-          const desiredRamType = intent.ram_type
-            || (selectedBuild.Motherboard?.specs?.ram_type && selectedBuild.Motherboard.specs.ram_type !== 'UNKNOWN'
+          const desiredRamType = selectedBuild.Motherboard?.specs?.ram_type && selectedBuild.Motherboard.specs.ram_type !== 'UNKNOWN'
               ? selectedBuild.Motherboard.specs.ram_type
-              : null);
+              : null;
           if (desiredRamType && p.specs.ram_type !== desiredRamType) return false;
-          if (!intent.ram_gb) return true;
-          const name = p.name.toLowerCase();
-          const half = intent.ram_gb / 2;
-          const gbMatch = name.includes(`${intent.ram_gb}gb`)
-            || name.includes(`${intent.ram_gb} gb`)
-            || name.includes(`2x${half}gb`)
-            || name.includes(`2x${half} gb`);
-          return gbMatch;
-        };
-      } else if (best.category === 'Monitor' && intent.monitor_hz) {
-        filterFn = p => {
-          const n = p.name.toLowerCase();
-          return n.includes(`${intent.monitor_hz}hz`) || n.includes(`${intent.monitor_hz} hz`);
+          return best.filter(p);
         };
       } else if (best.category === 'PSU') {
-        filterFn = p => p.specs.wattage >= computeTargetPsuWattage(intent, selectedBuild.Processor, selectedBuild["Graphics Card"]);
-      } else if (best.category === 'Storage' && intent.storage_tb) {
-        filterFn = p => {
-          const capGB = parseStorageCapacityGB(p.name);
-          return capGB >= intent.storage_tb * 1000 * 0.9;
-        };
+        filterFn = p => p.specs.wattage >= computeTargetPsuWattage(intent, selectedBuild.Processor, selectedBuild["Graphics Card"]) && best.filter(p);
       }
 
       const upgraded = await selectPart(partsCache, site, best.category, upgradeRange, 'price_desc', filterFn);
@@ -1507,11 +1071,12 @@ app.post('/api/build', apiLimiter, async (req, res) => {
     const buildWarnings = [];
 
     // Check storage capacity vs user request
-    if (intent.storage_tb && selectedBuild.Storage) {
+    const requestedTb = intent.component_strategy?.['Storage']?.structured_reqs?.min_tb;
+    if (requestedTb && selectedBuild.Storage) {
       const actualCapGB = parseStorageCapacityGB(selectedBuild.Storage.name);
-      const requestedGB = intent.storage_tb * 1000;
+      const requestedGB = requestedTb * 1000;
       if (actualCapGB < requestedGB * 0.9) {
-        buildWarnings.push(`You requested ${intent.storage_tb}TB storage but the selected drive is ${actualCapGB >= 1000 ? (actualCapGB/1000).toFixed(1) + 'TB' : actualCapGB + 'GB'}. No ${intent.storage_tb}TB drive was available within budget.`);
+        buildWarnings.push(`You requested ${requestedTb}TB storage but the selected drive is ${actualCapGB >= 1000 ? (actualCapGB/1000).toFixed(1) + 'TB' : actualCapGB + 'GB'}. No ${requestedTb}TB drive was available within budget.`);
       }
     }
 
@@ -1532,13 +1097,14 @@ app.post('/api/build', apiLimiter, async (req, res) => {
     }
 
     // Check RAM matches request
-    if (intent.ram_gb && selectedBuild.RAM) {
+    const requestedGb = intent.component_strategy?.['RAM']?.structured_reqs?.min_gb;
+    if (requestedGb && selectedBuild.RAM) {
       const ramName = selectedBuild.RAM.name.toLowerCase();
-      const half = intent.ram_gb / 2;
-      const hasRequestedGB = ramName.includes(`${intent.ram_gb}gb`) || ramName.includes(`${intent.ram_gb} gb`)
+      const half = requestedGb / 2;
+      const hasRequestedGB = ramName.includes(`${requestedGb}gb`) || ramName.includes(`${requestedGb} gb`)
         || ramName.includes(`2x${half}gb`) || ramName.includes(`2x${half} gb`);
       if (!hasRequestedGB) {
-        buildWarnings.push(`You requested ${intent.ram_gb}GB RAM but the selected kit may differ. Check the product listing.`);
+        buildWarnings.push(`You requested ${requestedGb}GB RAM but the selected kit may differ. Check the product listing.`);
       }
     }
 
@@ -1570,7 +1136,7 @@ app.post('/api/build', apiLimiter, async (req, res) => {
       console.error(`  Motherboard: ${selectedBuild.Motherboard ? '✓' : '✗'}`);
       console.error(`  RAM: ${selectedBuild.RAM ? '✓' : '✗'}`);
       console.error(`  PSU: ${selectedBuild.PSU ? '✓' : '✗'}`);
-      console.error(`  Total spent: ${totalCost} BDT (core budget was ${coreBudget} BDT)`);
+      console.error(`  Total spent: ${totalCost} BDT (Total allocated budget was ${budgetCeiling} BDT)`);
       return res.json({
          error: "I couldn't put together a fully compatible build within that exact budget from the live scraped parts. Please try adjusting your budget."
       });
@@ -1641,6 +1207,10 @@ ${buildWarnings.length > 0 ? '\nIMPORTANT WARNINGS to mention:\n' + buildWarning
 
   } catch (error) {
     console.error("Error in /api/build:", error);
+    const logMsg = (error.stack || error) + "\n\n";
+    fs.appendFile(path.join(__dirname, 'error.log'), logMsg, (err) => {
+       if (err) console.error("Failed to write to error.log:", err);
+    });
     res.status(500).json({ error: "An internal server error occurred while building your PC." });
   }
 });

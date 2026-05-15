@@ -72,97 +72,6 @@ cd scraper
 ./venv/Scripts/python sync_db.py
 ```
 
-### Progress & Completed Tasks (Database Architecture Migration)
-- Replaced live scraper API with a background ETL pipeline. `scraper/main.py` FastApi server is completely removed.
-- Set up Supabase PostgreSQL schema (`supabase_schema.sql`).
-- Modified `backend/server.js` to drop web scraping and instead directly query the `components` Supabase table for PC parts, greatly speeding up build times. Redundant fallbacks for pagination are removed.
-- Implemented `scraper/sync_db.py` to extract component hardware specs automatically.
-- Added smart state tracking (`sync_state.json`) and rate-limiting (`time.sleep(3)`) to `sync_db.py` to resume exactly from where it left off on failure and prevent the scraper getting banned by the target shops.
-
-### Testing Results
-
-**Test 1 - PASSED ✅ (EEE Student 70K Budget)**
-- Request: "EEE student, 70K budget, study simulation software"
-- CPU: AMD Ryzen 7 5700G (AM4, Radeon iGPU)
-- Motherboard: Colorful B450M (AM4, DDR4)
-- Result: 72,099 BDT (3% overspend within tolerance)
-- All core components + peripherals selected
-
-**Test 2 - PASSED ✅ (High-End Gaming 300K DDR5)**
-- Request: "Build high-end gaming PC 300K budget, DDR5, Ryzen, RTX, 240Hz monitor, gaming mouse, mechanical keyboard"
-- CPU: AMD Ryzen 5 7600X (AM5, DDR5) - 19,500 BDT
-- Motherboard: MSI PRO A620M-E (AM5) - 9,999 BDT
-- RAM: Team T-Force VULCAN RED 8GB DDR5 - 14,400 BDT
-- GPU: ASUS TUF RTX 5080 - 238,000 BDT
-- PSU: Ocypus DELTA P750 (750W) - 6,100 BDT
-- Peripherals: Monitor 15,700 BDT, Mouse 300 BDT, Keyboard 400 BDT
-- Result: 308,999 BDT total (within tolerance)
-- Key Fix: AM5 socket detection now works for Ryzen 7000/8000/9000 series
-
-**Critical Bug Fixes Applied (Test 2 Debugging):**
-1. **CPU Balancing Function (Line 469):** Changed GPU price threshold from 140K to 500K BDT
-   - Problem: Rejected ALL Ryzen 5 CPUs when GPU >= 140K (RTX 5080 = 238K), no mid-tier CPUs allowed
-   - Fix: Now Ryzen 5 CPUs allowed with realistic high-end GPU choices
-   - Impact: High-end gaming builds with mid-tier CPUs now work correctly
-
-2. **PSU Wattage Floor Function (Line 509):** Adjusted power requirements from overly conservative to realistic
-   - Problem: GPU TDP >= 320W required 850W PSU (overstocking expensive PSU)
-   - Fix: GPU TDP >= 320W now requires 750W (350W→800W, 400W→850W, 450W→1000W)
-   - Impact: Saved ~2,200 BDT on PSU, enabled builds to fit within budget
-
-3. **AM5 Socket Detection (Line 233):** Fixed regex patterns with three separate expressions
-   - Pattern 1: `/ryzen [579] 7\d{3}/` matches Ryzen 7000 series (7600, 7700X, etc.)
-   - Pattern 2: `/ryzen [579] 8\d{3}/` matches Ryzen 8000 series (8400F, etc.)
-   - Pattern 3: `/ryzen [579] 9[0-9]{3}/` matches Ryzen 9000 series
-   - Impact: DDR5/AM5 CPUs now properly detected in product names and selected for builds
-
-**Remaining Tests:**
-- Test 3: CSE Student 60K (no GPU, DDR4, 16GB RAM, peripherals) — **PASSED ✅**
-- Test 4: Video Editor 80K (4K capability, 2TB SSD, 32GB RAM, 100Hz monitor) — **FAILED (Expected)** ❌
-  - Error: "No compatible RAM found for DDR4"
-  - Root Cause: Conflicting budget constraints (2TB SSD + 32GB RAM ~100K vs. 80K budget)
-  - System Behavior: Correctly rejected impossible combination
-- **Skipped:** Cross-site validation (TechLand), Rate limiter reverted to 5/15min
-
-### Summary of All Tests
-
-| Test | Scenario | Status | Result | Notes |
-|------|----------|--------|--------|-------|
-| 1 | EEE Student 70K | ✅ PASSED | 72,099 BDT total | All components selected, peripherals included |
-| 2 | High-end Gaming 300K | ✅ PASSED | 308,999 BDT total | DDR5/AM5/RTX 5080 working correctly |
-| 3 | CSE Student 60K | ✅ PASSED | 61,799 BDT total | No GPU, DDR4, 16GB, peripherals all working |
-| 4 | Video Editor 80K | ❌ FAILED | N/A | Impossible requirements (2TB + 32GB DDR4 too expensive) |
-
-### Critical Bugs Fixed This Session
-
-1. ✅ **CPU Balancing Threshold** - Changed from 140K to 500K BDT GPU price threshold
-2. ✅ **PSU Wattage Floor** - Adjusted from 850W to 750W for GPU TDP >= 320W  
-3. ✅ **AM5 Socket Detection** - Fixed regex patterns with three separate expressions for Ryzen 7000/8000/9000
-4. ✅ **Rate Limiter** - Reverted from testing (50) back to production (5) per 15 minutes
-
-**Critical Bug Fixes in Test 2:**
-1. CPU Balancing Function (Line 469): Changed GPU price threshold from 140K to 500K BDT
-   - Previous: Rejected ALL Ryzen 5 CPUs when GPU >= 140K (RTX 5080 = 238K)
-   - Fixed: Now Ryzen 5 allowed with realistic GPU choices
-   - Impact: High-end gaming builds with mid-tier CPUs now work
-
-2. PSU Wattage Floor Function (Line 509): Adjusted power requirements to realistic levels
-   - Previous: GPU TDP >= 320W required 850W PSU
-   - Fixed: GPU TDP >= 320W now requires 750W PSU (350W → 800W, 400W → 850W, 450W → 1000W)
-   - Impact: Saved ~2,200 BDT on PSU, enabling builds to fit within budget
-
-3. AM5 Socket Detection (Line 233): Fixed regex patterns with three separate expressions
-   - Pattern 1: `/ryzen [579] 7\d{3}/` matches Ryzen 5/7/9 7000 series
-   - Pattern 2: `/ryzen [579] 8\d{3}/` matches Ryzen 8000 series
-   - Pattern 3: `/ryzen [579] 9[0-9]{3}/` matches Ryzen 9000 series
-   - Impact: DDR5/AM5 CPUs now properly detected and selected
-
-### Remaining Tests
-- Test 3: CSE Student 60K (no GPU, DDR4, 16GB RAM, peripherals)
-- Test 4: Video Editor 80K (4K capability, 2TB SSD, 32GB RAM, 100Hz monitor)
-
----
-
 ## Key Files
 
 ### Frontend
@@ -283,81 +192,33 @@ The LLM is given the user's message and returns this JSON:
 
 ## Part Selection Logic (`backend/server.js`)
 
-### 4-Phase Build Process
+### Dynamic Blueprint Architecture
 
-**PHASE 1 — Calculate minimums:**
-- Find cheapest possible CPU, mobo, RAM, storage, PSU, casing, GPU (if needed), monitor, mouse, keyboard
-- If minimumRequired > budget → return error before attempting build
-- `coreBudget = budget - peripheralMinimums.total`
+The PC builder engine uses a **Dynamic Blueprint Architecture** that shifts decision-making to the LLM (The Architect) and relies on the Node.js backend (The Builder) for execution. This solves edge cases and rigid constraints found in legacy heuristic systems.
 
-**PHASE 2 — Select core components:**
-- Anchor: GPU first for gaming, CPU first for everything else
-- CPU → Motherboard (socket match) → RAM (DDR type + GB size match)
-- Each component gets `allowedMax = coreBudget - totalSoFar - remainingMinimums`
-- This guarantees budget for remaining components
+**1. The Architect (LLM)**
+The LLM generates a `component_strategy` defining how to build the PC:
+- `weight`: Determines how leftover budget is distributed. A higher weight means the component is prioritized for upgrades.
+- `required_keywords`: Fuzzy title matching to enforce constraints (e.g., "IPS", "Ryzen 5").
+- `exclude_keywords`: Explicit negatives (e.g., "TN", "VA").
+- `structured_reqs`: Hard numerical minimums (e.g., `min_gb: 16`, `min_wattage: 750`).
 
-**PHASE 3 — Select peripherals:**
-- Monitor, mouse, keyboard selected from reserved peripheral budget
-- Monitor gets `peripheralMinimum.monitor + 5000` BDT range
+**2. Pre-Flight Reality Check (`calculateFloorPrices`)**
+Before any budget is committed, the engine calculates the absolute minimum viable cost (`totalFloor`) to fulfill the *required* specs.
+- **Keyword Degradation Safety Net:** If a specific `required_keyword` yields 0 results, the system drops the last keyword and retries to prevent build failures from minor naming inconsistencies.
+- If `totalFloor > budgetCeiling`, the system halts and returns a polite error to the user stating their specific requirements are impossible within the budget.
 
-**PHASE 4 — Rebalance:**
-- If totalCost < 90% of budget, upgrade components with leftover
-- Max 3 upgrade iterations
-- Single component capped at 50% of total budget
+**3. Weighted Budget Allocation**
+Legacy static ratios (e.g., GPU 30%) are removed. Instead, the `leftoverBudget = budgetCeiling - totalFloor` is distributed mathematically based on the AI-assigned `weight`.
+- `dynamicBudgets[category] = floorPrice + ((weight / totalWeight) * leftoverBudget)`
+This ensures every component has a dynamically calculated budget cap tailored to the specific prompt (e.g., "Silent PC" puts weight on cooling/casing).
 
-### Budget Allocation Ratios (By Use Case)
+**4. Component Selection**
+Components are selected using `selectWithFallback` bounded by their `dynamicBudgets[category]`. The system enforces `getQualityFloorFilter()` at every step.
+- Selection order: CPU → Motherboard (socket match) → RAM (type match) → GPU → PSU (wattage match) → Storage → Cooling → Casing → Peripherals.
 
-**GAMING (GPU present):**
-```
-GPU:          30-38%    Monitor:   5-10%
-Processor:    15-25%    Mouse:     0.5-1.5%
-Motherboard:   5-10%    Keyboard:  0.5-1.5%
-RAM:           5-8%
-Storage:       3-7%
-PSU:           2-4%
-Casing:        1-3%
-```
-
-**EDITING (video/3D rendering):**
-```
-GPU:          20-30%    Monitor:   8-12%
-Processor:    20-30%    Mouse:     1-2%
-Motherboard:   8-12%    Keyboard:  1-2%
-RAM:           8-12%
-Storage:       6-10%
-PSU:           3-5%
-Casing:        1-2%
-```
-
-**GENERAL (light workload, no GPU):**
-```
-Processor:    18-26%    Monitor:   6-12%
-Motherboard:   8-12%    Mouse:     2-3%
-RAM:           8-12%    Keyboard:  2-3%
-Storage:       6-10%
-PSU:           3-5%
-Casing:        2-3%
-```
-
-**OFFICE (no GPU, budget conscious):**
-```
-Processor:    22-30%    Monitor:   8-15%
-Motherboard:  8-12%     Mouse:     2-3%
-RAM:          10-18%    Keyboard:  2-3%
-Storage:      8-12%
-PSU:           3-5%
-Casing:        2-3%
-```
-
-**Tier-Based Scaling:**
-- `high-end` tier: 1.15× scale (selects more expensive components)
-- `budget` tier: 0.9× scale (selects cheaper alternatives)
-- `mid` tier: 1.0× baseline
-
-**Overspend/Underspend Tolerance:**
-- Allowed overspend: 3% of budget OR 12,000 BDT (whichever is smaller)
-- Allowed underspend: 0.5% of budget OR 1,500 BDT (whichever is smaller)
-- Phase 4 rebalancing can adjust if outside tolerance
+**5. Post-Build Rebalancing**
+If the build underspends (due to inventory gaps), the system iterates through components and upgrades them if the AI `weight` justifies it and the upgrade fits within the ceiling.
 
 ### Compatibility Chain
 
@@ -374,22 +235,6 @@ CPU selected (brand + socket locked by ram_type)
 - LGA1700: keywords `h610`, `b660`, `b760`, `z690`, `z790` or 12xxx/13xxx/14xxx pattern
 - LGA1200: keywords `h410`, `b460`, `h510`, `b560`, `z490`, `z590` or 10xxx/11xxx pattern
 - UNKNOWN socket → part is skipped entirely by compatibility engine
-
-**RAM fallback chain:**
-1. Match DDR type + GB size within budget
-2. Match DDR type + GB size at +20% budget
-3. Match DDR type only (any GB) — with console warning
-4. Hard error with informative message
-
-### `selectWithFallback` strategy
-For each component:
-1. Try exact budget range
-2. Try just above range (cheapest above max, up to +25%)
-3. Try just below range (best below min)
-4. Survival: cheapest in full range
-
-### `getRemainingCoreMinimum`
-Calculates minimum budget still needed for unselected components. Used to cap each component's `allowedMax` so budget is never fully consumed before all parts are selected.
 
 ---
 
@@ -493,7 +338,6 @@ skip: (req) => req.body?.customKeys?.groq || req.body?.customKeys?.gemini
 - `curl_cffi` — HTTP with SSL bypass (CloudFlare protection)
 - `playwright` — Browser automation for JS-rendered sites
 - `browserforge` — User-agent generation (appears real browser)
-- ⚠️ `fastapi`, `uvicorn` — No longer used (old architecture)
 
 ---
 ## Backend Caching Strategy
@@ -588,10 +432,9 @@ const { data } = await supabase
 
 ## Scraper ETL Pipeline (`scraper/sync_db.py`)
 
-**Architecture (No longer FastAPI):**
-- ❌ Removed: `scraper/main.py` live API server
-- ✅ Active: `scraper/sync_db.py` background ETL daemon
-- ✅ Active: `scraper/sync_state.json` state tracking for recovery
+**Architecture:**
+- `scraper/sync_db.py`: Background ETL daemon
+- `scraper/sync_state.json`: State tracking for recovery
 
 **ETL Flow:**
 1. **Phase StarTech**: Scrape 12 categories, batch 50 items per request, upsert to DB, save state
@@ -692,17 +535,6 @@ If exact match (DDR4 16GB) not found:
 
 ## Known Issues & Constraints
 
-**Active bugs (May 2026):**
-- `"No compatible RAM found for DDR4"` — Phase 1 `ramFilter` too strict; if no 16GB DDR4 found in 3 scraped pages, build fails. Fix: fall back to any DDR4 if 16GB not found.
-- ✅ **FIXED:** Backend part cache now keyed by both `site` AND `category` — cross-vendor product mixing prevented.
-- ✅ **FIXED:** `cpuHasIntegratedGraphics()` filters out CPUs without iGPU for no-GPU builds.
-- ✅ **FIXED:** RAM selection now uses `price_asc` to pick cheapest matching kit first (prevents 31K RGB kit when 6K basic kit exists). Phase 4 upgrades if budget allows.
-- ✅ **FIXED:** Storage capacity parsing — user-requested "2TB" now filters storage products by capacity instead of picking cheapest 128GB.
-- ✅ **FIXED:** GPU quality floor — `isGpuAdequateForUseCase()` rejects ancient GPUs (GT610, GT710, DDR3 VRAM) for editing/gaming builds.
-- ✅ **FIXED:** PSU wattage regex — now catches "450M", "P750", "CX650M" naming patterns (previously only matched explicit "W"/"Watt").
-- ✅ **FIXED:** Post-build validation — generates compatibility warnings (storage mismatch, GPU inadequacy, PSU insufficiency, socket/RAM-type mismatch).
-- ⚠️ **Pending:** `maxCoreComponentBudget` reference in error log — variable renamed to `coreBudget`.
-
 **Permanent constraints:**
 - ComputerMania peripherals disabled — monitor/mouse/keyboard pages return 403
 - `inferSpecs` heuristics — unusual product naming falls to UNKNOWN socket and is skipped
@@ -712,7 +544,8 @@ If exact match (DDR4 16GB) not found:
 
 ---
 
-## Post-Build Validation (NEW)
+## Post-Build Validation
+
 
 After Phase 4 rebalancing, a validation pass generates warnings sent to the frontend:
 
@@ -726,6 +559,33 @@ After Phase 4 rebalancing, a validation pass generates warnings sent to the fron
 | RAM-Mobo type | DDR type mismatch | Critical (red) |
 
 Warnings are included in the API response as `warnings: string[]` and displayed in the frontend below the AI explanation.
+
+---
+
+## Edge Case Testing & Bug Fixes
+
+During the migration to the Dynamic Blueprint Architecture, complex prompts were used to validate the system.
+
+**Test Case:** *"I need a silent NAS storage server with 4TB of storage, DDR5 memory, no GPU, and at least 32GB RAM. Budget is 150000 BDT."*
+
+This prompt uncovered three critical bugs in the system that were successfully patched:
+
+1. **Phase 1 vs Phase 3 Constraint Mismatch:** 
+   - *Problem:* Phase 1 (Floor Calculator) was picking the cheapest AM4 Processor (DDR4) to set the floor price, but Phase 3 (The actual builder) was restricting processors to DDR5-compatible sockets (AM5/LGA1700). Because Phase 1 underestimated the floor price, Phase 3 wasn't given enough budget to afford an AM5 CPU.
+   - *Fix:* Injected the cross-component compatibility constraints (like checking for an iGPU and enforcing DDR5 socket compatibility) directly into Phase 1's reality check via the `filterFn` in `calculateFloorPrices`.
+2. **The Intel DDR5 Loophole:** 
+   - *Problem:* When filtering CPUs for DDR5 support, older Intel sockets (`LGA1200` and `LGA1151`) which are DDR4-only were not blocked. The system attempted to pair an LGA1200 CPU with a DDR5 motherboard, causing a build failure.
+   - *Fix:* Updated the constraint logic to explicitly block `LGA1200` and `LGA1151` sockets whenever DDR5 is requested.
+3. **Missing PSU Math:** 
+   - *Problem:* The internal server threw a `ReferenceError` trying to calculate the PSU wattage floor because `computeTargetPsuWattage` and `getPsuWattageFloor` were accidentally deleted during a previous code cleanup.
+   - *Fix:* Restored the two PSU mathematical helper functions to `backend/server.js`.
+
+**Test Case 2:** *"I am a CSE student and I intend to do UI/UX, so I need a budget PC with no graphics card and at least 16GB DDR4 ram. I don't need UPS but I do need other components such as monitor, decent mouse and keyboard. I have a 60K budget."*
+
+This prompt uncovered a 4th bug:
+4. **Phase 1 vs Phase 3 PSU Target Mismatch:**
+   - *Problem:* The LLM assigned a `min_wattage` of 300W for the PSU. Phase 1 used this 300W to calculate the floor price (allocating only ~1400 BDT). However, Phase 3 uses the internal `computeTargetPsuWattage()` engine, which enforces a strict 500W safety floor. Because Phase 1 grossly underestimated the PSU budget, Phase 3 failed with the error `Could not find a PSU with at least 500W.`
+   - *Fix:* Injected `computeTargetPsuWattage` directly into Phase 1's `calculateFloorPrices` filter. Phase 1 now correctly estimates and budgets for the 500W target that Phase 3 will demand.
 
 ---
 
