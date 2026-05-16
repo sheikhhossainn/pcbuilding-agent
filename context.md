@@ -448,3 +448,25 @@ REDIS_URL=redis://localhost:6379
 **Generated**: May 16, 2026  
 **Last Modified**: May 16, 2026 (Phase 3.5 Modular Audit & Hardening)
 **Next Review**: After Staging Deployment
+
+## Phase 4: Queue System ✅
+
+**Goal**: Support ~50-100 concurrent users on free Render tier.
+
+### Architecture
+- In-memory job queue (no Redis) — 2 workers, one per Groq key
+- POST /api/build → returns jobId instantly (~200ms)
+- GET /api/build/:jobId → poll every 3s for status
+- Frontend shows queue position + estimated wait
+
+### Files Created/Modified
+1. ✅ **CREATED** `backend/utils/queueManager.js` — job Map + pending array + worker pool
+2. ✅ **CREATED** `backend/engine/buildOrchestrator.js` — extracted build logic (no req/res)
+3. ✅ **MODIFIED** `backend/routes/build.js` — thin submit handler + status handler
+4. ✅ **MODIFIED** `backend/server.js` — GET route + depsFactory + initWorkers() on boot
+5. ✅ **MODIFIED** `frontend/src/components/Builder.jsx` — polling + queue position + traffic warning
+
+### Traffic Warning Feature
+- ✅ If queue position > 3, yellow banner prompts user to add their own Groq key
+- ✅ API Key navbar button gets yellow pulse-ring highlight when warning is active
+- ✅ Banner dismissible with X button, auto-clears on build completion

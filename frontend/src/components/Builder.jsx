@@ -79,6 +79,9 @@ function Builder() {
   const [customGroqKey, setCustomGroqKey] = useState(localStorage.getItem('customGroqKey') || "");
   const [showSettings, setShowSettings] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [queuePosition, setQueuePosition] = useState(0);
+  const [showTrafficWarning, setShowTrafficWarning] = useState(false);
+  const pollRef = useRef(null);
   
   const builderRef = useRef();
   const textareaRef = useRef(null);
@@ -114,6 +117,9 @@ function Builder() {
     setErrorMsg("");
     setBuildWarnings([]);
     setLoadingState("idle");
+    setQueuePosition(0);
+    setShowTrafficWarning(false);
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   };
 
   const clearLoadingTimers = () => {
@@ -131,9 +137,12 @@ function Builder() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     requestIdRef.current += 1;
     setLoadingState("idle");
     setErrorMsg("");
+    setQueuePosition(0);
+    setShowTrafficWarning(false);
     clearLoadingTimers();
   };
 
@@ -143,49 +152,97 @@ function Builder() {
     clearLoadingTimers();
     setLoadingState("analyzing");
     setErrorMsg("");
-    
-    // Simulate some steps before API returns
-    const selectTimer = setTimeout(() => {
-      setLoadingState((prev) => (prev === 'idle' || prev === 'error' || prev === 'success') ? prev : "selecting");
-    }, 1500);
-    const checkTimer = setTimeout(() => {
-      setLoadingState((prev) => (prev === 'idle' || prev === 'error' || prev === 'success') ? prev : "checking");
-    }, 3000);
-    loadingTimersRef.current = [selectTimer, checkTimer];
+    setQueuePosition(0);
+    setShowTrafficWarning(false);
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
     try {
       const currentRequestId = requestIdRef.current + 1;
       requestIdRef.current = currentRequestId;
-      const requestPayload = { 
-        message: chatInput, 
+      const requestPayload = {
+        message: chatInput,
         site: selectedSite === 'custom' ? customSiteUrl : selectedSite,
-        customKeys: {
-          groq: customGroqKey
-        }
+        customKeys: { groq: customGroqKey },
       };
       abortControllerRef.current = new AbortController();
-      const response = await axios.post(`${apiBaseUrl}/api/build`, requestPayload, {
-        signal: abortControllerRef.current.signal
+
+      // Step 1: Submit → get jobId instantly (~200ms)
+      const submitRes = await axios.post(`${apiBaseUrl}/api/build`, requestPayload, {
+        signal: abortControllerRef.current.signal,
       });
 
-      if (currentRequestId !== requestIdRef.current) {
-        return;
-      }
-      
-      if (response.data.error) {
-        setErrorMsg(response.data.error);
+      if (currentRequestId !== requestIdRef.current) return;
+
+      if (submitRes.data.error) {
+        setErrorMsg(submitRes.data.error);
         setLoadingState("error");
-        clearLoadingTimers();
         return;
       }
 
-      setBuild({...INITIAL_BUILD, ...response.data.build});
-      setTotal(response.data.total);
-      setExplanation(response.data.explanation);
-      setBuildWarnings(response.data.warnings || []);
-      setLoadingState("success");
-      clearLoadingTimers();
-      setChatInput(""); // clear input
+      const { jobId, position } = submitRes.data;
+      setQueuePosition(position);
+      if (position > 3) setShowTrafficWarning(true);
+
+      // Simulate loading phases
+      const selectTimer = setTimeout(() => {
+        setLoadingState((prev) => (prev === 'idle' || prev === 'error' || prev === 'success') ? prev : "selecting");
+      }, 1500);
+      const checkTimer = setTimeout(() => {
+        setLoadingState((prev) => (prev === 'idle' || prev === 'error' || prev === 'success') ? prev : "checking");
+      }, 3000);
+      loadingTimersRef.current = [selectTimer, checkTimer];
+
+      // Step 2: Poll every 3s for result
+      pollRef.current = setInterval(async () => {
+        if (currentRequestId !== requestIdRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          return;
+        }
+        try {
+          const pollRes = await axios.get(`${apiBaseUrl}/api/build/${jobId}`);
+          const data = pollRes.data;
+
+          if (data.status === 'queued') {
+            setQueuePosition(data.position || 1);
+            if (data.position > 3) setShowTrafficWarning(true);
+          }
+
+          if (data.status === 'processing') {
+            setQueuePosition(0);
+          }
+
+          if (data.status === 'completed' && data.result) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            clearLoadingTimers();
+            setBuild({ ...INITIAL_BUILD, ...data.result.build });
+            setTotal(data.result.total);
+            setExplanation(data.result.explanation);
+            setBuildWarnings(data.result.warnings || []);
+            setLoadingState("success");
+            setQueuePosition(0);
+            setShowTrafficWarning(false);
+            setChatInput("");
+          }
+
+          if (data.status === 'failed') {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            clearLoadingTimers();
+            setErrorMsg(data.error || "Build failed unexpectedly.");
+            setLoadingState("error");
+            setQueuePosition(0);
+          }
+        } catch (pollErr) {
+          // Polling errors are transient — keep trying unless cancelled
+          if (axios.isCancel(pollErr)) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        }
+      }, 3000);
+
     } catch (err) {
       if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || axios.isCancel(err)) {
         setLoadingState("idle");
@@ -282,6 +339,7 @@ function Builder() {
   };
 
   const getLoadingMessage = () => {
+    if (queuePosition > 0) return `Queue position: #${queuePosition} — estimated ~${queuePosition * 12}s`;
     switch (loadingState) {
       case 'analyzing': return "Analyzing your requirements...";
       case 'selecting': return "Selecting optimal components...";
@@ -321,7 +379,11 @@ function Builder() {
 
           <button 
             onClick={() => setShowSettings(true)}
-            className="px-3 py-1.5 text-slate-400 hover:text-sky-400 bg-slate-800 rounded-lg border border-slate-700/50 flex items-center gap-2 transition-colors"
+            className={`px-3 py-1.5 bg-slate-800 rounded-lg border flex items-center gap-2 transition-colors ${
+              showTrafficWarning
+                ? 'text-yellow-400 border-yellow-400/60 ring-2 ring-yellow-400 animate-pulse'
+                : 'text-slate-400 hover:text-sky-400 border-slate-700/50'
+            }`}
           >
             <span className="text-sm font-medium">API Key</span>
             <Key size={16} />
@@ -374,7 +436,11 @@ function Builder() {
               <div className="grid grid-cols-2 gap-3">
                 <button 
                   onClick={() => { setShowSettings(true); setShowMobileMenu(false); }}
-                  className="flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 rounded-lg py-3 text-slate-300"
+                  className={`flex items-center justify-center gap-2 bg-slate-800 border rounded-lg py-3 ${
+                    showTrafficWarning
+                      ? 'text-yellow-400 border-yellow-400/60 ring-2 ring-yellow-400 animate-pulse'
+                      : 'text-slate-300 border-slate-700'
+                  }`}
                 >
                   <Key size={18} />
                   <span className="text-sm font-medium">API Key</span>
@@ -402,6 +468,28 @@ function Builder() {
 
       {/* Main Content */}
       <main className="max-w-5xl mx-auto mt-6 sm:mt-8 px-3 sm:px-4" ref={builderRef}>
+
+        {/* Traffic Warning Banner */}
+        <AnimatePresence>
+          {showTrafficWarning && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-start gap-3 text-yellow-300"
+            >
+              <AlertTriangle className="mt-0.5 shrink-0" size={20} />
+              <div className="text-sm">
+                <strong>Heavy traffic detected.</strong> Get your{' '}
+                <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="underline text-yellow-200 hover:text-white">free Groq API key</a>{' '}
+                and paste it in <button onClick={() => setShowSettings(true)} className="underline text-yellow-200 hover:text-white">API Settings</button> for instant builds — no queue.
+              </div>
+              <button onClick={() => setShowTrafficWarning(false)} className="text-yellow-400 hover:text-white shrink-0 ml-auto">
+                <X size={18} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
         
         <div className="glass-card rounded-xl p-4 sm:p-6 mb-8">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-700 pb-4 mb-6 gap-4">

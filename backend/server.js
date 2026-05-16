@@ -33,8 +33,10 @@ import { createPartSelector } from './engine/partSelector.js';
 import { createCacheManager } from './utils/cacheManager.js';
 import { createSpecInference } from './utils/specInference.js';
 import { createPartRepository } from './utils/partRepository.js';
-import { createBuildHandler } from './routes/build.js';
+import { createSubmitHandler, createStatusHandler } from './routes/build.js';
 import { sendError, ERROR_INTERNAL } from './utils/errors.js';
+import { initWorkers } from './utils/queueManager.js';
+import { executeBuild } from './engine/buildOrchestrator.js';
 
 // ──── Setup ────
 const __filename = fileURLToPath(import.meta.url);
@@ -348,18 +350,6 @@ const partSelector = partRepository
   ? createPartSelector({ partRepository, compatChecker: compatibilityChecker })
   : null;
 
-// AI modules
-const groqClient = getGroqClient();
-
-const intentExtractor = createIntentExtractor({
-  groqClient,
-  systemPrompt: INTENT_PROMPT,
-});
-
-const explanationGenerator = createExplanationGenerator({
-  groqClient,
-});
-
 console.log("[init] ✓ All modules initialized");
 
 // ──── Routes ────
@@ -377,18 +367,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Build route
-const buildHandler = createBuildHandler({
-  intentExtractor,
-  explanationGenerator,
-  compatibilityChecker,
-  budgetAllocator,
-  partSelector,
-  partRepository,
-  intentOverrideApplier: applyIntentOverrideApplier,
-});
-
-app.post('/api/build', apiLimiter, buildHandler);
+// Build routes (queue-based)
+app.post('/api/build', apiLimiter, createSubmitHandler());
+app.get('/api/build/:jobId', createStatusHandler());
 
 // ──── Error Handling ────
 app.use((err, req, res, next) => {
@@ -400,11 +381,34 @@ app.use((err, req, res, next) => {
   sendError(res, ERROR_INTERNAL);
 });
 
+// ──── Deps Factory (creates fresh deps per Groq key) ────
+const createDepsForKey = (groqApiKey) => {
+  const keyClient = new RotatingGroqClient([groqApiKey]);
+  return {
+    intentExtractor: createIntentExtractor({ groqClient: keyClient, systemPrompt: INTENT_PROMPT }),
+    explanationGenerator: createExplanationGenerator({ groqClient: keyClient }),
+    compatibilityChecker,
+    budgetAllocator,
+    partSelector,
+    partRepository,
+    intentOverrideApplier: applyIntentOverrideApplier,
+  };
+};
+
+// ──── Initialize Queue Workers ────
+const groqKeys = [process.env.GROQ_API_KEY, process.env.GROQ_API_KEY_2].filter(Boolean);
+initWorkers({
+  buildFn: executeBuild,
+  depsFactory: createDepsForKey,
+  groqKeys,
+});
+
 // ──── Startup ────
 app.listen(port, () => {
   console.log(`[server] ✓ Backend running on http://localhost:${port}`);
   console.log(`[server] Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`[server] Supabase: ${supabase ? 'connected' : 'disconnected'}`);
+  console.log(`[server] Queue workers: ${groqKeys.length}`);
 });
 
 export default app;
