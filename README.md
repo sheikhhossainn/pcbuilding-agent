@@ -32,7 +32,7 @@ User Prompt
     ▼
 ┌─────────────────────────────────────────┐
 │  Phase 0 — Intent Extraction            │
-│  Llama 3.3 70B / Gemini 2.5 Pro        │
+│  Groq (Llama 3.3 70B / 8B Instant)      │
 │  Parses budget, use case, constraints   │
 │  Outputs a weighted component blueprint │
 └──────────────────┬──────────────────────┘
@@ -81,9 +81,11 @@ User Prompt
 ## Features
 
 **AI & Build Engine**
+- Modular Dependency Injection Architecture for clean, testable logic
 - Natural language prompts in English or Bangla numerals (`৬৫ হাজার`, `65k BDT`)
-- Dual AI providers — Groq (Llama 3.3 70B) and Gemini 2.5 Pro with automatic failover
+- AI Resilience — `RotatingGroqClient` automatically cycles through multiple API keys to prevent 429 rate limit downtime
 - Keyword degradation safety net — relaxes constraints progressively if no match is found
+- Spec-based fallback — dynamically infers RAM type requirements based on motherboard socket (LGA1200/AM4) even when keywords are missing
 - CPU/GPU bottleneck prevention (`isCpuBalanced` guard)
 - Integrated GPU detection for no-discrete-GPU builds
 
@@ -103,7 +105,8 @@ User Prompt
 - Prompt length capped at 2,000 characters
 - API key length sanitisation before passing to LLM SDKs
 - Site parameter whitelist (`startech`, `techland`, `computermania`) — no injection surface
-- Post-build validation layer surfaces incompatibility warnings to the frontend
+- Post-build validation layer surfaces incompatibility warnings to the frontend (e.g., storage capacity, PSU wattage, GPU adequacy, DDR sync)
+- Request Cancellation — Aborting a build on the UI instantly stops the AI and DB search process to save resources
 
 ---
 
@@ -114,8 +117,8 @@ User Prompt
 | Frontend | React 19, Vite 6, Tailwind CSS 4 |
 | Backend | Node.js, Express 4 |
 | Database | Supabase (PostgreSQL) |
-| AI — Primary | Groq — Llama 3.3 70B Versatile |
-| AI — Fallback | Google Gemini 2.5 Pro |
+| AI — Primary | Groq (Llama 3.3 70B Versatile) |
+| AI — Fallback | Groq (Llama 8B Instant) |
 | Scraper | Python, Scrapling, Playwright |
 | Frontend Hosting | Vercel |
 | Backend Hosting | Render (Singapore) |
@@ -129,7 +132,7 @@ User Prompt
 - Node.js 18+
 - Python 3.10+ (for the scraper)
 - A [Supabase](https://supabase.com) project with the `components` table created
-- At least one AI API key: [Groq](https://console.groq.com) or [Google AI Studio](https://aistudio.google.com)
+- A [Groq](https://console.groq.com) API key
 
 ---
 
@@ -153,9 +156,9 @@ cd frontend && npm install && cd ..
 Create `backend/.env`:
 
 ```env
-# AI Providers (at least one required)
-GROQ_API_KEY=your_groq_key
-GEMINI_API_KEY=your_gemini_key
+# AI Providers (At least one Groq key required for Llama-3.3-70B)
+GROQ_API_KEY=your_primary_groq_key
+GROQ_API_KEY_2=your_fallback_groq_key  # Optional: For automatic 429 rate-limit rotation
 
 # Supabase
 SUPABASE_URL=https://your-project-id.supabase.co
@@ -265,7 +268,12 @@ pcbuilding-agent/
 │       └── vite.config.js         # Proxies /api/* → :3001 in dev
 │
 ├── backend/
-│   ├── server.js                  # Core engine — all 5 phases live here
+│   ├── ai/                        # LLM Intent Extraction & Explanation (Rotating API keys)
+│   ├── engine/                    # Budget Allocation, Part Selection & Compatibility
+│   ├── config/                    # Global constraints, tdp heuristics, & budgets
+│   ├── utils/                     # Supabase Repository, Cache Manager & Spec Inference
+│   ├── routes/                    # API route handlers
+│   ├── server.js                  # Express setup and dependency injection
 │   └── .env                       # API keys (not committed)
 │
 ├── scraper/
