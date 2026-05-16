@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Cpu, Layers, Database, HardDrive, Monitor, Zap, Fan, Box, 
   Tv, MousePointer2, Keyboard, BatteryCharging, FileDown, 
-  Trash2, Send, Loader2, Sparkles, AlertCircle, AlertTriangle, ExternalLink, Key, X
+  Trash2, Send, Loader2, Sparkles, AlertCircle, AlertTriangle, ExternalLink, Key, X, Menu
 } from 'lucide-react';
 
 const CATEGORY_ICONS = {
@@ -29,6 +30,25 @@ const PERIPHERAL_CATEGORIES = [
   "Monitor", "Mouse", "Keyboard", "UPS"
 ];
 
+const SkeletonRow = () => (
+  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 mb-3 rounded-lg border border-slate-700/50 bg-slate-800/30 animate-pulse">
+    <div className="flex items-center gap-4 flex-1">
+      {/* Icon Skeleton */}
+      <div className="w-12 h-12 bg-slate-700/50 rounded-lg shrink-0"></div>
+      
+      <div className="flex flex-col gap-2 w-full">
+        {/* Category Name Skeleton */}
+        <div className="w-32 h-5 bg-slate-700/50 rounded"></div>
+        {/* Component Name Skeleton */}
+        <div className="w-3/4 sm:w-64 h-4 bg-slate-700/30 rounded mt-1"></div>
+      </div>
+    </div>
+    
+    {/* Price Skeleton */}
+    <div className="w-24 h-6 bg-slate-700/50 rounded mt-2 sm:mt-0"></div>
+  </div>
+);
+
 const INITIAL_BUILD = {
   "Processor": null,
   "Motherboard": null,
@@ -52,19 +72,25 @@ function Builder() {
   const [chatInput, setChatInput] = useState("");
   const [selectedSite, setSelectedSite] = useState("startech");
   const [customSiteUrl, setCustomSiteUrl] = useState("");
-  const [selectedApi, setSelectedApi] = useState("groq");
   const [loadingState, setLoadingState] = useState("idle"); // idle, analyzing, selecting, checking, success, error
   const [hideUnconfigured, setHideUnconfigured] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [buildWarnings, setBuildWarnings] = useState([]);
   const [customGroqKey, setCustomGroqKey] = useState(localStorage.getItem('customGroqKey') || "");
-  const [customGeminiKey, setCustomGeminiKey] = useState(localStorage.getItem('customGeminiKey') || "");
   const [showSettings, setShowSettings] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   
   const builderRef = useRef();
+  const textareaRef = useRef(null);
   const loadingTimersRef = useRef([]);
   const abortControllerRef = useRef(null);
   const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (chatInput === "" && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [chatInput]);
 
   const getMaxChatboxHeight = () => {
     // Keep the chatbox from becoming huge on mobile.
@@ -76,10 +102,6 @@ function Builder() {
   useEffect(() => {
     localStorage.setItem('customGroqKey', customGroqKey);
   }, [customGroqKey]);
-
-  useEffect(() => {
-    localStorage.setItem('customGeminiKey', customGeminiKey);
-  }, [customGeminiKey]);
 
   const handleDownloadPDF = () => {
     window.print();
@@ -100,7 +122,11 @@ function Builder() {
   };
 
 
-  const handleStop = () => {
+  const handleStop = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -112,8 +138,8 @@ function Builder() {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
+    if (e) e.preventDefault();
+    if (!chatInput.trim() || loadingState === "analyzing" || loadingState === "selecting" || loadingState === "checking") return;
     clearLoadingTimers();
     setLoadingState("analyzing");
     setErrorMsg("");
@@ -133,10 +159,8 @@ function Builder() {
       const requestPayload = { 
         message: chatInput, 
         site: selectedSite === 'custom' ? customSiteUrl : selectedSite,
-        apiProvider: selectedApi,
         customKeys: {
-          groq: customGroqKey,
-          gemini: customGeminiKey
+          groq: customGroqKey
         }
       };
       abortControllerRef.current = new AbortController();
@@ -189,7 +213,15 @@ function Builder() {
     const Icon = CATEGORY_ICONS[category] || Box;
 
     return (
-      <div key={category} className="component-row flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 mb-3 rounded-lg border border-slate-700 bg-slate-800/50">
+      <motion.div 
+        key={category} 
+        layout
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, x: -20, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        className="component-row flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 mb-3 rounded-lg border border-slate-700 bg-slate-800/50"
+      >
         <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
           <div className="p-2.5 sm:p-3 bg-slate-700 rounded-lg text-sky-400 shrink-0">
             <Icon size={24} />
@@ -245,7 +277,7 @@ function Builder() {
         ) : (
           <div className="hidden sm:block text-slate-600 text-sm">—</div>
         )}
-      </div>
+      </motion.div>
     );
   };
 
@@ -262,78 +294,110 @@ function Builder() {
   return (
     <div className="min-h-screen pb-[calc(10rem+env(safe-area-inset-bottom))] sm:pb-32">
       {/* Header */}
-      <header className="glass sticky top-0 z-50 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
-        <div className="flex items-center gap-3">
-          <Sparkles className="text-sky-400" size={28} />
-          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-linear-to-r from-sky-400 to-blue-600">
+      <header className="glass sticky top-0 z-50 px-4 sm:px-6 py-3 flex items-center justify-between print:hidden">
+        <div className="flex items-center gap-2 shrink-0">
+          <Sparkles className="text-sky-400" size={24} />
+          <h1 className="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-linear-to-r from-sky-400 to-blue-600">
             BuildMyPC
           </h1>
         </div>
         
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 w-full sm:w-auto">
-          {/* Settings Group */}
-           <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-3 sm:gap-4 bg-slate-800/50 px-3 sm:px-4 py-2 rounded-lg border border-slate-700/50 w-full sm:w-auto">
-             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
-               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Source:</span>
-               <select 
+        {/* Desktop Navigation */}
+        <div className="hidden lg:flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-700/50">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Source:</span>
+            <select 
+              value={selectedSite} 
+              onChange={(e) => setSelectedSite(e.target.value)}
+              className="bg-transparent text-sm text-slate-200 focus:outline-none cursor-pointer"
+              disabled={loadingState !== 'idle' && loadingState !== 'error' && loadingState !== 'success'}
+            >
+              <option className="bg-slate-800 text-slate-200" value="startech">StarTech</option>
+              <option className="bg-slate-800 text-slate-200" value="techland">Techland</option>
+              <option className="bg-slate-800 text-slate-200" value="computermania">CompMania</option>
+              <option className="bg-slate-800 text-slate-200" value="custom">Custom...</option>
+            </select>
+          </div>
+
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="px-3 py-1.5 text-slate-400 hover:text-sky-400 bg-slate-800 rounded-lg border border-slate-700/50 flex items-center gap-2 transition-colors"
+          >
+            <span className="text-sm font-medium">API Key</span>
+            <Key size={16} />
+          </button>
+
+          <div className="w-px h-6 bg-slate-700 mx-1"></div>
+
+          <button onClick={handleDownloadPDF} className="px-3 py-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700/50 flex items-center gap-2 transition-colors">
+            <FileDown size={16} />
+            <span className="text-sm font-medium">Download PDF</span>
+          </button>
+
+          <button onClick={handleClear} className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg border border-red-500/20 flex items-center gap-2 transition-colors">
+            <Trash2 size={16} />
+            <span className="text-sm font-medium">Clear Build</span>
+          </button>
+        </div>
+
+        {/* Mobile Hamburger Toggle */}
+        <button 
+          onClick={() => setShowMobileMenu(!showMobileMenu)}
+          className="lg:hidden p-2 text-slate-300 hover:text-white bg-slate-800 rounded-lg border border-slate-700"
+        >
+          {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
+        </button>
+
+        {/* Mobile Menu Overlay */}
+        <AnimatePresence>
+          {showMobileMenu && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="absolute top-full left-0 right-0 glass border-b border-slate-700 p-4 lg:hidden flex flex-col gap-4 shadow-2xl"
+            >
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Shop Source</label>
+                <select 
                   value={selectedSite} 
                   onChange={(e) => setSelectedSite(e.target.value)}
-                className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 transition-all cursor-pointer w-full sm:w-auto"
-                  disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:outline-none"
                 >
-                  <option value="startech">StarTech</option>
-                  <option value="techland">Techland</option>
-                  <option value="computermania">ComputerMania</option>
-                  <option value="custom">Custom URL...</option>
+                  <option className="bg-slate-800 text-slate-200" value="startech">StarTech</option>
+                  <option className="bg-slate-800 text-slate-200" value="techland">Techland</option>
+                  <option className="bg-slate-800 text-slate-200" value="computermania">ComputerMania</option>
+                  <option className="bg-slate-800 text-slate-200" value="custom">Custom URL...</option>
                 </select>
-                
-                {selectedSite === 'custom' && (
-                  <input 
-                    type="text" 
-                    placeholder="Enter shop URL..." 
-                    value={customSiteUrl}
-                    onChange={(e) => setCustomSiteUrl(e.target.value)}
-                    className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 w-full sm:w-48"
-                  />
-                )}
-             </div>
+              </div>
 
-             <div className="w-px h-6 bg-slate-700 hidden sm:block"></div>
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => { setShowSettings(true); setShowMobileMenu(false); }}
+                  className="flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 rounded-lg py-3 text-slate-300"
+                >
+                  <Key size={18} />
+                  <span className="text-sm font-medium">API Key</span>
+                </button>
+                <button 
+                  onClick={() => { handleDownloadPDF(); setShowMobileMenu(false); }}
+                  className="flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 rounded-lg py-3 text-slate-300"
+                >
+                  <FileDown size={18} />
+                  <span className="text-sm font-medium">PDF</span>
+                </button>
+              </div>
 
-             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
-               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">AI:</span>
-               <div className="flex items-center gap-2 w-full sm:w-auto">
-                 <select 
-                    value={selectedApi} 
-                    onChange={(e) => setSelectedApi(e.target.value)}
-                    className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-sky-500 transition-all cursor-pointer w-full sm:w-auto"
-                    disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
-                  >
-                    <option value="groq">Groq (Llama 3)</option>
-                    <option value="gemini">Gemini (2.5 Pro)</option>
-                  </select>
-
-                 <button 
-                    onClick={() => setShowSettings(true)}
-                    className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-800 rounded transition-colors border border-slate-600/50 hover:border-sky-500/50 shrink-0"
-                    title="API Settings"
-                 >
-                    <Key size={18} />
-                 </button>
-               </div>
-             </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button onClick={handleDownloadPDF} className="btn-secondary flex-1 sm:flex-none px-3 py-2 sm:py-1.5 rounded-md flex items-center justify-center gap-2 text-sm font-medium">
-              <FileDown size={16} /> Print PDF
-            </button>
-            <button onClick={handleClear} className="btn-secondary flex-1 sm:flex-none px-3 py-2 sm:py-1.5 rounded-md flex items-center justify-center gap-2 text-sm font-medium text-red-400 hover:text-red-300">
-              <Trash2 size={16} /> Clear
-            </button>
-          </div>
-        </div>
+              <button 
+                onClick={() => { handleClear(); setShowMobileMenu(false); }}
+                className="w-full flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg py-3"
+              >
+                <Trash2 size={18} />
+                <span className="text-sm font-medium">Clear Current Build</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
       {/* Main Content */}
@@ -371,20 +435,35 @@ function Builder() {
             <div className="bg-slate-800 text-slate-300 font-semibold px-4 py-2 rounded-md mb-4 inline-block shadow-sm border border-slate-700">
               Core Components
             </div>
-            {CORE_CATEGORIES.map(category => {
-               const isRequired = ["Processor", "Motherboard", "RAM", "Storage", "PSU", "Casing"].includes(category);
-               let dependencyStr = "";
-               if (category === "Motherboard") dependencyStr = "Processor";
-               if (category === "RAM") dependencyStr = "Motherboard";
-               return renderComponentRow(category, isRequired, dependencyStr);
-            })}
+            <div className="space-y-1">
+              <AnimatePresence mode="popLayout">
+                {CORE_CATEGORIES.map(category => {
+                  const isLoading = loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking';
+                  if (isLoading) return <SkeletonRow key={`skel-${category}`} />;
+
+                  const isRequired = ["Processor", "Motherboard", "RAM", "Storage", "PSU", "Casing"].includes(category);
+                  let dependencyStr = "";
+                  if (category === "Motherboard") dependencyStr = "Processor";
+                  if (category === "RAM") dependencyStr = "Motherboard";
+                  return renderComponentRow(category, isRequired, dependencyStr);
+                })}
+              </AnimatePresence>
+            </div>
           </div>
 
           <div>
             <div className="bg-slate-800 text-slate-300 font-semibold px-4 py-2 rounded-md mb-4 inline-block shadow-sm border border-slate-700">
               Peripherals
             </div>
-            {PERIPHERAL_CATEGORIES.map(category => renderComponentRow(category, false, ""))}
+            <div className="space-y-1">
+              <AnimatePresence mode="popLayout">
+                {PERIPHERAL_CATEGORIES.map(category => {
+                  const isLoading = loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking';
+                  if (isLoading) return <SkeletonRow key={`skel-${category}`} />;
+                  return renderComponentRow(category, false, "");
+                })}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
@@ -432,6 +511,20 @@ function Builder() {
           {/* Settings Row above Chat removed */}
 
           <form onSubmit={handleSubmit} className="flex gap-3 relative">
+            {chatInput === "" && total === 0 && loadingState === 'idle' && (
+              <div className="absolute -top-12 left-0 right-0 flex gap-2 overflow-x-auto no-scrollbar px-1 pb-2 mask-linear-fade">
+                {["Budget 1080p Gaming", "High-end Video Editing", "Office Productivity PC"].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => setChatInput(`I need a ${prompt.toLowerCase()} under 80,000 BDT`)}
+                    className="whitespace-nowrap px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-sky-300 hover:bg-slate-700 transition-colors shadow-lg"
+                  >
+                    ✨ {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="relative flex-1">
               {!chatInput && (
                <div className="pointer-events-none absolute inset-0 flex items-center px-4 sm:px-6 text-slate-400 text-base sm:text-lg">
@@ -439,6 +532,7 @@ function Builder() {
                </div>
               )}
               <textarea 
+                ref={textareaRef}
                 className="w-full bg-slate-800/90 border border-slate-600 rounded-2xl px-4 sm:px-6 py-3 sm:py-4 text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all text-base sm:text-lg resize-none overflow-y-auto min-h-13 sm:min-h-14 max-h-30 sm:max-h-50"
                placeholder=""
                aria-label="Build description"
@@ -513,20 +607,6 @@ function Builder() {
                   placeholder="gsk_..."
                   value={customGroqKey}
                   onChange={(e) => setCustomGroqKey(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-600 rounded px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-400 flex items-center justify-between">
-                  Google Gemini API Key
-                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline text-xs font-normal">Get a key</a>
-                </label>
-                <input 
-                  type="password"
-                  placeholder="AIza..."
-                  value={customGeminiKey}
-                  onChange={(e) => setCustomGeminiKey(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-600 rounded px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
                 />
               </div>
