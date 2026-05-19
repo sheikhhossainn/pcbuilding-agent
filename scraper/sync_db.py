@@ -122,6 +122,38 @@ def upsert_to_supabase(data):
     except Exception as e:
         print(f"Failed to upsert to Supabase: {e}")
 
+def mark_stale_out_of_stock(site, category, scraped_urls):
+    """Mark components in DB as out-of-stock if they weren't in the latest scrape."""
+    if not SUPABASE_URL or not scraped_urls:
+        return
+
+    # Fetch all existing URLs for this site+category
+    url = f"{SUPABASE_URL}/rest/v1/components?site=eq.{site}&category=eq.{category}&in_stock=eq.true&select=url"
+    try:
+        response = requests.get(url, headers=HEADERS)
+        response.raise_for_status()
+        existing = response.json()
+    except Exception as e:
+        print(f"  Failed to fetch existing URLs for stale check: {e}")
+        return
+
+    existing_urls = {item['url'] for item in existing}
+    stale_urls = existing_urls - scraped_urls
+
+    if not stale_urls:
+        return
+
+    # Mark stale items as out of stock
+    for stale_url in stale_urls:
+        patch_url = f"{SUPABASE_URL}/rest/v1/components?url=eq.{requests.utils.quote(stale_url, safe='')}"
+        try:
+            requests.patch(patch_url, headers=HEADERS, json={"in_stock": False})
+        except Exception:
+            pass
+
+    print(f"  Marked {len(stale_urls)} stale items as out-of-stock for {site}/{category}")
+
+
 def run_sync():
     print("Starting sync...")
     state = load_state()
@@ -135,9 +167,10 @@ def run_sync():
         try:
             startech_products = startech.scrape(category)
             batch = []
+            scraped_urls = set()
             for p in startech_products:
                 if not p.get('price'): continue
-                if not p.get('in_stock', True): continue
+                scraped_urls.add(p['url'])
                 batch.append({
                     "site": "startech",
                     "category": category,
@@ -145,13 +178,16 @@ def run_sync():
                     "price": p['price'],
                     "image": p['image'],
                     "url": p['url'],
-                    "in_stock": p['in_stock'],
+                    "in_stock": p.get('in_stock', True),
                     "specs": infer_specs(category, p['name'])
                 })
             
             for j in range(0, len(batch), 50):
                 upsert_to_supabase(batch[j:j+50])
             print(f"  Upserted {len(batch)} items from StarTech ({category}).")
+
+            # Mark items no longer on the website as out of stock
+            mark_stale_out_of_stock("startech", category, scraped_urls)
             
             # Save state after successful category scrape
             state["startech"] = i + 1
@@ -176,9 +212,10 @@ def run_sync():
         try:
             techland_products = techland.scrape(category)
             batch = []
+            scraped_urls = set()
             for p in techland_products:
                 if not p.get('price'): continue
-                if not p.get('in_stock', True): continue
+                scraped_urls.add(p['url'])
                 batch.append({
                     "site": "techland",
                     "category": category,
@@ -186,13 +223,16 @@ def run_sync():
                     "price": p['price'],
                     "image": p['image'],
                     "url": p['url'],
-                    "in_stock": p['in_stock'],
+                    "in_stock": p.get('in_stock', True),
                     "specs": infer_specs(category, p['name'])
                 })
             
             for j in range(0, len(batch), 50):
                 upsert_to_supabase(batch[j:j+50])
             print(f"  Upserted {len(batch)} items from Techland ({category}).")
+
+            # Mark items no longer on the website as out of stock
+            mark_stale_out_of_stock("techland", category, scraped_urls)
             
             # Save state after successful category scrape
             state["techland"] = i + 1

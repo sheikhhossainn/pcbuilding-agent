@@ -200,22 +200,23 @@ export const createSpecInference = () => {
 
     // ──── PSU SPECS ────
     if (category === 'PSU') {
-      let wattMatch = n.match(/(\d+)\s*(?:w\b|watt)/i);
-      if (!wattMatch) {
+      // First try: explicit "Xw" or "X watt" in name — always trust this
+      const explicitMatch = n.match(/(\d+)\s*(?:w\b|watt)/i);
+      if (explicitMatch) {
+        specs.wattage = parseInt(explicitMatch[1]);
+      } else {
+        // Fallback: guess from 3-4 digit numbers (only within valid PSU range)
         const candidates = [...n.matchAll(/(\d{3,4})/g)];
+        let found = false;
         for (const c of candidates) {
           const w = parseInt(c[1]);
           if (w >= PSU_WATTAGE.RANGE_MIN && w <= PSU_WATTAGE.RANGE_MAX) {
-            wattMatch = c;
+            specs.wattage = w;
+            found = true;
             break;
           }
         }
-      }
-      if (wattMatch) {
-        const w = parseInt(wattMatch[1]);
-        specs.wattage = (w >= PSU_WATTAGE.RANGE_MIN && w <= PSU_WATTAGE.RANGE_MAX) ? w : PSU_WATTAGE.DEFAULT;
-      } else {
-        specs.wattage = PSU_WATTAGE.DEFAULT;
+        if (!found) specs.wattage = PSU_WATTAGE.DEFAULT;
       }
     }
 

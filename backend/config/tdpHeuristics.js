@@ -80,7 +80,7 @@ export const PSU_WATTAGE = {
   MAXIMUM: 1600,
 
   // Valid PSU wattage range for regex matching
-  RANGE_MIN: 300,
+  RANGE_MIN: 150,
   RANGE_MAX: 1600,
 
   // Base PSU wattage requirements by use case

@@ -43,10 +43,5 @@ USING (true);
 
 -- (Note: No insert/update policies are needed because the scraper uses the SUPABASE_SERVICE_ROLE_KEY, which automatically bypasses RLS).
 
--- Stale data cleanup (runs 3am daily)
--- NOTE: Enable pg_cron first in Supabase Dashboard > Database > Extensions before running this
-SELECT cron.schedule(
-  'cleanup-stale-parts',
-  '0 3 * * *',
-  $$DELETE FROM components WHERE last_updated < now() - interval '72 hours'$$
-);
+-- NOTE: The previous 72-hour TTL cron job has been removed.
+-- Components are now persistent until explicitly updated by the scraper.

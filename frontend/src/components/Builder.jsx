@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Cpu, Layers, Database, HardDrive, Monitor, Zap, Fan, Box, 
   Tv, MousePointer2, Keyboard, BatteryCharging, FileDown, 
-  Trash2, Send, Loader2, Sparkles, AlertCircle, AlertTriangle, ExternalLink, Key, X, Menu
+  Trash2, Send, Loader2, Sparkles, AlertCircle, AlertTriangle, ExternalLink, Key, X, Menu, RefreshCw
 } from 'lucide-react';
 
 const CATEGORY_ICONS = {
@@ -81,6 +81,8 @@ function Builder() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [queuePosition, setQueuePosition] = useState(0);
   const [showTrafficWarning, setShowTrafficWarning] = useState(false);
+  const [previousIntent, setPreviousIntent] = useState(null);
+  const [previousBuild, setPreviousBuild] = useState(null);
   const pollRef = useRef(null);
   
   const builderRef = useRef();
@@ -119,6 +121,8 @@ function Builder() {
     setLoadingState("idle");
     setQueuePosition(0);
     setShowTrafficWarning(false);
+    setPreviousIntent(null);
+    setPreviousBuild(null);
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   };
 
@@ -163,6 +167,8 @@ function Builder() {
         message: chatInput,
         site: selectedSite === 'custom' ? customSiteUrl : selectedSite,
         customKeys: { groq: customGroqKey },
+        ...(previousIntent && { previousIntent }),
+        ...(previousBuild && { previousBuild }),
       };
       abortControllerRef.current = new AbortController();
 
@@ -220,6 +226,8 @@ function Builder() {
             setTotal(data.result.total);
             setExplanation(data.result.explanation);
             setBuildWarnings(data.result.warnings || []);
+            setPreviousIntent(data.result.intent || null);
+            setPreviousBuild(data.result.build || null);
             setLoadingState("success");
             setQueuePosition(0);
             setShowTrafficWarning(false);
@@ -596,10 +604,25 @@ function Builder() {
             </div>
           )}
 
-          {/* Settings Row above Chat removed */}
+          {/* Follow-up mode indicator */}
+          {previousIntent && loadingState !== 'analyzing' && loadingState !== 'selecting' && loadingState !== 'checking' && (
+            <div className="mb-2 flex items-center gap-2">
+              <div className="bg-sky-500/10 text-sky-400 px-3 py-1.5 rounded-full border border-sky-500/30 flex items-center gap-2 text-xs font-medium">
+                <RefreshCw size={12} />
+                Refine mode — tweak your build
+              </div>
+              <button
+                type="button"
+                onClick={handleClear}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Start fresh
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="flex gap-3 relative">
-            {chatInput === "" && total === 0 && loadingState === 'idle' && (
+            {chatInput === "" && !previousIntent && total === 0 && loadingState === 'idle' && (
               <div className="absolute -top-12 left-0 right-0 flex gap-2 overflow-x-auto no-scrollbar px-1 pb-2 mask-linear-fade">
                 {["Budget 1080p Gaming", "High-end Video Editing", "Office Productivity PC"].map((prompt) => (
                   <button
@@ -616,7 +639,10 @@ function Builder() {
             <div className="relative flex-1">
               {!chatInput && (
                <div className="pointer-events-none absolute inset-0 flex items-center px-4 sm:px-6 text-slate-400 text-base sm:text-lg">
-                Describe your build... e.g. I need a gaming PC under 60,000 BDT
+                {previousIntent
+                  ? 'Tweak your build... e.g. Change GPU to RTX 4060'
+                  : 'Describe your build... e.g. I need a gaming PC under 60,000 BDT'
+                }
                </div>
               )}
               <textarea 

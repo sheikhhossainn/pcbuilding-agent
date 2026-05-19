@@ -355,12 +355,24 @@ console.log("[init] ✓ All modules initialized");
 // ──── Routes ────
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  let dbActive = false;
+  
+  if (supabase) {
+    try {
+      // A lightweight query to keep the DB connection warm
+      const { error } = await supabase.from('components').select('id').limit(1);
+      dbActive = !error;
+    } catch (e) {
+      dbActive = false;
+    }
+  }
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     modules: {
-      supabase: !!supabase,
+      supabase: dbActive,
       cache: !!cacheManager,
       groq: !!getGroqClient(),
     }

@@ -35,7 +35,7 @@ class BuildError extends Error {
  * @returns {Object} { build, total, explanation, intent, warnings }
  */
 export async function executeBuild(payload, deps) {
-  const { message, site: bodySite } = payload;
+  const { message, site: bodySite, previousIntent: prevIntent, previousBuild: prevBuild } = payload;
 
   // Validate input
   if (!message || message.length > API.MAX_MESSAGE_LENGTH) {
@@ -45,10 +45,10 @@ export async function executeBuild(payload, deps) {
     throw new BuildError(400, 'Invalid site selected.', 'INVALID_SITE');
   }
 
-  // Extract intent from AI
+  // Extract intent from AI (pass previous context for follow-ups)
   let intent;
   try {
-    intent = await deps.intentExtractor.extract(message);
+    intent = await deps.intentExtractor.extract(message, prevIntent || null, prevBuild || null);
   } catch (error) {
     console.error("[orchestrator] Intent extraction failed:", error);
     if (error.message.includes('Intent extraction failed')) {
@@ -118,6 +118,54 @@ export async function executeBuild(payload, deps) {
   let totalCost = 0;
   let globalRemaining = budgetCeiling;
 
+  // ─── Follow-up: Lock unchanged components from previous build ───
+  const lockedCategories = new Set();
+  if (prevBuild && prevIntent && prevIntent.component_strategy) {
+    const oldStrats = prevIntent.component_strategy;
+    const newStrats = intent.component_strategy || {};
+
+    // Also check if top-level preferences changed
+    const budgetChanged = prevIntent.budget_bdt !== intent.budget_bdt;
+    const cpuBrandChanged = prevIntent.preferred_cpu_brand !== intent.preferred_cpu_brand;
+    const gpuBrandChanged = prevIntent.preferred_gpu_brand !== intent.preferred_gpu_brand;
+    const useCaseChanged = prevIntent.use_case !== intent.use_case;
+
+    for (const category of Object.keys(selectedBuild)) {
+      const oldS = oldStrats[category];
+      const newS = newStrats[category];
+      const prevPart = prevBuild[category];
+
+      // Skip if no previous part or no strategy to compare
+      if (!prevPart || !prevPart.name || !oldS || !newS) continue;
+
+      // Check if this category's strategy changed
+      const stratChanged =
+        JSON.stringify(oldS.required_keywords || []) !== JSON.stringify(newS.required_keywords || []) ||
+        JSON.stringify(oldS.exclude_keywords || []) !== JSON.stringify(newS.exclude_keywords || []) ||
+        JSON.stringify(oldS.structured_reqs || {}) !== JSON.stringify(newS.structured_reqs || {}) ||
+        oldS.required !== newS.required ||
+        oldS.weight !== newS.weight;
+
+      // CPU/Motherboard must also re-select if brand preference or budget changed significantly
+      const isCpuAffected = category === 'Processor' && (cpuBrandChanged || budgetChanged);
+      const isGpuAffected = category === 'Graphics Card' && (gpuBrandChanged || budgetChanged);
+      const isBudgetSensitive = budgetChanged && ['Processor', 'Graphics Card', 'Monitor'].includes(category);
+
+      if (!stratChanged && !isCpuAffected && !isGpuAffected && !isBudgetSensitive && !useCaseChanged) {
+        // Lock this component — reuse previous build's part
+        selectedBuild[category] = prevPart;
+        totalCost += prevPart.price;
+        globalRemaining -= prevPart.price;
+        lockedCategories.add(category);
+        console.log(`🔒 ${category}: Locked from previous build → ${prevPart.name} (${prevPart.price} BDT)`);
+      }
+    }
+
+    if (lockedCategories.size > 0) {
+      console.log(`[Follow-up] Locked ${lockedCategories.size} unchanged categories, re-selecting ${Object.keys(selectedBuild).length - lockedCategories.size}`);
+    }
+  }
+
   const createFilterFn = (category, strat, selectedParts) => {
     return (part) => {
       if (!deps.partRepository.matchesStrategy(part, strat, category)) return false;
@@ -184,6 +232,9 @@ export async function executeBuild(payload, deps) {
   ];
 
   for (const category of selectionOrder) {
+    // Skip locked components from previous build (follow-up mode)
+    if (lockedCategories.has(category)) continue;
+
     const catBudget = dynamicBudgets[category];
     const strat = intent.component_strategy?.[category];
     let isRequired = strat && strat.required;

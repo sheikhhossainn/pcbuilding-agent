@@ -15,7 +15,7 @@ import { API } from '../config/thresholds.js';
 export const createSubmitHandler = () => {
   return (req, res) => {
     try {
-      const { message, site: bodySite, customKeys = {} } = req.body;
+      const { message, site: bodySite, customKeys = {}, previousIntent, previousBuild } = req.body;
 
       // Validate input (fast — no async)
       if (!message || message.length > API.MAX_MESSAGE_LENGTH) {
@@ -33,6 +33,8 @@ export const createSubmitHandler = () => {
         message,
         site: bodySite,
         customKeys,
+        previousIntent: previousIntent || null,
+        previousBuild: previousBuild || null,
       });
 
       console.log(`[build] Job ${jobId.slice(0, 8)} queued at position ${position}`);

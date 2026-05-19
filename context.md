@@ -1,7 +1,7 @@
 # BuildMyPC — Project Context
 
-**Status**: 🧪 **Phase 3.5: Modular Audit & Hardening** — Post-audit parity with monolith verified  
-**Last Updated**: May 16, 2026
+**Status**: 🧪 **Phase 5: Conversational Follow-Up** — Iterative build refinement via natural language  
+**Last Updated**: May 19, 2026
 
 ## What It Does
 
@@ -440,14 +440,17 @@ REDIS_URL=redis://localhost:6379
 | **Post-Build Validation** | ✅ Restored (6 warning types) |
 | **DDR Spec Matching** | ✅ Complete (name + specs fallback) |
 | **Pentium/Celeron Detection** | ✅ Complete (G-series model mapping) |
+| **Follow-Up Feature** | ✅ Complete (intent diffing + component locking) |
+| **Keep-Alive Cron** | ✅ Active (cron-job.org → /health every 10 min) |
+| **pg_cron TTL Removed** | ✅ Components now persist until scraper updates |
 | **Deployment to Staging** | ⏳ Next (test with real APIs) |
 | **Production Monitoring** | ⏳ Next (Prometheus metrics) |
 
 ---
 
 **Generated**: May 16, 2026  
-**Last Modified**: May 16, 2026 (Phase 3.5 Modular Audit & Hardening)
-**Next Review**: After Staging Deployment
+**Last Modified**: May 19, 2026 (Phase 5: Follow-Up + Infrastructure)
+**Next Review**: After Database Repopulation
 
 ## Phase 4: Queue System ✅
 
@@ -470,3 +473,41 @@ REDIS_URL=redis://localhost:6379
 - ✅ If queue position > 3, yellow banner prompts user to add their own Groq key
 - ✅ API Key navbar button gets yellow pulse-ring highlight when warning is active
 - ✅ Banner dismissible with X button, auto-clears on build completion
+
+## Phase 5: Conversational Follow-Up ✅
+
+**Goal**: Allow users to iteratively refine builds without starting over.
+
+### Architecture
+- Frontend tracks `previousIntent` + `previousBuild` state after each successful build
+- On follow-up, both are sent to `POST /api/build` alongside the new message
+- `intentExtractor.js` gives the LLM the old intent JSON + actual components, asks it to modify ONLY what the user requested
+- `buildOrchestrator.js` compares old vs new intent per-category using JSON diffing
+- **Unchanged categories are locked** — their components are reused from the previous build, not re-selected
+- Changed categories (keywords, weights, structured_reqs differ) are re-selected by the engine
+
+### Files Modified
+1. ✅ **MODIFIED** `backend/ai/intentExtractor.js` — follow-up system prompt with strict "don't change unmentioned categories" rule
+2. ✅ **MODIFIED** `backend/engine/buildOrchestrator.js` — intent diffing + component locking for unchanged categories
+3. ✅ **MODIFIED** `backend/routes/build.js` — extracts `previousIntent` + `previousBuild` from request body
+4. ✅ **MODIFIED** `frontend/src/components/Builder.jsx` — tracks previous build state, "Refine mode" pill, dynamic placeholder text
+
+### UX
+- ✅ After a build completes, chatbox placeholder changes to: "Tweak your build... e.g. Change GPU to RTX 4060"
+- ✅ A "🔄 Refine mode — tweak your build" pill appears above the chatbox
+- ✅ "Start fresh" link resets to a new build
+- ✅ "Clear Build" button resets all state
+- ✅ Quick-start suggestion pills hidden in follow-up mode
+- ✅ Unlimited follow-ups (rate limiter naturally caps at 5 req/15 min)
+
+## Infrastructure Changes (May 19, 2026)
+
+### Keep-Alive Cron Job
+- **Problem**: Render free tier spins down after 15 min of no inbound HTTP requests
+- **Solution**: External cron job (cron-job.org) pings `GET /health` every 10 minutes
+- **Bonus**: `/health` endpoint now also pings Supabase with a lightweight query to keep the DB connection warm
+
+### pg_cron TTL Removed
+- **Problem**: `pg_cron` job deleted all components older than 72 hours, emptying the DB when scraper wasn't run frequently
+- **Solution**: Removed the cron job. Components now persist until explicitly updated by the scraper
+- **Action Required**: Run `SELECT cron.unschedule('cleanup-stale-parts');` in Supabase SQL Editor
