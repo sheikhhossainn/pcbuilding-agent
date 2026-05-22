@@ -148,7 +148,8 @@ Extract the user's requirements and return ONLY a valid JSON object, no explanat
     "Casing": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
     "CPU Cooler": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
     "Mouse": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
-    "Keyboard": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean }
+    "Keyboard": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
+    "UPS": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean }
   },
   "preferred_site": "startech" | "techland" | "computermania" | null,
   "preferred_cpu_brand": "amd" | "intel" | null,
@@ -157,7 +158,7 @@ Extract the user's requirements and return ONLY a valid JSON object, no explanat
 }
 
 Rules:
-- component_strategy MUST include all 11 categories.
+- component_strategy MUST include all 12 categories.
 - Weights dictate budget distribution. Total weight can be any number.
 - Keyword Constraints: Use only 1-2 standard retail terms. Never use subjective adjectives.
 - Structured First: For numerical requirements (min_gb, min_hz, min_tb, min_wattage), use structured_reqs.

@@ -217,12 +217,7 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
         // Query for cheapest matching part
         part = await partRepository.findCheapest(site, category, budgetCeiling, tempStrategy, filterFn);
         
-        // Site fallback: if no part found at preferred site, try startech (which has best inventory)
-        if (!part && site !== 'startech') {
-          console.warn(`[Floor] No ${category} at ${site}. Falling back to startech.`);
-          part = await partRepository.findCheapest('startech', category, budgetCeiling, tempStrategy, filterFn);
-        }
-        
+        // Don't fallback to different sites — respect user's site preference
         if (part) {
           // Success: update blueprint with degraded requirements
           blueprint.component_strategy[category].required_keywords = [...keywordsToTry];

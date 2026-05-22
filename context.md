@@ -106,7 +106,7 @@ const handler = createBuildHandler({
 | **Magic Numbers** | 30+ scattered | 0 (all in config/) |
 | **Reusability** | Copy-paste | Import + inject |
 | **Horizontal Scaling** | Limited | Redis-ready caching |
-
+![alt text](image.png)
 ### New File Structure
 
 ```
@@ -135,8 +135,7 @@ backend/
 │   └── build.js                     # POST /api/build orchestrator
 │
 ├── types.js                         # ✅ JSDoc @typedef for IDE hints
-├── server.js                        # ✅ Express setup + DI bootstrap
-└── PHASE2_COMPLETION.md             # Complete migration guide
+└── server.js                        # ✅ Express setup + DI bootstrap
 ```
 
 ### Key Bug Fix: Fallback Degradation
@@ -234,7 +233,7 @@ All magic numbers extracted into three config files:
 **`config/thresholds.js`** (API/AI/Adequacy)
 - Valid sites, API limits, AI model names
 - GPU adequacy thresholds by use case
-- Rate limiting: 5 requests/15 mins
+- Rate limiting: 10 requests/15 mins
 
 ---
 
@@ -434,7 +433,7 @@ REDIS_URL=redis://localhost:6379
 | **Error Standardization** | ✅ Complete (HTTP codes + error codes) |
 | **Caching Infrastructure** | ✅ Complete (Memory + Redis-ready) |
 | **Test Examples** | ✅ Complete (Jest examples in tests/) |
-| **Documentation** | ✅ Complete (PHASE2_COMPLETION.md) |
+| **Documentation** | ✅ Complete (context.md, architecture.md, README.md) |
 | **Integration Testing** | ✅ Complete (7 Personas) |
 | **Modular Audit** | ✅ Complete (7 gaps found & fixed) |
 | **Post-Build Validation** | ✅ Restored (6 warning types) |
@@ -498,7 +497,7 @@ REDIS_URL=redis://localhost:6379
 - ✅ "Start fresh" link resets to a new build
 - ✅ "Clear Build" button resets all state
 - ✅ Quick-start suggestion pills hidden in follow-up mode
-- ✅ Unlimited follow-ups (rate limiter naturally caps at 5 req/15 min)
+- ✅ Unlimited follow-ups (rate limiter naturally caps at 10 req/15 min)
 
 ## Infrastructure Changes (May 19, 2026)
 
@@ -511,3 +510,27 @@ REDIS_URL=redis://localhost:6379
 - **Problem**: `pg_cron` job deleted all components older than 72 hours, emptying the DB when scraper wasn't run frequently
 - **Solution**: Removed the cron job. Components now persist until explicitly updated by the scraper
 - **Action Required**: Run `SELECT cron.unschedule('cleanup-stale-parts');` in Supabase SQL Editor
+
+### ComputerMania BD Scraper (May 20, 2026)
+- **Site**: [computermania.com.bd](https://computermania.com.bd) — 3rd retailer source
+- **Theme**: WooCommerce + Woodmart (WordPress)
+- **Cloudflare**: Active JS challenge → bypassed successfully using `DrissionPage` (headless browser via CDP)
+- **Dependencies**: `pip install DrissionPage` (requires local Chrome/Chromium installation)
+- **Categories scraped** (11 total, no UPS):
+  | Category | URL Path |
+  |----------|----------|
+  | cpu | `/product-category/desktop-components/processor/` |
+  | motherboard | `/product-category/desktop-components/motherboard/` |
+  | ram | `/product-category/desktop-components/desktop-ram/` |
+  | gpu | `/product-category/desktop-components/graphics-card/` |
+  | storage | `/product-category/ssd/` |
+  | psu | `/product-category/desktop-components/power-supply/` |
+  | casing | `/product-category/desktop-components/case/` |
+  | cpu-cooler | `/product-category/desktop-components/cpu-cooler/` |
+  | monitor | `/product-category/monitor/` |
+  | mouse | `/product-category/accessories/mouse/` |
+  | keyboard | `/product-category/accessories/keyboard/` |
+
+- **Files**:
+  - ✅ **CREATED** `scraper/scrapers/computermania.py` — scraper with DrissionPage + WooCommerce selectors
+  - ✅ **MODIFIED** `scraper/sync_db.py` — integrated as 3rd site, runs after TechLand completes

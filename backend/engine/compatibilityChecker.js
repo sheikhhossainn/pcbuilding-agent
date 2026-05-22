@@ -160,7 +160,23 @@ export const createCompatibilityChecker = ({ config = {} } = {}) => {
       return true;
     }
     
-    return cpuSocket === mbSocket;
+    // Exact socket match required
+    if (cpuSocket !== mbSocket) return false;
+
+    // Chipset specific constraints for AM4
+    if (cpuSocket === 'AM4') {
+      const cpuName = (cpu?.name || '').toLowerCase();
+      const mbName = (motherboard?.name || '').toLowerCase();
+      
+      // B550 and A520 do not support 3400G, 3200G, 2000 series, 1000 series, or older Athlons
+      if (mbName.includes('b550') || mbName.includes('a520')) {
+        if (cpuName.includes('3400g') || cpuName.includes('3200g') || cpuName.match(/ryzen\s*[357]\s*[12]\d{3}/) || cpuName.includes('athlon')) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   };
 
   /**

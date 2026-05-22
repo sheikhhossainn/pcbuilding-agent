@@ -31,21 +31,21 @@ const PERIPHERAL_CATEGORIES = [
 ];
 
 const SkeletonRow = () => (
-  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 mb-3 rounded-lg border border-slate-700/50 bg-slate-800/30 animate-pulse">
+  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-5 mb-3 rounded-xl border border-white/5 bg-zinc-900/40 animate-pulse">
     <div className="flex items-center gap-4 flex-1">
       {/* Icon Skeleton */}
-      <div className="w-12 h-12 bg-slate-700/50 rounded-lg shrink-0"></div>
+      <div className="w-12 h-12 bg-zinc-800/60 rounded-xl shrink-0"></div>
       
       <div className="flex flex-col gap-2 w-full">
         {/* Category Name Skeleton */}
-        <div className="w-32 h-5 bg-slate-700/50 rounded"></div>
+        <div className="w-32 h-5 bg-zinc-800/60 rounded-md"></div>
         {/* Component Name Skeleton */}
-        <div className="w-3/4 sm:w-64 h-4 bg-slate-700/30 rounded mt-1"></div>
+        <div className="w-3/4 sm:w-64 h-4 bg-zinc-800/40 rounded-md mt-1"></div>
       </div>
     </div>
     
     {/* Price Skeleton */}
-    <div className="w-24 h-6 bg-slate-700/50 rounded mt-2 sm:mt-0"></div>
+    <div className="w-24 h-6 bg-zinc-800/60 rounded-md mt-2 sm:mt-0"></div>
   </div>
 );
 
@@ -285,48 +285,48 @@ function Builder() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, x: -20, scale: 0.95 }}
         transition={{ duration: 0.2 }}
-        className="component-row flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 mb-3 rounded-lg border border-slate-700 bg-slate-800/50"
+        className="component-row flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 mb-3 rounded-xl border border-white/5 bg-zinc-900/30 hover:bg-zinc-900/80"
       >
-        <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
-          <div className="p-2.5 sm:p-3 bg-slate-700 rounded-lg text-sky-400 shrink-0">
-            <Icon size={24} />
+        <div className="flex items-start sm:items-center gap-4 sm:gap-5 flex-1 min-w-0">
+          <div className="p-3 bg-zinc-800/50 rounded-xl text-zinc-300 shrink-0 shadow-sm border border-white/5">
+            <Icon size={22} strokeWidth={1.5} />
           </div>
           
           <div className="flex flex-col min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-base sm:text-lg">{category}</span>
-              {isRequired && <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30">Required</span>}
-              {dependencyStr && <span className="text-xs text-slate-400 italic">*{dependencyStr}</span>}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="font-semibold text-base sm:text-lg text-zinc-100 tracking-tight">{category}</span>
+              {isRequired && <span className="text-[11px] font-medium uppercase tracking-wider bg-red-500/10 text-red-400 px-2.5 py-0.5 rounded-full border border-red-500/20">Required</span>}
+              {dependencyStr && <span className="text-xs text-zinc-500">*{dependencyStr}</span>}
             </div>
             
             {item ? (
-              <div className="flex items-start sm:items-center gap-3 mt-1 min-w-0">
-                {item.image && <img src={item.image} alt={item.name} className="w-10 h-10 sm:w-12 sm:h-12 object-cover rounded bg-white p-1 shrink-0" />}
-                <div className="text-sky-300 font-medium wrap-break-word min-w-0">{item.name}</div>
+              <div className="flex items-start sm:items-center gap-3 mt-1.5 min-w-0">
+                {item.image && <img src={item.image} alt={item.name} className="w-10 h-10 sm:w-11 sm:h-11 object-cover rounded-md bg-white p-1 shrink-0" />}
+                <div className="text-zinc-300 font-medium wrap-break-word min-w-0 leading-snug">{item.name}</div>
               </div>
             ) : (
-              <div className="text-slate-500 text-sm mt-1">Not configured</div>
+              <div className="text-zinc-600 text-sm mt-1.5 italic">Not configured</div>
             )}
           </div>
         </div>
 
         {item ? (
-          <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 w-full sm:w-auto">
-            <div className="font-bold text-base sm:text-lg text-emerald-400 whitespace-nowrap">{formatPrice(item.price)}</div>
+          <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 w-full sm:w-auto mt-2 sm:mt-0">
+            <div className="font-semibold text-lg sm:text-xl text-zinc-100 whitespace-nowrap tracking-tight">{formatPrice(item.price)}</div>
             <div className="flex gap-2">
               {item.url && (
                 <a
                   href={item.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-2 text-slate-400 hover:text-sky-400 bg-slate-700 rounded transition-colors"
+                  className="p-2.5 text-zinc-400 hover:text-zinc-100 bg-zinc-800/50 rounded-lg hover:bg-zinc-700 transition-colors border border-transparent hover:border-white/10"
                   title="View on store"
                 >
-                  <ExternalLink size={18} />
+                  <ExternalLink size={18} strokeWidth={1.5} />
                 </a>
               )}
               <button 
-                className="p-2 text-slate-400 hover:text-red-400 bg-slate-700 rounded transition-colors"
+                className="p-2.5 text-zinc-400 hover:text-red-400 bg-zinc-800/50 rounded-lg hover:bg-zinc-800 transition-colors border border-transparent hover:border-red-500/20"
                 title="Remove component"
                 onClick={() => {
                    const newBuild = {...build};
@@ -335,12 +335,12 @@ function Builder() {
                    setTotal(total - item.price);
                 }}
               >
-                <Trash2 size={18} />
+                <Trash2 size={18} strokeWidth={1.5} />
               </button>
             </div>
           </div>
         ) : (
-          <div className="hidden sm:block text-slate-600 text-sm">—</div>
+          <div className="hidden sm:block text-zinc-700 text-sm">—</div>
         )}
       </motion.div>
     );
@@ -358,121 +358,126 @@ function Builder() {
 
 
   return (
-    <div className="min-h-screen pb-[calc(10rem+env(safe-area-inset-bottom))] sm:pb-32">
-      {/* Header */}
-      <header className="glass sticky top-0 z-50 px-4 sm:px-6 py-3 flex items-center justify-between print:hidden">
-        <div className="flex items-center gap-2 shrink-0">
-          <Sparkles className="text-sky-400" size={24} />
-          <h1 className="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-linear-to-r from-sky-400 to-blue-600">
-            BuildMyPC
-          </h1>
-        </div>
-        
-        {/* Desktop Navigation */}
-        <div className="hidden lg:flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-700/50">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Source:</span>
-            <select 
-              value={selectedSite} 
-              onChange={(e) => setSelectedSite(e.target.value)}
-              className="bg-transparent text-sm text-slate-200 focus:outline-none cursor-pointer"
-              disabled={loadingState !== 'idle' && loadingState !== 'error' && loadingState !== 'success'}
+    <div className="min-h-screen pb-[calc(10rem+env(safe-area-inset-bottom))] sm:pb-32 bg-[#09090b]">
+      {/* Floating Header */}
+      <div className="sticky top-0 z-50 pt-4 sm:pt-6 px-4 sm:px-6 print:hidden">
+        <header className="max-w-5xl mx-auto bg-zinc-900/80 backdrop-blur-2xl border border-white/10 rounded-2xl px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-2xl shadow-black/50">
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="bg-zinc-100 p-1.5 rounded-lg text-zinc-950">
+              <Sparkles size={20} strokeWidth={2} />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold text-zinc-100 tracking-tight">
+              BuildMyPC
+            </h1>
+          </div>
+          
+          {/* Desktop Navigation */}
+          <div className="hidden lg:flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-zinc-950/50 px-3.5 py-2 rounded-xl border border-white/5 shadow-inner">
+              <span className="text-xs font-medium text-zinc-500 uppercase tracking-widest">Source:</span>
+              <select 
+                value={selectedSite} 
+                onChange={(e) => setSelectedSite(e.target.value)}
+                className="bg-transparent text-sm font-medium text-zinc-200 focus:outline-none cursor-pointer"
+                disabled={loadingState !== 'idle' && loadingState !== 'error' && loadingState !== 'success'}
+              >
+                <option className="bg-zinc-900 text-zinc-200" value="startech">StarTech</option>
+                <option className="bg-zinc-900 text-zinc-200" value="techland">Techland</option>
+                <option className="bg-zinc-900 text-zinc-200" value="computermania">CompMania</option>
+                <option className="bg-zinc-900 text-zinc-200" value="custom">Custom...</option>
+              </select>
+            </div>
+
+            <button 
+              onClick={() => setShowSettings(true)}
+              className={`px-3.5 py-2 bg-zinc-950/50 rounded-xl border flex items-center gap-2.5 transition-all shadow-inner ${
+                showTrafficWarning
+                  ? 'text-yellow-400 border-yellow-400/30 ring-1 ring-yellow-400/50 pulse-active'
+                  : 'text-zinc-400 hover:text-zinc-100 border-white/5 hover:border-white/10 hover:bg-zinc-800/80'
+              }`}
             >
-              <option className="bg-slate-800 text-slate-200" value="startech">StarTech</option>
-              <option className="bg-slate-800 text-slate-200" value="techland">Techland</option>
-              <option className="bg-slate-800 text-slate-200" value="computermania">CompMania</option>
-              <option className="bg-slate-800 text-slate-200" value="custom">Custom...</option>
-            </select>
+              <Key size={16} strokeWidth={1.5} />
+              <span className="text-sm font-medium">API Key</span>
+            </button>
+
+            <div className="w-px h-5 bg-white/10 mx-1"></div>
+
+            <button onClick={handleDownloadPDF} className="px-3.5 py-2 bg-zinc-950/50 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 rounded-xl border border-white/5 flex items-center gap-2.5 transition-all shadow-inner">
+              <FileDown size={16} strokeWidth={1.5} />
+              <span className="text-sm font-medium">Export</span>
+            </button>
+
+            <button onClick={handleClear} className="px-3.5 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 rounded-xl border border-red-500/10 flex items-center gap-2.5 transition-all">
+              <Trash2 size={16} strokeWidth={1.5} />
+              <span className="text-sm font-medium">Clear</span>
+            </button>
           </div>
 
+          {/* Mobile Hamburger Toggle */}
           <button 
-            onClick={() => setShowSettings(true)}
-            className={`px-3 py-1.5 bg-slate-800 rounded-lg border flex items-center gap-2 transition-colors ${
-              showTrafficWarning
-                ? 'text-yellow-400 border-yellow-400/60 ring-2 ring-yellow-400 animate-pulse'
-                : 'text-slate-400 hover:text-sky-400 border-slate-700/50'
-            }`}
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
+            className="lg:hidden p-2 text-zinc-400 hover:text-zinc-100 bg-zinc-950/80 rounded-xl border border-white/5 transition-colors"
           >
-            <span className="text-sm font-medium">API Key</span>
-            <Key size={16} />
+            {showMobileMenu ? <X size={22} strokeWidth={1.5} /> : <Menu size={22} strokeWidth={1.5} />}
           </button>
+        </header>
 
-          <div className="w-px h-6 bg-slate-700 mx-1"></div>
-
-          <button onClick={handleDownloadPDF} className="px-3 py-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700/50 flex items-center gap-2 transition-colors">
-            <FileDown size={16} />
-            <span className="text-sm font-medium">Download PDF</span>
-          </button>
-
-          <button onClick={handleClear} className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg border border-red-500/20 flex items-center gap-2 transition-colors">
-            <Trash2 size={16} />
-            <span className="text-sm font-medium">Clear Build</span>
-          </button>
-        </div>
-
-        {/* Mobile Hamburger Toggle */}
-        <button 
-          onClick={() => setShowMobileMenu(!showMobileMenu)}
-          className="lg:hidden p-2 text-slate-300 hover:text-white bg-slate-800 rounded-lg border border-slate-700"
-        >
-          {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
-        </button>
-
-        {/* Mobile Menu Overlay */}
+        {/* Mobile Menu Popover */}
         <AnimatePresence>
           {showMobileMenu && (
             <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="absolute top-full left-0 right-0 glass border-b border-slate-700 p-4 lg:hidden flex flex-col gap-4 shadow-2xl"
+              initial={{ opacity: 0, y: -10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+              className="absolute top-full left-4 right-4 mt-3 bg-zinc-900 border border-white/10 p-5 rounded-2xl lg:hidden flex flex-col gap-4 shadow-2xl"
             >
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Shop Source</label>
+                <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Shop Source</label>
                 <select 
                   value={selectedSite} 
                   onChange={(e) => setSelectedSite(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:outline-none"
+                  className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-zinc-200 focus:outline-none focus:border-zinc-700"
                 >
-                  <option className="bg-slate-800 text-slate-200" value="startech">StarTech</option>
-                  <option className="bg-slate-800 text-slate-200" value="techland">Techland</option>
-                  <option className="bg-slate-800 text-slate-200" value="computermania">ComputerMania</option>
-                  <option className="bg-slate-800 text-slate-200" value="custom">Custom URL...</option>
+                  <option className="bg-zinc-900 text-zinc-200" value="startech">StarTech</option>
+                  <option className="bg-zinc-900 text-zinc-200" value="techland">Techland</option>
+                  <option className="bg-zinc-900 text-zinc-200" value="computermania">ComputerMania</option>
+                  <option className="bg-zinc-900 text-zinc-200" value="custom">Custom URL...</option>
                 </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <button 
                   onClick={() => { setShowSettings(true); setShowMobileMenu(false); }}
-                  className={`flex items-center justify-center gap-2 bg-slate-800 border rounded-lg py-3 ${
+                  className={`flex items-center justify-center gap-2 bg-zinc-950 border rounded-xl py-3.5 transition-all ${
                     showTrafficWarning
-                      ? 'text-yellow-400 border-yellow-400/60 ring-2 ring-yellow-400 animate-pulse'
-                      : 'text-slate-300 border-slate-700'
+                      ? 'text-yellow-400 border-yellow-400/30 ring-1 ring-yellow-400/50'
+                      : 'text-zinc-300 border-white/5 hover:bg-zinc-800'
                   }`}
                 >
-                  <Key size={18} />
+                  <Key size={18} strokeWidth={1.5} />
                   <span className="text-sm font-medium">API Key</span>
                 </button>
                 <button 
                   onClick={() => { handleDownloadPDF(); setShowMobileMenu(false); }}
-                  className="flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 rounded-lg py-3 text-slate-300"
+                  className="flex items-center justify-center gap-2 bg-zinc-950 hover:bg-zinc-800 border border-white/5 rounded-xl py-3.5 text-zinc-300 transition-all"
                 >
-                  <FileDown size={18} />
+                  <FileDown size={18} strokeWidth={1.5} />
                   <span className="text-sm font-medium">PDF</span>
                 </button>
               </div>
 
               <button 
                 onClick={() => { handleClear(); setShowMobileMenu(false); }}
-                className="w-full flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg py-3"
+                className="w-full flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-xl py-3.5 transition-all"
               >
-                <Trash2 size={18} />
+                <Trash2 size={18} strokeWidth={1.5} />
                 <span className="text-sm font-medium">Clear Current Build</span>
               </button>
             </motion.div>
           )}
         </AnimatePresence>
-      </header>
+      </div>
 
       {/* Main Content */}
       <main className="max-w-5xl mx-auto mt-6 sm:mt-8 px-3 sm:px-4" ref={builderRef}>
@@ -499,14 +504,14 @@ function Builder() {
           )}
         </AnimatePresence>
         
-        <div className="glass-card rounded-xl p-4 sm:p-6 mb-8">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-700 pb-4 mb-6 gap-4">
+        <div className="glass-card rounded-2xl p-5 sm:p-8 mb-8 border border-white/5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-white/5 pb-5 mb-7 gap-5">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-2">PC Builder - Build Your Own PC</h2>
-              <label className="flex items-center gap-2 cursor-pointer text-slate-400 text-sm">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-2.5 text-zinc-100 tracking-tight">Build Your Own PC</h2>
+              <label className="flex items-center gap-2.5 cursor-pointer text-zinc-400 text-sm font-medium hover:text-zinc-300 transition-colors">
                 <input 
                   type="checkbox" 
-                  className="rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-500"
+                  className="rounded border-zinc-700 bg-zinc-900 text-zinc-300 focus:ring-zinc-500 focus:ring-offset-zinc-900 w-4 h-4 cursor-pointer"
                   checked={hideUnconfigured}
                   onChange={(e) => setHideUnconfigured(e.target.checked)}
                 />
@@ -514,21 +519,21 @@ function Builder() {
               </label>
             </div>
             
-            <div className="total-card text-left bg-slate-800 p-3 rounded-lg border border-slate-700 w-full sm:w-auto sm:min-w-50">
-              <div className="text-slate-400 text-sm mb-1">Total ({Object.values(build).filter(Boolean).length} items)</div>
-              <div className="text-3xl font-bold text-sky-400">{formatPrice(total)}</div>
+            <div className="total-card text-left bg-zinc-900/60 p-4 rounded-xl border border-white/5 w-full sm:w-auto sm:min-w-50 shadow-inner">
+              <div className="text-zinc-500 text-sm mb-1 font-medium tracking-wide uppercase">Total ({Object.values(build).filter(Boolean).length} items)</div>
+              <div className="text-3xl font-bold text-zinc-100 tracking-tight">{formatPrice(total)}</div>
             </div>
           </div>
 
           {errorMsg && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3 text-red-400">
-              <AlertCircle className="mt-0.5 shrink-0" size={20} />
-              <p>{errorMsg}</p>
+            <div className="mb-7 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 text-red-400 shadow-sm">
+              <AlertCircle className="mt-0.5 shrink-0" size={20} strokeWidth={1.5} />
+              <p className="font-medium text-sm sm:text-base leading-relaxed">{errorMsg}</p>
             </div>
           )}
 
-          <div className="mb-8">
-            <div className="bg-slate-800 text-slate-300 font-semibold px-4 py-2 rounded-md mb-4 inline-block shadow-sm border border-slate-700">
+          <div className="mb-10">
+            <div className="bg-zinc-800/80 text-zinc-300 font-semibold px-4 py-2 rounded-lg mb-5 inline-block shadow-sm border border-white/5 tracking-wide text-sm uppercase">
               Core Components
             </div>
             <div className="space-y-1">
@@ -548,7 +553,7 @@ function Builder() {
           </div>
 
           <div>
-            <div className="bg-slate-800 text-slate-300 font-semibold px-4 py-2 rounded-md mb-4 inline-block shadow-sm border border-slate-700">
+            <div className="bg-zinc-800/80 text-zinc-300 font-semibold px-4 py-2 rounded-lg mb-5 inline-block shadow-sm border border-white/5 tracking-wide text-sm uppercase">
               Peripherals
             </div>
             <div className="space-y-1">
@@ -592,13 +597,13 @@ function Builder() {
       </main>
 
       {/* Fixed Chat Input */}
-      <div className="fixed bottom-0 left-0 right-0 glass border-t border-slate-700/50 p-3 sm:p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] z-50 print:hidden">
+      <div className="fixed bottom-0 left-0 right-0 bg-zinc-950/80 backdrop-blur-xl border-t border-white/5 p-3 sm:p-5 pb-[calc(1rem+env(safe-area-inset-bottom))] z-50 print:hidden">
         <div className="max-w-4xl mx-auto relative chatbox-shell">
           
           {loadingState !== 'idle' && loadingState !== 'success' && loadingState !== 'error' && (
-            <div className="loading-pill">
-              <div className="bg-slate-800 text-sky-400 px-4 py-2 rounded-full border border-sky-500/30 shadow-lg shadow-sky-900/20 flex items-center gap-3 text-sm font-medium">
-                <Loader2 size={16} className="animate-spin" />
+            <div className="absolute left-1/2 -top-14 transform -translate-x-1/2 z-50 pointer-events-none">
+              <div className="bg-zinc-900 text-zinc-300 px-5 py-2.5 rounded-full border border-white/10 shadow-xl flex items-center gap-3 text-sm font-medium tracking-wide">
+                <Loader2 size={16} className="animate-spin text-zinc-500" strokeWidth={2} />
                 {getLoadingMessage()}
               </div>
             </div>
@@ -606,30 +611,30 @@ function Builder() {
 
           {/* Follow-up mode indicator */}
           {previousIntent && loadingState !== 'analyzing' && loadingState !== 'selecting' && loadingState !== 'checking' && (
-            <div className="mb-2 flex items-center gap-2">
-              <div className="bg-sky-500/10 text-sky-400 px-3 py-1.5 rounded-full border border-sky-500/30 flex items-center gap-2 text-xs font-medium">
-                <RefreshCw size={12} />
-                Refine mode — tweak your build
+            <div className="mb-3 flex items-center gap-3">
+              <div className="bg-zinc-800/80 text-zinc-300 px-4 py-1.5 rounded-full border border-white/5 flex items-center gap-2 text-xs font-medium tracking-wide">
+                <RefreshCw size={12} strokeWidth={2} />
+                Refine mode
               </div>
               <button
                 type="button"
                 onClick={handleClear}
-                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                className="text-xs text-zinc-500 hover:text-zinc-300 font-medium transition-colors"
               >
                 Start fresh
               </button>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="flex gap-3 relative">
+          <form onSubmit={handleSubmit} className="flex gap-3 sm:gap-4 relative group">
             {chatInput === "" && !previousIntent && total === 0 && loadingState === 'idle' && (
-              <div className="absolute -top-12 left-0 right-0 flex gap-2 overflow-x-auto no-scrollbar px-1 pb-2 mask-linear-fade">
+              <div className="absolute -top-14 left-0 right-0 flex gap-2.5 overflow-x-auto no-scrollbar px-1 pb-2 mask-linear-fade">
                 {["Budget 1080p Gaming", "High-end Video Editing", "Office Productivity PC"].map((prompt) => (
                   <button
                     key={prompt}
                     type="button"
                     onClick={() => setChatInput(`I need a ${prompt.toLowerCase()} under 80,000 BDT`)}
-                    className="whitespace-nowrap px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-sky-300 hover:bg-slate-700 transition-colors shadow-lg"
+                    className="whitespace-nowrap px-4 py-2 rounded-full bg-zinc-900 border border-white/5 text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 hover:border-white/10 transition-all shadow-lg"
                   >
                     ✨ {prompt}
                   </button>
@@ -638,7 +643,7 @@ function Builder() {
             )}
             <div className="relative flex-1">
               {!chatInput && (
-               <div className="pointer-events-none absolute inset-0 flex items-center px-4 sm:px-6 text-slate-400 text-base sm:text-lg">
+               <div className="pointer-events-none absolute inset-0 flex items-center px-5 sm:px-6 text-zinc-500 text-base sm:text-lg">
                 {previousIntent
                   ? 'Tweak your build... e.g. Change GPU to RTX 4060'
                   : 'Describe your build... e.g. I need a gaming PC under 60,000 BDT'
@@ -647,7 +652,7 @@ function Builder() {
               )}
               <textarea 
                 ref={textareaRef}
-                className="w-full bg-slate-800/90 border border-slate-600 rounded-2xl px-4 sm:px-6 py-3 sm:py-4 text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all text-base sm:text-lg resize-none overflow-y-auto min-h-13 sm:min-h-14 max-h-30 sm:max-h-50"
+                className="w-full bg-zinc-900 border border-white/10 rounded-2xl px-5 sm:px-6 py-3.5 sm:py-4 text-zinc-100 placeholder-transparent focus:outline-none focus:border-zinc-500 focus:bg-zinc-800/80 transition-all text-base sm:text-lg resize-none overflow-y-auto min-h-13 sm:min-h-15 max-h-32 sm:max-h-48 shadow-inner"
                placeholder=""
                aria-label="Build description"
                value={chatInput}
@@ -668,23 +673,23 @@ function Builder() {
                disabled={loadingState === 'analyzing' || loadingState === 'selecting' || loadingState === 'checking'}
               />
             </div>
-            <div className="flex items-center self-center">
+            <div className="flex items-center self-end mb-1 sm:mb-1.5">
               {loadingState === 'idle' || loadingState === 'success' || loadingState === 'error' ? (
                 <button 
                   type="submit" 
-                  className="btn-primary rounded-full w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20"
+                  className="bg-zinc-100 hover:bg-white text-zinc-950 rounded-xl w-11 h-11 sm:w-13 sm:h-13 flex items-center justify-center shrink-0 shadow-lg shadow-white/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5"
                   disabled={!chatInput.trim()}
                 >
-                  <Send size={20} />
+                  <Send size={20} strokeWidth={2} className="ml-0.5" />
                 </button>
               ) : (
                 <button 
                   type="button" 
                   onClick={handleStop}
-                  className="bg-red-500 hover:bg-red-600 text-white rounded-full w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center shrink-0 shadow-lg shadow-red-500/20 transition-all"
+                  className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-xl w-11 h-11 sm:w-13 sm:h-13 flex items-center justify-center shrink-0 transition-all hover:-translate-y-0.5"
                   title="Stop generation"
                 >
-                  <div className="w-4 h-4 bg-white rounded-sm"></div>
+                  <div className="w-4 h-4 bg-current rounded-[3px]"></div>
                 </button>
               )}
             </div>
@@ -695,45 +700,49 @@ function Builder() {
 
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-100 flex items-center justify-center p-4">
-          <div className="glass-card bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-slate-800">
-              <h3 className="text-xl font-bold flex items-center gap-2">
-                <Key className="text-sky-400" size={20} />
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-100 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-zinc-950 border border-white/10 rounded-2xl max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between p-6 border-b border-white/5">
+              <h3 className="text-xl font-bold flex items-center gap-2 text-zinc-100">
+                <Key className="text-zinc-400" size={20} strokeWidth={1.5} />
                 API Settings
               </h3>
-              <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white transition-colors">
-                <X size={24} />
+              <button onClick={() => setShowSettings(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors bg-zinc-900 hover:bg-zinc-800 p-2 rounded-lg">
+                <X size={20} strokeWidth={1.5} />
               </button>
             </div>
-            <div className="p-6 space-y-5">
-              <p className="text-sm text-slate-300">
-                To bypass rate limits, you can provide your own API keys. These are stored locally in your browser and are only sent to our backend during processing.
+            <div className="p-6 space-y-6">
+              <p className="text-sm text-zinc-400 leading-relaxed">
+                To bypass rate limits, provide your own API key. It is stored locally in your browser and never saved on our servers.
               </p>
               
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-400 flex items-center justify-between">
+              <div className="space-y-3">
+                <label className="text-sm font-semibold text-zinc-300 flex items-center justify-between uppercase tracking-wider">
                   Groq API Key
-                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline text-xs font-normal">Get a key</a>
+                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-zinc-100 border-b border-zinc-700 hover:border-zinc-400 transition-all text-xs font-medium">Get a key</a>
                 </label>
                 <input 
                   type="password"
                   placeholder="gsk_..."
                   value={customGroqKey}
                   onChange={(e) => setCustomGroqKey(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-600 rounded px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
+                  className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 transition-all font-mono"
                 />
               </div>
             </div>
-            <div className="p-6 border-t border-slate-800 flex justify-end">
+            <div className="p-6 border-t border-white/5 flex justify-end bg-zinc-900/30">
               <button 
                 onClick={() => setShowSettings(false)}
-                className="btn-primary px-6 py-2 rounded-md font-medium"
+                className="bg-zinc-100 hover:bg-white text-zinc-950 px-6 py-2.5 rounded-xl font-medium transition-colors"
               >
                 Save & Close
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
 

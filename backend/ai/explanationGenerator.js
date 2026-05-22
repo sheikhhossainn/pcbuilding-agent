@@ -31,6 +31,7 @@ export const createExplanationGenerator = ({ groqClient }) => {
       intent,
       sitePreference,
       buildWarnings = [],
+      lockedCategories = [],
     } = params;
 
     const budget = intent.budget_bdt || 0;
@@ -40,27 +41,36 @@ export const createExplanationGenerator = ({ groqClient }) => {
       .map(category => {
         const part = selectedBuild[category];
         if (!part) return '';
-        return `- ${category}: ${part.name} (${part.price} BDT)`;
+        const lockedTag = lockedCategories.includes(category) ? ' (Kept from previous build)' : '';
+        return `- ${category}: ${part.name} (${part.price} BDT)${lockedTag}`;
       })
       .filter(Boolean)
       .join('\n');
 
+    const isFollowUp = lockedCategories.length > 0;
+    const followUpInstructions = isFollowUp ? `
+You are modifying the user's previous build. In a natural, conversational way, briefly mention what parts you kept (don't list them all, just summarize) and highlight the specific parts you swapped out based on their new request. Assure them the new combination is fully compatible.` : '';
+
     const explanationPrompt = `
-You are a PC building assistant. You have selected the following components for a user who wants a ${useCase} PC with a budget of ${budget} BDT from ${sitePreference}.
+Act as a friendly, expert PC builder who just finished designing a PC for a user.
+Their Request: A ${useCase} PC.
+Their Budget: ${budget} BDT.
+Shop Used: ${sitePreference}.
 
 Selected Parts:
 ${buildListText}
-
 Total Cost: ${totalCost} BDT
+${followUpInstructions}
 
-Write a short explanation (3-5 sentences) that justifies the build AND explicitly states compatibility evidence. Include 2-3 concrete references such as:
-- CPU socket matches motherboard socket
-- RAM type matches motherboard (DDR4/DDR5)
-- PSU wattage is sufficient for estimated CPU/GPU draw
-- GPU requirement met (or no GPU requested)
-- Whether storage capacity matches what user requested
-Avoid generic fluff and do not mention parts that are not selected.
-${buildWarnings.length > 0 ? '\nIMPORTANT WARNINGS to mention:\n' + buildWarnings.join('\n') : ''}
+Write a natural, conversational paragraph (3-5 sentences) explaining the build.
+Rules:
+- Speak directly to the user in a casual, human tone (e.g., "I went with the Ryzen 5 because...").
+- Briefly explain why the main components (CPU/Motherboard/GPU) work well together and are compatible.
+- Explain how this build fits their specific needs.
+- CRITICAL: ONLY mention the components listed above in the "Selected Parts" section. DO NOT invent, hallucinate, or mention any components (especially Graphics Cards or CPUs) that are not explicitly listed in the "Selected Parts" list above. If a Graphics Card is not listed, it means this build uses integrated graphics.
+- NEVER use robotic bullet points or rigidly list out all the parts (the user can already see the parts list on their screen). 
+- Avoid robotic phrasing like "Here is what I have done:" or "These parts are fully compatible because...". Weave the compatibility naturally into the sentences.
+${buildWarnings.length > 0 ? '\nIMPORTANT WARNINGS to mention naturally:\n' + buildWarnings.join('\n') : ''}
 `;
 
     try {

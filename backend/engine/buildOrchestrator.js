@@ -112,11 +112,12 @@ export async function executeBuild(payload, deps) {
   const selectedBuild = {
     Processor: null, Motherboard: null, RAM: null, Storage: null,
     "Graphics Card": null, PSU: null, Casing: null, "CPU Cooler": null,
-    Monitor: null, Mouse: null, Keyboard: null
+    Monitor: null, Mouse: null, Keyboard: null, UPS: null
   };
 
   let totalCost = 0;
   let globalRemaining = budgetCeiling;
+  const buildWarnings = [];
 
   // ─── Follow-up: Lock unchanged components from previous build ───
   const lockedCategories = new Set();
@@ -124,21 +125,21 @@ export async function executeBuild(payload, deps) {
     const oldStrats = prevIntent.component_strategy;
     const newStrats = intent.component_strategy || {};
 
-    // Also check if top-level preferences changed
     const budgetChanged = prevIntent.budget_bdt !== intent.budget_bdt;
     const cpuBrandChanged = prevIntent.preferred_cpu_brand !== intent.preferred_cpu_brand;
     const gpuBrandChanged = prevIntent.preferred_gpu_brand !== intent.preferred_gpu_brand;
     const useCaseChanged = prevIntent.use_case !== intent.use_case;
+    const siteChanged = prevIntent._applied_site && prevIntent._applied_site !== site;
+
+    const initialLocks = new Set();
 
     for (const category of Object.keys(selectedBuild)) {
       const oldS = oldStrats[category];
       const newS = newStrats[category];
       const prevPart = prevBuild[category];
 
-      // Skip if no previous part or no strategy to compare
       if (!prevPart || !prevPart.name || !oldS || !newS) continue;
 
-      // Check if this category's strategy changed
       const stratChanged =
         JSON.stringify(oldS.required_keywords || []) !== JSON.stringify(newS.required_keywords || []) ||
         JSON.stringify(oldS.exclude_keywords || []) !== JSON.stringify(newS.exclude_keywords || []) ||
@@ -146,18 +147,54 @@ export async function executeBuild(payload, deps) {
         oldS.required !== newS.required ||
         oldS.weight !== newS.weight;
 
-      // CPU/Motherboard must also re-select if brand preference or budget changed significantly
       const isCpuAffected = category === 'Processor' && (cpuBrandChanged || budgetChanged);
       const isGpuAffected = category === 'Graphics Card' && (gpuBrandChanged || budgetChanged);
       const isBudgetSensitive = budgetChanged && ['Processor', 'Graphics Card', 'Monitor'].includes(category);
 
-      if (!stratChanged && !isCpuAffected && !isGpuAffected && !isBudgetSensitive && !useCaseChanged) {
-        // Lock this component — reuse previous build's part
+      if (!stratChanged && !isCpuAffected && !isGpuAffected && !isBudgetSensitive && !useCaseChanged && !siteChanged) {
+        initialLocks.add(category);
+      }
+    }
+
+    // Apply Compatibility Cascade
+    if (!initialLocks.has('Processor')) {
+      initialLocks.delete('Motherboard');
+      initialLocks.delete('RAM');
+      
+      // Clear RAM type constraints to allow the new CPU to dictate it
+      if (intent.component_strategy?.Motherboard?.required_keywords) {
+        intent.component_strategy.Motherboard.required_keywords = 
+          intent.component_strategy.Motherboard.required_keywords.filter(k => !['ddr4', 'ddr5', 'ddr3'].includes(k.toLowerCase()));
+      }
+      if (intent.component_strategy?.RAM?.required_keywords) {
+        intent.component_strategy.RAM.required_keywords = 
+          intent.component_strategy.RAM.required_keywords.filter(k => !['ddr4', 'ddr5', 'ddr3'].includes(k.toLowerCase()));
+      }
+    } else if (!initialLocks.has('Motherboard')) {
+      initialLocks.delete('RAM');
+      
+      if (intent.component_strategy?.RAM?.required_keywords) {
+        intent.component_strategy.RAM.required_keywords = 
+          intent.component_strategy.RAM.required_keywords.filter(k => !['ddr4', 'ddr5', 'ddr3'].includes(k.toLowerCase()));
+      }
+    }
+
+    // Verify inventory availability and apply final locks
+    for (const category of initialLocks) {
+      const prevPart = prevBuild[category];
+      const availability = deps.partRepository.checkAvailability ? await deps.partRepository.checkAvailability(prevPart.url) : { price: prevPart.price, in_stock: true };
+      
+      if (availability && availability.in_stock) {
+        const currentPrice = availability.price || prevPart.price;
+        prevPart.price = currentPrice; // Update to current price
+        
         selectedBuild[category] = prevPart;
         totalCost += prevPart.price;
         globalRemaining -= prevPart.price;
         lockedCategories.add(category);
         console.log(`🔒 ${category}: Locked from previous build → ${prevPart.name} (${prevPart.price} BDT)`);
+      } else {
+        console.log(`🔓 ${category}: Unlocked because it is no longer in stock or available.`);
       }
     }
 
@@ -228,7 +265,7 @@ export async function executeBuild(payload, deps) {
 
   const selectionOrder = [
     'Processor', 'Motherboard', 'RAM', 'Graphics Card', 'PSU',
-    'Storage', 'Casing', 'CPU Cooler', 'Monitor', 'Mouse', 'Keyboard'
+    'Storage', 'Casing', 'CPU Cooler', 'Monitor', 'Mouse', 'Keyboard', 'UPS'
   ];
 
   for (const category of selectionOrder) {
@@ -259,6 +296,10 @@ export async function executeBuild(payload, deps) {
         console.log(`✓ ${category}: ${part.name} (${part.price} BDT)`);
       } else {
         console.warn(`⚠ ${category}: No component found within budget`);
+        // If it was explicitly requested in this follow-up/build, show a warning
+        if (intent.component_strategy?.[category]?.weight > 1 || (prevBuild && !lockedCategories.has(category))) {
+          buildWarnings.push(`Could not find a suitable **${category}** matching your request at ${site} within budget. It may be out of stock.`);
+        }
       }
     } catch (error) {
       console.error(`✗ ${category}: Selection error:`, error.message);
@@ -267,8 +308,20 @@ export async function executeBuild(payload, deps) {
 
   // Validate core build
   if (!selectedBuild.Processor || !selectedBuild.Motherboard || !selectedBuild.RAM || !selectedBuild.PSU) {
-    const missing = ['Processor', 'Motherboard', 'RAM', 'PSU'].filter(c => !selectedBuild[c]).join(', ');
-    throw new BuildError(500, `Could not assemble a complete build. Missing: ${missing}. Try adjusting your budget.`, 'CORE_COMPONENT_MISSING');
+    const missing = ['Processor', 'Motherboard', 'RAM', 'PSU'].filter(c => !selectedBuild[c]);
+    
+    // Provide diagnostic info about inventory at chosen site
+    let diagnosticMsg = `Could not assemble a complete build at **${site}**. Missing: ${missing.join(', ')}. `;
+    
+    // Check if this is a ComputerMania inventory issue
+    if (site === 'computermania') {
+      diagnosticMsg += `ComputerMania may have limited inventory for this budget/use case. Try StarTech or TechLand, or increase your budget.`;
+    } else {
+      diagnosticMsg += `Try adjusting your budget or selecting a different retailer.`;
+    }
+    
+    console.error(`[orchestrator] Build validation failed at ${site}:`, missing);
+    throw new BuildError(400, diagnosticMsg, 'INVENTORY_INSUFFICIENT');
   }
 
   // ─── PHASE 4: Rebalancing ───
@@ -276,16 +329,18 @@ export async function executeBuild(payload, deps) {
   const underspendTolerance = Math.min(budget * 0.005, 1500);
   const targetMinSpend = Math.max(0, budget - underspendTolerance);
   const maxRebalanceIterations = intent.budget_bdt >= 150000 ? 7 : 6;
+  const failedUpgrades = new Set();
 
   for (let i = 0; i < maxRebalanceIterations; i++) {
     if (totalCost >= targetMinSpend) break;
     const remaining = budgetCeiling - totalCost;
     if (remaining < 300) break;
 
-    const upgradeCandidates = ['Graphics Card', 'Monitor', 'Processor', 'Motherboard', 'RAM', 'Storage', 'PSU', 'CPU Cooler', 'Casing', 'Keyboard', 'Mouse'];
+    const upgradeCandidates = ['Graphics Card', 'Monitor', 'Processor', 'Motherboard', 'RAM', 'Storage', 'PSU', 'CPU Cooler', 'Casing', 'Keyboard', 'Mouse', 'UPS'];
     let best = null;
 
     upgradeCandidates.forEach(cat => {
+      if (failedUpgrades.has(cat)) return;
       const current = selectedBuild[cat];
       if (!current) return;
       const strategy = intent.component_strategy[cat];
@@ -303,13 +358,16 @@ export async function executeBuild(payload, deps) {
 
     const currentPart = selectedBuild[best.category];
     const upgradeRange = { min: currentPart.price + 1, max: best.possibleMax };
-    if (upgradeRange.max <= upgradeRange.min) break;
+    if (upgradeRange.max <= upgradeRange.min) {
+      failedUpgrades.add(best.category);
+      continue;
+    }
 
     let upgradedPart = null;
     try {
       const parts = await deps.partRepository.query(site, best.category, upgradeRange, 'price_desc');
       for (const part of parts) {
-        if (!deps.partRepository.matchesStrategy(part, best.strat)) continue;
+        if (!deps.partRepository.matchesStrategy(part, best.strat, best.category)) continue;
         if (best.category === 'Graphics Card') {
           if (intent.preferred_gpu_brand && part.specs?.gpu_brand !== intent.preferred_gpu_brand.toLowerCase()) continue;
           if (!deps.compatibilityChecker.isGpuAdequateForUseCase(part, intent.use_case)) continue;
@@ -351,12 +409,17 @@ export async function executeBuild(payload, deps) {
       selectedBuild[best.category] = upgradedPart;
       totalCost += upgradedPart.price;
       console.log(`  Upgraded ${best.category}: ${upgradedPart.name} (+${upgradedPart.price - currentPart.price} BDT)`);
+    } else {
+      failedUpgrades.add(best.category);
     }
   }
 
   // ─── PHASE 5: Post-Build Validation ───
   console.log("\nPHASE 5: Post-Build Validation...");
-  const buildWarnings = [];
+  
+  if (totalCost > intent.budget_bdt + 3000) {
+    throw new Error(`This configuration exceeds your budget by ${(totalCost - intent.budget_bdt).toLocaleString('en-BD')} BDT (max allowed overshoot is 3,000 BDT). Try adjusting your request, reducing requirements, or removing optional components like peripherals.`);
+  }
 
   const requestedTb = intent.component_strategy?.['Storage']?.structured_reqs?.min_tb;
   if (requestedTb && selectedBuild.Storage) {
@@ -414,7 +477,10 @@ export async function executeBuild(payload, deps) {
   // ─── PHASE 6: Generate explanation ───
   const explanation = await deps.explanationGenerator.generate({
     selectedBuild, totalCost, intent, sitePreference: site, buildWarnings,
+    lockedCategories: Array.from(lockedCategories),
   });
+
+  intent._applied_site = site;
 
   return {
     build: selectedBuild,

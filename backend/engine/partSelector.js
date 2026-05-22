@@ -77,11 +77,8 @@ export const createPartSelector = ({ partRepository, compatChecker }) => {
         part = await selectPart(site, category, survivalRange, 'price_asc', filterFn);
       }
 
-      // Last Resort: Fallback to StarTech if preferred site has no compatible parts
-      if (!part && site !== 'startech') {
-        const globalMax = Math.min(Math.round(range?.max || 10000) * 2, globalRemaining || Infinity);
-        part = await selectPart('startech', category, { min: 0, max: globalMax }, 'price_asc', filterFn);
-      }
+      // Don't fallback to different sites — respect user's site preference
+      // Return null if preferred site has no compatible parts
     }
 
     return part;

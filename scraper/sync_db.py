@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 import scrapers.startech as startech
 import scrapers.techland as techland
+import scrapers.computermania as computermania
 
 # Load environment variables (from the backend folder)
 env_path = Path(__file__).resolve().parent.parent / 'backend' / '.env'
@@ -36,7 +37,7 @@ def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r") as f:
             return json.load(f)
-    return {"startech": 0, "techland": 0}
+    return {"startech": 0, "techland": 0, "computermania": 0}
 
 def save_state(state):
     with open(STATE_FILE, "w") as f:
@@ -244,10 +245,64 @@ def run_sync():
             
         time.sleep(3) # Politeness to prevent getting banned
         
+    # Only move to ComputerMania if TechLand is 100% complete
+    if state["techland"] < len(CATEGORIES):
+        return
+
+    # 3. ComputerMania (no UPS category)
+    COMPUTERMANIA_CATEGORIES = [
+        "cpu", "motherboard", "ram", "storage", "gpu",
+        "psu", "casing", "cpu-cooler", "monitor", "mouse", "keyboard"
+    ]
+    print("--- Scraping ComputerMania ---")
+    start_idx = state.get("computermania", 0)
+    for i in range(start_idx, len(COMPUTERMANIA_CATEGORIES)):
+        category = COMPUTERMANIA_CATEGORIES[i]
+        print(f"Syncing ComputerMania: {category}...")
+        try:
+            cm_products = computermania.scrape(category)
+            batch = []
+            scraped_urls = set()
+            for p in cm_products:
+                if not p.get('price'): continue
+                scraped_urls.add(p['url'])
+                batch.append({
+                    "site": "computermania",
+                    "category": category,
+                    "name": p['name'],
+                    "price": p['price'],
+                    "image": p['image'],
+                    "url": p['url'],
+                    "in_stock": p.get('in_stock', True),
+                    "specs": infer_specs(category, p['name'])
+                })
+            
+            for j in range(0, len(batch), 50):
+                upsert_to_supabase(batch[j:j+50])
+            print(f"  Upserted {len(batch)} items from ComputerMania ({category}).")
+
+            # Mark items no longer on the website as out of stock
+            mark_stale_out_of_stock("computermania", category, scraped_urls)
+            
+            # Save state after successful category scrape
+            state["computermania"] = i + 1
+            save_state(state)
+        except Exception as e:
+            print(f"  Error scraping ComputerMania for {category}: {e}")
+            print("  Pausing sync to avoid bans. Will resume from this category next time.")
+            break
+            
+        time.sleep(3) # Politeness to prevent getting banned
+        
     # Reset completion state if everything finished
-    if state["startech"] == len(CATEGORIES) and state["techland"] == len(CATEGORIES):
+    all_done = (
+        state["startech"] == len(CATEGORIES) and
+        state["techland"] == len(CATEGORIES) and
+        state.get("computermania", 0) == len(COMPUTERMANIA_CATEGORIES)
+    )
+    if all_done:
         print("Sync fully completed. Resetting state.")
-        save_state({"startech": 0, "techland": 0})
+        save_state({"startech": 0, "techland": 0, "computermania": 0})
 
 if __name__ == "__main__":
     run_sync()

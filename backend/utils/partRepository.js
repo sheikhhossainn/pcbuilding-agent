@@ -276,11 +276,26 @@ export const createPartRepository = ({ supabase, specInference, cache }) => {
     return sockets;
   };
 
+  const checkAvailability = async (url) => {
+    try {
+      const { data, error } = await supabase
+        .from('components')
+        .select('in_stock, price')
+        .eq('url', url)
+        .single();
+      if (error || !data) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  };
+
   return {
     query,
     findCheapest,
     matchesStrategy,
     getAvailableSockets,
+    checkAvailability,
   };
 };
 

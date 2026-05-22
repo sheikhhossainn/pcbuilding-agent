@@ -53,10 +53,10 @@ export const RATE_LIMITING = {
   WINDOW_MS: 15 * 60 * 1000, // 15 minutes
 
   // Max requests per window for unauthenticated users
-  MAX_REQUESTS_PER_WINDOW: 5,
+  MAX_REQUESTS_PER_WINDOW: 10,
 
   // Message to display when limit exceeded
-  LIMIT_MESSAGE: "You've reached the free limit of 5 builds per 15 minutes. Please wait, or enter your own API key in the settings to continue immediately.",
+  LIMIT_MESSAGE: "You've reached the free limit of 10 builds per 15 minutes. Please wait, or enter your own API key in the settings to continue immediately.",
 };
 
 export const API = {
