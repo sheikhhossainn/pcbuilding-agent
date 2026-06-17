@@ -78,12 +78,27 @@ export const createPartRepository = ({ supabase, specInference, cache }) => {
       query = query.limit(PART_SELECTION.QUERY_LIMIT);
 
       const { data, error } = await query;
-      console.log(`[Repo] Query for ${dbCategory} at ${site} returned ${data?.length || 0} items`);
 
       if (error) {
-        console.error(`[Repo] Supabase error for ${dbCategory}:`, error);
+        const errorDetails = error.message || error.details || '';
+        const isNetworkError = errorDetails.includes('fetch failed')
+          || errorDetails.includes('ENOTFOUND')
+          || errorDetails.includes('ECONNREFUSED')
+          || errorDetails.includes('ETIMEDOUT')
+          || errorDetails.includes('ECONNRESET')
+          || errorDetails.includes('socket hang up');
+
+        if (isNetworkError) {
+          console.error(`[Repo] ❌ DATABASE UNREACHABLE while querying ${dbCategory}:`, errorDetails);
+          throw new Error(`Database is currently unreachable. Please try again in a moment.`);
+        }
+
+        // Non-network Supabase errors (e.g. bad query syntax) — safe to return empty
+        console.error(`[Repo] Supabase query error for ${dbCategory}:`, error);
         return [];
       }
+
+      console.log(`[Repo] Query for ${dbCategory} at ${site} returned ${data?.length || 0} items`);
 
       // Enrich with inferred specs
       const enriched = data.map(p => ({
@@ -103,6 +118,16 @@ export const createPartRepository = ({ supabase, specInference, cache }) => {
       await cache.set(cacheKey, enriched);
       return enriched;
     } catch (error) {
+      // If it's already our rethrown network error, propagate it
+      if (error.message?.includes('Database is currently unreachable')) {
+        throw error;
+      }
+      // Unexpected errors (e.g. network failures caught at fetch level)
+      const msg = error.message || '';
+      if (msg.includes('fetch failed') || msg.includes('ENOTFOUND') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT')) {
+        console.error(`[Repo] ❌ DATABASE UNREACHABLE (catch) while querying ${category}:`, msg);
+        throw new Error(`Database is currently unreachable. Please try again in a moment.`);
+      }
       console.error(`[Repo] Failed to query ${category}:`, error);
       return [];
     }
