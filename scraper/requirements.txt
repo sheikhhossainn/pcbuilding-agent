@@ -5,3 +5,6 @@ curl_cffi
 playwright
 browserforge
 DrissionPage
+sse-starlette
+jinja2
+python-dotenv

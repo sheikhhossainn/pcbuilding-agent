@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BuildMyPC — Scraper Dashboard</title>
+    <meta name="description" content="Local dashboard for monitoring and controlling the BuildMyPC web scraper">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* ── Reset & Variables ──────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --bg-card-hover: #ffffff;
+            --bg-elevated: #f1f5f9;
+            --border: #e2e8f0;
+            --border-hover: #cbd5e1;
+
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #64748b;
+
+            --accent: #2563eb;
+            --accent-glow: rgba(37, 99, 235, 0.08);
+            --green: #059669;
+            --green-dim: rgba(5, 150, 105, 0.08);
+            --red: #dc2626;
+            --red-dim: rgba(220, 38, 38, 0.08);
+            --amber: #d97706;
+            --amber-dim: rgba(217, 119, 6, 0.08);
+
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.03);
+            --transition: 0.2s ease;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Layout ────────────────────────────────────────────────────── */
+        .app {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 32px 24px 48px;
+        }
+
+        /* ── Header ────────────────────────────────────────────────────── */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .header-icon {
+            width: 44px;
+            height: 44px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.5px;
+        }
+
+        .header h1 span {
+            font-weight: 400;
+            color: var(--text-muted);
+            font-size: 18px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        /* ── Buttons ───────────────────────────────────────────────────── */
+        .btn {
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            font-size: 14px;
+            padding: 8px 18px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all var(--transition);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--bg-elevated);
+            border-color: var(--border-hover);
+        }
+
+        .btn-start {
+            background: var(--green);
+            border-color: var(--green);
+            color: white;
+        }
+        .btn-start:hover:not(:disabled) {
+            background: #047857;
+            border-color: #047857;
+            color: white;
+        }
+
+        .btn-stop {
+            background: var(--red);
+            border-color: var(--red);
+            color: white;
+        }
+        .btn-stop:hover:not(:disabled) {
+            background: #b91c1c;
+            border-color: #b91c1c;
+            color: white;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .btn .icon { font-size: 14px; }
+
+        /* ── Cards ─────────────────────────────────────────────────────── */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: var(--shadow);
+            transition: all var(--transition);
+        }
+
+        .card-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        /* ── Status & Progress Row ─────────────────────────────────────── */
+        .status-row {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 768px) {
+            .status-row { grid-template-columns: 1fr; }
+        }
+
+        /* Status Card */
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .status-dot.idle { background: var(--text-muted); }
+        .status-dot.running { background: var(--green); }
+        .status-dot.stopping { background: var(--amber); }
+        .status-dot.error { background: var(--red); }
+
+        .status-text {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .status-sub {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .current-task {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: var(--bg-elevated);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .current-task strong {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* Progress Card */
+        .progress-bar-container {
+            margin-top: 8px;
+        }
+
+        .progress-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .progress-meta .pct {
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-elevated);
+            border-radius: 99px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 99px;
+            transition: width 0.6s ease;
+        }
+
+        .site-progress-list {
+            display: flex;
+            gap: 20px;
+            margin-top: 18px;
+            flex-wrap: wrap;
+        }
+
+        .site-progress-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .site-progress-item .mini-bar {
+            width: 60px;
+            height: 6px;
+            background: var(--bg-elevated);
+            border-radius: 99px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .site-progress-item .mini-fill {
+            height: 100%;
+            border-radius: 99px;
+            transition: width 0.6s ease;
+            background: var(--text-muted);
+        }
+
+        .mini-fill.startech { background: #3b82f6; }
+        .mini-fill.techland { background: #8b5cf6; }
+        .mini-fill.computermania { background: #10b981; }
+
+        /* ── Site Cards Grid ───────────────────────────────────────────── */
+        .sites-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 768px) {
+            .sites-grid { grid-template-columns: 1fr; }
+        }
+
+        .site-card {
+            border-top: 3px solid var(--border);
+        }
+
+        .site-card.startech { border-top-color: #3b82f6; }
+        .site-card.techland { border-top-color: #8b5cf6; }
+        .site-card.computermania { border-top-color: #10b981; }
+
+        .site-name {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+        }
+
+        .site-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .stat-item {
+            padding: 12px;
+            border-radius: var(--radius-sm);
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .stat-item.in-stock { background: var(--bg-secondary); }
+        .stat-item.out-stock { background: var(--bg-secondary); }
+        .stat-item.total-items {
+            background: var(--bg-elevated);
+            grid-column: 1 / -1;
+            border-color: transparent;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .in-stock .stat-value { color: var(--green); }
+        .out-stock .stat-value { color: var(--red); }
+        .total-items .stat-value { color: var(--text-primary); }
+
+        .stat-label {
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ── Category Table ────────────────────────────────────────────── */
+        .table-wrapper {
+            margin-bottom: 24px;
+            overflow-x: auto;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 24px;
+        }
+
+        .table-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .table-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .table-filters {
+            display: flex;
+            gap: 8px;
+        }
+
+        .filter-btn {
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 99px;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .filter-btn:hover, .filter-btn.active {
+            background: var(--bg-elevated);
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead th {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody td {
+            padding: 14px 16px;
+            font-size: 14px;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr:last-child td { border-bottom: none; }
+
+        tbody tr:hover td {
+            background: var(--bg-elevated);
+        }
+
+        .badge {
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 99px;
+            text-transform: capitalize;
+            border: 1px solid;
+        }
+
+        .badge-startech { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+        .badge-techland { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+        .badge-computermania { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+
+        .stock-in { color: var(--green); font-weight: 500; }
+        .stock-out { color: var(--red); font-weight: 500; }
+        .stock-total { font-weight: 600; }
+
+        /* ── Log Feed ──────────────────────────────────────────────────── */
+        .log-card {
+            margin-bottom: 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: var(--shadow);
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .log-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+
+        .log-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .log-badge .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+        }
+
+        .log-badge.disconnected .live-dot {
+            background: var(--red);
+        }
+
+        .log-feed {
+            background: #1e293b;
+            color: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            max-height: 360px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .log-line {
+            display: flex;
+            gap: 12px;
+            padding: 2px 0;
+        }
+
+        .log-time {
+            color: #64748b;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        .log-msg { color: #cbd5e1; word-break: break-word; }
+        .log-msg.success { color: #34d399; }
+        .log-msg.error { color: #f87171; }
+        .log-msg.warning { color: #fbbf24; }
+        .log-msg.info { color: #60a5fa; }
+
+        .log-empty {
+            color: #64748b;
+            font-style: italic;
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        /* ── Resume Banner ─────────────────────────────────────────────── */
+        .resume-banner {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            color: #b45309;
+            display: none;
+        }
+
+        .resume-banner.visible { display: flex; }
+
+        /* ── Footer ────────────────────────────────────────────────────── */
+        .footer {
+            text-align: center;
+            padding: 24px 0 0;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="header-icon">🖥️</div>
+                <div>
+                    <h1>Scraper Dashboard <span>— BuildMyPC</span></h1>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-refresh" id="btn-refresh" onclick="refreshStats()">
+                    <span class="icon">↻</span> Refresh Stats
+                </button>
+                <button class="btn btn-start" id="btn-start" onclick="startScraper()">
+                    <span class="icon">▶</span> Start Scraper
+                </button>
+                <button class="btn btn-stop" id="btn-stop" onclick="stopScraper()" disabled>
+                    <span class="icon">⏹</span> Stop
+                </button>
+            </div>
+        </header>
+
+        <!-- Resume Banner -->
+        <div class="resume-banner" id="resume-banner">
+            <span class="icon">⚠️</span>
+            <span id="resume-text">Previous scrape was interrupted. Clicking Start will resume from where it left off.</span>
+        </div>
+
+        <!-- Status + Progress -->
+        <div class="status-row">
+            <div class="card">
+                <div class="card-title">Status</div>
+                <div class="status-indicator">
+                    <div class="status-dot idle" id="status-dot"></div>
+                    <div>
+                        <div class="status-text" id="status-text">Idle</div>
+                        <div class="status-sub" id="status-sub">Ready to scrape</div>
+                    </div>
+                </div>
+                <div class="current-task" id="current-task" style="display:none">
+                    <strong id="task-site">—</strong> → <span id="task-category">—</span>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">Overall Progress</div>
+                <div class="progress-bar-container">
+                    <div class="progress-meta">
+                        <span id="progress-label">0 / 35 categories</span>
+                        <span class="pct" id="progress-pct">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+                    </div>
+                    <div class="site-progress-list">
+                        <div class="site-progress-item">
+                            <span>StarTech</span>
+                            <div class="mini-bar"><div class="mini-fill startech" id="mp-startech" style="width:0%"></div></div>
+                            <span id="mp-startech-label">0/12</span>
+                        </div>
+                        <div class="site-progress-item">
+                            <span>TechLand</span>
+                            <div class="mini-bar"><div class="mini-fill techland" id="mp-techland" style="width:0%"></div></div>
+                            <span id="mp-techland-label">0/12</span>
+                        </div>
+                        <div class="site-progress-item">
+                            <span>ComputerMania</span>
+                            <div class="mini-bar"><div class="mini-fill computermania" id="mp-computermania" style="width:0%"></div></div>
+                            <span id="mp-computermania-label">0/11</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Site Cards -->
+        <div class="sites-grid" id="sites-grid">
+            <div class="card site-card startech">
+                <div class="site-name"><span class="dot"></span> StarTech</div>
+                <div class="site-stats">
+                    <div class="stat-item in-stock">
+                        <div class="stat-value" id="st-instock">—</div>
+                        <div class="stat-label">In Stock</div>
+                    </div>
+                    <div class="stat-item out-stock">
+                        <div class="stat-value" id="st-outstock">—</div>
+                        <div class="stat-label">Out of Stock</div>
+                    </div>
+                    <div class="stat-item total-items">
+                        <div class="stat-value" id="st-total">—</div>
+                        <div class="stat-label">Total Parts</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card site-card techland">
+                <div class="site-name"><span class="dot"></span> TechLand</div>
+                <div class="site-stats">
+                    <div class="stat-item in-stock">
+                        <div class="stat-value" id="tl-instock">—</div>
+                        <div class="stat-label">In Stock</div>
+                    </div>
+                    <div class="stat-item out-stock">
+                        <div class="stat-value" id="tl-outstock">—</div>
+                        <div class="stat-label">Out of Stock</div>
+                    </div>
+                    <div class="stat-item total-items">
+                        <div class="stat-value" id="tl-total">—</div>
+                        <div class="stat-label">Total Parts</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card site-card computermania">
+                <div class="site-name"><span class="dot"></span> ComputerMania</div>
+                <div class="site-stats">
+                    <div class="stat-item in-stock">
+                        <div class="stat-value" id="cm-instock">—</div>
+                        <div class="stat-label">In Stock</div>
+                    </div>
+                    <div class="stat-item out-stock">
+                        <div class="stat-value" id="cm-outstock">—</div>
+                        <div class="stat-label">Out of Stock</div>
+                    </div>
+                    <div class="stat-item total-items">
+                        <div class="stat-value" id="cm-total">—</div>
+                        <div class="stat-label">Total Parts</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Table -->
+        <div class="card table-wrapper">
+            <div class="table-header-row">
+                <div class="card-title" style="margin-bottom:0">Category Breakdown</div>
+                <div class="table-filters">
+                    <button class="filter-btn active" data-filter="all" onclick="filterTable('all', this)">All</button>
+                    <button class="filter-btn" data-filter="startech" onclick="filterTable('startech', this)">StarTech</button>
+                    <button class="filter-btn" data-filter="techland" onclick="filterTable('techland', this)">TechLand</button>
+                    <button class="filter-btn" data-filter="computermania" onclick="filterTable('computermania', this)">ComputerMania</button>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Site</th>
+                        <th>Category</th>
+                        <th>In Stock</th>
+                        <th>Out of Stock</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody id="stats-tbody">
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px">Loading stats...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Log Feed -->
+        <div class="card log-card">
+            <div class="log-header">
+                <div class="card-title" style="margin-bottom:0">Live Log Feed</div>
+                <div class="log-badge" id="log-badge">
+                    <div class="live-dot"></div>
+                    <span id="log-status">Connecting...</span>
+                </div>
+            </div>
+            <div class="log-feed" id="log-feed">
+                <div class="log-empty">No logs yet. Start the scraper to see live output.</div>
+            </div>
+        </div>
+
+        <div class="footer">BuildMyPC Scraper Dashboard · Local Only · Port 8501</div>
+    </div>
+
+    <script>
+        // ── State ──────────────────────────────────────────────────────
+        let eventSource = null;
+        let currentFilter = 'all';
+        let allCategoryStats = [];
+        let isAutoScroll = true;
+
+        // ── Init ───────────────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchStatus();
+            refreshStats();
+            connectSSE();
+
+            // Poll status every 3s
+            setInterval(fetchStatus, 3000);
+
+            // Auto-scroll detection
+            const feed = document.getElementById('log-feed');
+            feed.addEventListener('scroll', () => {
+                const atBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 30;
+                isAutoScroll = atBottom;
+            });
+        });
+
+        // ── API Calls ──────────────────────────────────────────────────
+        async function startScraper() {
+            const btn = document.getElementById('btn-start');
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/start', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'started') {
+                    clearLogs();
+                }
+                fetchStatus();
+            } catch (e) {
+                console.error('Start failed:', e);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function stopScraper() {
+            const btn = document.getElementById('btn-stop');
+            btn.disabled = true;
+            try {
+                await fetch('/api/stop', { method: 'POST' });
+                fetchStatus();
+            } catch (e) {
+                console.error('Stop failed:', e);
+            }
+        }
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                updateStatusUI(data);
+            } catch (e) {
+                console.error('Status fetch failed:', e);
+            }
+        }
+
+        async function refreshStats() {
+            const btn = document.getElementById('btn-refresh');
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                updateSiteCards(data.sites);
+                allCategoryStats = data.categories;
+                renderTable(data.categories);
+            } catch (e) {
+                console.error('Stats fetch failed:', e);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ── SSE Log Stream ─────────────────────────────────────────────
+        function connectSSE() {
+            if (eventSource) eventSource.close();
+
+            eventSource = new EventSource('/api/logs');
+
+            eventSource.addEventListener('log', (e) => {
+                const entry = JSON.parse(e.data);
+                appendLog(entry);
+            });
+
+            eventSource.addEventListener('progress', (e) => {
+                const data = JSON.parse(e.data);
+                if (data.status === 'completed' || data.status === 'stopped') {
+                    fetchStatus();
+                    refreshStats();
+                }
+            });
+
+            eventSource.addEventListener('ping', () => {});
+
+            eventSource.onopen = () => {
+                document.getElementById('log-badge').className = 'log-badge';
+                document.getElementById('log-status').textContent = 'Connected';
+            };
+
+            eventSource.onerror = () => {
+                document.getElementById('log-badge').className = 'log-badge disconnected';
+                document.getElementById('log-status').textContent = 'Reconnecting...';
+                // EventSource auto-reconnects
+            };
+        }
+
+        // ── UI Updates ─────────────────────────────────────────────────
+        function updateStatusUI(data) {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            const sub = document.getElementById('status-sub');
+            const btnStart = document.getElementById('btn-start');
+            const btnStop = document.getElementById('btn-stop');
+            const taskEl = document.getElementById('current-task');
+
+            // Status dot + text
+            dot.className = 'status-dot';
+            if (data.running && data.stopping) {
+                dot.classList.add('stopping');
+                text.textContent = 'Stopping...';
+                sub.textContent = 'Finishing current category';
+                btnStart.disabled = true;
+                btnStop.disabled = true;
+            } else if (data.running) {
+                dot.classList.add('running');
+                text.textContent = 'Running';
+                sub.textContent = 'Scraping in progress';
+                btnStart.disabled = true;
+                btnStop.disabled = false;
+            } else if (data.error) {
+                dot.classList.add('error');
+                text.textContent = 'Error';
+                sub.textContent = data.error;
+                btnStart.disabled = false;
+                btnStop.disabled = true;
+            } else {
+                dot.classList.add('idle');
+                text.textContent = 'Idle';
+                sub.textContent = data.last_run ? `Last run: ${formatTime(data.last_run)}` : 'Ready to scrape';
+                btnStart.disabled = false;
+                btnStop.disabled = true;
+            }
+
+            // Current task
+            if (data.running && data.progress && data.progress.site) {
+                taskEl.style.display = 'block';
+                document.getElementById('task-site').textContent = capitalize(data.progress.site);
+                document.getElementById('task-category').textContent = data.progress.category || '—';
+            } else {
+                taskEl.style.display = 'none';
+            }
+
+            // Overall progress bar
+            const total = data.overall_total || 35;
+            const completed = data.overall_progress || 0;
+            const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+            document.getElementById('progress-fill').style.width = pct + '%';
+            document.getElementById('progress-pct').textContent = pct + '%';
+            document.getElementById('progress-label').textContent = `${completed} / ${total} categories`;
+
+            // Site mini progress bars
+            const state = data.state || {};
+            updateMiniBar('startech', state.startech || 0, 12);
+            updateMiniBar('techland', state.techland || 0, 12);
+            updateMiniBar('computermania', state.computermania || 0, 11);
+
+            // Resume banner
+            const banner = document.getElementById('resume-banner');
+            const hasResume = !data.running && (
+                (state.startech || 0) > 0 || 
+                (state.techland || 0) > 0 || 
+                (state.computermania || 0) > 0
+            );
+            if (hasResume) {
+                banner.classList.add('visible');
+                const parts = [];
+                if (state.startech > 0 && state.startech < 12) parts.push(`StarTech (${state.startech}/12)`);
+                if (state.techland > 0 && state.techland < 12) parts.push(`TechLand (${state.techland}/12)`);
+                if (state.computermania > 0 && state.computermania < 11) parts.push(`ComputerMania (${state.computermania}/11)`);
+                if (parts.length > 0) {
+                    document.getElementById('resume-text').textContent = `Previous scrape was interrupted. Will resume: ${parts.join(', ')}. Click Start to continue.`;
+                } else {
+                    banner.classList.remove('visible');
+                }
+            } else {
+                banner.classList.remove('visible');
+            }
+        }
+
+        function updateMiniBar(site, completed, total) {
+            const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+            document.getElementById(`mp-${site}`).style.width = pct + '%';
+            document.getElementById(`mp-${site}-label`).textContent = `${completed}/${total}`;
+        }
+
+        function updateSiteCards(sites) {
+            const siteMap = {};
+            (sites || []).forEach(s => siteMap[s.site] = s);
+
+            const set = (prefix, data) => {
+                document.getElementById(`${prefix}-instock`).textContent = data ? data.in_stock.toLocaleString() : '0';
+                document.getElementById(`${prefix}-outstock`).textContent = data ? data.out_of_stock.toLocaleString() : '0';
+                document.getElementById(`${prefix}-total`).textContent = data ? data.total.toLocaleString() : '0';
+            };
+
+            set('st', siteMap['startech']);
+            set('tl', siteMap['techland']);
+            set('cm', siteMap['computermania']);
+        }
+
+        function renderTable(stats) {
+            const tbody = document.getElementById('stats-tbody');
+            const filtered = currentFilter === 'all' ? stats : stats.filter(s => s.site === currentFilter);
+
+            if (!filtered || filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px">No data available. Run the scraper to populate stats.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(row => `
+                <tr data-site="${row.site}">
+                    <td><span class="badge badge-${row.site}">${capitalize(row.site)}</span></td>
+                    <td>${formatCategory(row.category)}</td>
+                    <td class="stock-in">${row.in_stock}</td>
+                    <td class="stock-out">${row.out_of_stock}</td>
+                    <td style="font-weight:600">${row.total}</td>
+                </tr>
+            `).join('');
+        }
+
+        function filterTable(filter, btn) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderTable(allCategoryStats);
+        }
+
+        // ── Log Feed ───────────────────────────────────────────────────
+        function appendLog(entry) {
+            const feed = document.getElementById('log-feed');
+            
+            // Remove empty placeholder
+            const empty = feed.querySelector('.log-empty');
+            if (empty) empty.remove();
+
+            const line = document.createElement('div');
+            line.className = 'log-line';
+
+            const time = document.createElement('span');
+            time.className = 'log-time';
+            time.textContent = entry.time;
+
+            const msg = document.createElement('span');
+            msg.className = 'log-msg';
+            const msgText = entry.message || '';
+            msg.textContent = msgText;
+
+            // Color code messages
+            if (msgText.includes('✓') || msgText.includes('completed')) {
+                msg.classList.add('success');
+            } else if (msgText.includes('✗') || msgText.includes('Error') || msgText.includes('Failed')) {
+                msg.classList.add('error');
+            } else if (msgText.includes('⏹') || msgText.includes('⚠') || msgText.includes('Pausing') || msgText.includes('stale')) {
+                msg.classList.add('warning');
+            } else if (msgText.includes('---') || msgText.includes('Starting') || msgText.includes('Syncing')) {
+                msg.classList.add('info');
+            }
+
+            line.appendChild(time);
+            line.appendChild(msg);
+            feed.appendChild(line);
+
+            // Auto-scroll
+            if (isAutoScroll) {
+                feed.scrollTop = feed.scrollHeight;
+            }
+        }
+
+        function clearLogs() {
+            const feed = document.getElementById('log-feed');
+            feed.innerHTML = '';
+        }
+
+        // ── Helpers ────────────────────────────────────────────────────
+        function capitalize(str) {
+            if (!str) return '';
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        function formatCategory(cat) {
+            const map = {
+                'cpu': 'CPU', 'gpu': 'GPU', 'ram': 'RAM', 'psu': 'PSU', 'ups': 'UPS',
+                'motherboard': 'Motherboard', 'storage': 'Storage', 'casing': 'Casing',
+                'cpu-cooler': 'CPU Cooler', 'monitor': 'Monitor', 'mouse': 'Mouse', 'keyboard': 'Keyboard'
+            };
+            return map[cat] || cat;
+        }
+
+        function formatTime(iso) {
+            try {
+                const d = new Date(iso);
+                return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            } catch {
+                return iso;
+            }
+        }
+    </script>
+</body>
+</html>

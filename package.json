@@ -7,6 +7,7 @@
     "start:frontend": "npm --prefix frontend run dev",
     "start:backend": "npx nodemon --watch backend backend/server.js",
     "start:scraper": "powershell -Command \"cd scraper; .\\venv\\Scripts\\python sync_db.py\"",
+    "start:dashboard": "powershell -Command \"cd scraper; .\\venv\\Scripts\\python dashboard.py\"",
     "start:all": "concurrently -c \"cyan,magenta\" -n \"frontend,backend\" \"npm run start:frontend\" \"npm run start:backend\""
   },
   "devDependencies": {

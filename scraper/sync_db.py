@@ -3,12 +3,18 @@ import time
 import requests
 import json
 import re
+import threading
 from pathlib import Path
 from dotenv import load_dotenv
 
 import scrapers.startech as startech
 import scrapers.techland as techland
-import scrapers.computermania as computermania
+
+try:
+    import scrapers.computermania as computermania
+except ImportError:
+    computermania = None
+    print("Warning: DrissionPage not installed — ComputerMania scraper disabled")
 
 # Load environment variables (from the backend folder)
 env_path = Path(__file__).resolve().parent.parent / 'backend' / '.env'
@@ -32,6 +38,19 @@ CATEGORIES = [
     "cpu", "motherboard", "ram", "storage", "gpu",
     "psu", "casing", "cpu-cooler", "monitor", "mouse", "keyboard", "ups"
 ]
+
+COMPUTERMANIA_CATEGORIES = [
+    "cpu", "motherboard", "ram", "storage", "gpu",
+    "psu", "casing", "cpu-cooler", "monitor", "mouse", "keyboard"
+]
+
+# All sites with their scraper modules and category lists
+SITES = [
+    {"name": "startech", "module": startech, "categories": CATEGORIES},
+    {"name": "techland", "module": techland, "categories": CATEGORIES},
+]
+if computermania:
+    SITES.append({"name": "computermania", "module": computermania, "categories": COMPUTERMANIA_CATEGORIES})
 
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -126,7 +145,7 @@ def upsert_to_supabase(data):
 def mark_stale_out_of_stock(site, category, scraped_urls):
     """Mark components in DB as out-of-stock if they weren't in the latest scrape."""
     if not SUPABASE_URL or not scraped_urls:
-        return
+        return 0
 
     # Fetch all existing URLs for this site+category
     url = f"{SUPABASE_URL}/rest/v1/components?site=eq.{site}&category=eq.{category}&in_stock=eq.true&select=url"
@@ -136,13 +155,13 @@ def mark_stale_out_of_stock(site, category, scraped_urls):
         existing = response.json()
     except Exception as e:
         print(f"  Failed to fetch existing URLs for stale check: {e}")
-        return
+        return 0
 
     existing_urls = {item['url'] for item in existing}
     stale_urls = existing_urls - scraped_urls
 
     if not stale_urls:
-        return
+        return 0
 
     # Mark stale items as out of stock
     for stale_url in stale_urls:
@@ -153,156 +172,188 @@ def mark_stale_out_of_stock(site, category, scraped_urls):
             pass
 
     print(f"  Marked {len(stale_urls)} stale items as out-of-stock for {site}/{category}")
+    return len(stale_urls)
 
 
-def run_sync():
-    print("Starting sync...")
-    state = load_state()
+def _scrape_site(site_info, state, log, progress, stop_event):
+    """Scrape all categories for a single site. Returns True if fully completed."""
+    site_name = site_info["name"]
+    module = site_info["module"]
+    categories = site_info["categories"]
+    start_idx = state.get(site_name, 0)
+
+    log(f"--- Scraping {site_name.capitalize()} ---")
+
+    for i in range(start_idx, len(categories)):
+        # Check for stop signal between categories
+        if stop_event and stop_event.is_set():
+            log(f"⏹ Stop requested. Pausing {site_name} at category index {i}.")
+            return False
+
+        category = categories[i]
+        log(f"Syncing {site_name.capitalize()}: {category}...")
+        progress({
+            "site": site_name,
+            "category": category,
+            "category_index": i,
+            "total_categories": len(categories),
+            "status": "scraping",
+        })
+
+        try:
+            products = module.scrape(category)
+            batch = []
+            scraped_urls = set()
+            for p in products:
+                if not p.get('price'): continue
+                scraped_urls.add(p['url'])
+                batch.append({
+                    "site": site_name,
+                    "category": category,
+                    "name": p['name'],
+                    "price": p['price'],
+                    "image": p['image'],
+                    "url": p['url'],
+                    "in_stock": p.get('in_stock', True),
+                    "specs": infer_specs(category, p['name'])
+                })
+            
+            for j in range(0, len(batch), 50):
+                upsert_to_supabase(batch[j:j+50])
+            
+            in_stock_count = sum(1 for p in batch if p.get('in_stock', True))
+            out_of_stock_count = len(batch) - in_stock_count
+            log(f"  OK Upserted {len(batch)} items from {site_name.capitalize()} ({category}) — {in_stock_count} in stock, {out_of_stock_count} out of stock")
+
+            # Mark items no longer on the website as out of stock
+            stale_count = mark_stale_out_of_stock(site_name, category, scraped_urls)
+            
+            progress({
+                "site": site_name,
+                "category": category,
+                "category_index": i + 1,
+                "total_categories": len(categories),
+                "status": "done_category",
+                "items_upserted": len(batch),
+                "in_stock": in_stock_count,
+                "out_of_stock": out_of_stock_count,
+                "stale_marked": stale_count,
+            })
+
+            # Save state after successful category scrape
+            state[site_name] = i + 1
+            save_state(state)
+        except Exception as e:
+            log(f"  Error scraping {site_name.capitalize()} for {category}: {e}")
+            log(f"  Pausing sync to avoid bans. Will resume from this category next time.")
+            progress({
+                "site": site_name,
+                "category": category,
+                "category_index": i,
+                "total_categories": len(categories),
+                "status": "error",
+                "error": str(e),
+            })
+            return False
+            
+        time.sleep(3)  # Politeness to prevent getting banned
+
+    return True  # All categories completed
+
+
+def run_sync(stop_event=None, log_callback=None, progress_callback=None):
+    """Run the full scraper sync.
     
-    # 1. StarTech
-    print("--- Scraping Startech ---")
-    start_idx = state["startech"]
-    for i in range(start_idx, len(CATEGORIES)):
-        category = CATEGORIES[i]
-        print(f"Syncing Startech: {category}...")
-        try:
-            startech_products = startech.scrape(category)
-            batch = []
-            scraped_urls = set()
-            for p in startech_products:
-                if not p.get('price'): continue
-                scraped_urls.add(p['url'])
-                batch.append({
-                    "site": "startech",
-                    "category": category,
-                    "name": p['name'],
-                    "price": p['price'],
-                    "image": p['image'],
-                    "url": p['url'],
-                    "in_stock": p.get('in_stock', True),
-                    "specs": infer_specs(category, p['name'])
-                })
-            
-            for j in range(0, len(batch), 50):
-                upsert_to_supabase(batch[j:j+50])
-            print(f"  Upserted {len(batch)} items from StarTech ({category}).")
+    Args:
+        stop_event: threading.Event — if set, scraper will stop after current category
+        log_callback: Callable[[str], None] — receives log messages (replaces print)
+        progress_callback: Callable[[dict], None] — receives structured progress updates
+    """
+    def log(msg):
+        if log_callback:
+            log_callback(msg)
+        print(msg)
 
-            # Mark items no longer on the website as out of stock
-            mark_stale_out_of_stock("startech", category, scraped_urls)
-            
-            # Save state after successful category scrape
-            state["startech"] = i + 1
-            save_state(state)
-        except Exception as e:
-            print(f"  Error scraping StarTech for {category}: {e}")
-            print("  Pausing sync to avoid bans. Will resume from this category next time.")
-            return # Stop completely to avoid hitting techland right away
-            
-        time.sleep(3) # Politeness to prevent getting banned
-        
-    # Only move to TechLand if StarTech is 100% complete
-    if state["startech"] < len(CATEGORIES):
-        return
+    def progress(data):
+        if progress_callback:
+            progress_callback(data)
 
-    # 2. TechLand
-    print("--- Scraping TechLand ---")
-    start_idx = state["techland"]
-    for i in range(start_idx, len(CATEGORIES)):
-        category = CATEGORIES[i]
-        print(f"Syncing TechLand: {category}...")
-        try:
-            techland_products = techland.scrape(category)
-            batch = []
-            scraped_urls = set()
-            for p in techland_products:
-                if not p.get('price'): continue
-                scraped_urls.add(p['url'])
-                batch.append({
-                    "site": "techland",
-                    "category": category,
-                    "name": p['name'],
-                    "price": p['price'],
-                    "image": p['image'],
-                    "url": p['url'],
-                    "in_stock": p.get('in_stock', True),
-                    "specs": infer_specs(category, p['name'])
-                })
-            
-            for j in range(0, len(batch), 50):
-                upsert_to_supabase(batch[j:j+50])
-            print(f"  Upserted {len(batch)} items from Techland ({category}).")
+    log("Starting sync...")
+    state = load_state()
 
-            # Mark items no longer on the website as out of stock
-            mark_stale_out_of_stock("techland", category, scraped_urls)
-            
-            # Save state after successful category scrape
-            state["techland"] = i + 1
-            save_state(state)
-        except Exception as e:
-            print(f"  Error scraping Techland for {category}: {e}")
-            print("  Pausing sync to avoid bans. Will resume from this category next time.")
-            break
-            
-        time.sleep(3) # Politeness to prevent getting banned
-        
-    # Only move to ComputerMania if TechLand is 100% complete
-    if state["techland"] < len(CATEGORIES):
-        return
+    # Calculate total categories across all sites for overall progress
+    total_all = sum(len(s["categories"]) for s in SITES)
+    completed_before = sum(state.get(s["name"], 0) for s in SITES)
 
-    # 3. ComputerMania (no UPS category)
-    COMPUTERMANIA_CATEGORIES = [
-        "cpu", "motherboard", "ram", "storage", "gpu",
-        "psu", "casing", "cpu-cooler", "monitor", "mouse", "keyboard"
-    ]
-    print("--- Scraping ComputerMania ---")
-    start_idx = state.get("computermania", 0)
-    for i in range(start_idx, len(COMPUTERMANIA_CATEGORIES)):
-        category = COMPUTERMANIA_CATEGORIES[i]
-        print(f"Syncing ComputerMania: {category}...")
-        try:
-            cm_products = computermania.scrape(category)
-            batch = []
-            scraped_urls = set()
-            for p in cm_products:
-                if not p.get('price'): continue
-                scraped_urls.add(p['url'])
-                batch.append({
-                    "site": "computermania",
-                    "category": category,
-                    "name": p['name'],
-                    "price": p['price'],
-                    "image": p['image'],
-                    "url": p['url'],
-                    "in_stock": p.get('in_stock', True),
-                    "specs": infer_specs(category, p['name'])
-                })
-            
-            for j in range(0, len(batch), 50):
-                upsert_to_supabase(batch[j:j+50])
-            print(f"  Upserted {len(batch)} items from ComputerMania ({category}).")
+    for site_info in SITES:
+        site_name = site_info["name"]
+        # Skip sites that are already fully complete
+        if state.get(site_name, 0) >= len(site_info["categories"]):
+            continue
 
-            # Mark items no longer on the website as out of stock
-            mark_stale_out_of_stock("computermania", category, scraped_urls)
-            
-            # Save state after successful category scrape
-            state["computermania"] = i + 1
-            save_state(state)
-        except Exception as e:
-            print(f"  Error scraping ComputerMania for {category}: {e}")
-            print("  Pausing sync to avoid bans. Will resume from this category next time.")
-            break
-            
-        time.sleep(3) # Politeness to prevent getting banned
-        
-    # Reset completion state if everything finished
-    all_done = (
-        state["startech"] == len(CATEGORIES) and
-        state["techland"] == len(CATEGORIES) and
-        state.get("computermania", 0) == len(COMPUTERMANIA_CATEGORIES)
+        # Check previous sites are complete before starting this one
+        site_idx = SITES.index(site_info)
+        if site_idx > 0:
+            prev_site = SITES[site_idx - 1]
+            if state.get(prev_site["name"], 0) < len(prev_site["categories"]):
+                log(f"Skipping {site_name} — previous site not complete yet.")
+                break
+
+        completed = _scrape_site(site_info, state, log, progress, stop_event)
+        if not completed:
+            # Either stopped or errored — exit
+            progress({"status": "stopped"})
+            return
+
+    # Check if everything is done
+    all_done = all(
+        state.get(s["name"], 0) >= len(s["categories"]) for s in SITES
     )
     if all_done:
-        print("Sync fully completed. Resetting state.")
+        log("✓ Sync fully completed. Resetting state for next run.")
         save_state({"startech": 0, "techland": 0, "computermania": 0})
+        progress({"status": "completed"})
+    else:
+        progress({"status": "stopped"})
+
+
+def get_supabase_stats():
+    """Query Supabase for component counts grouped by site, category, and stock status."""
+    if not SUPABASE_URL:
+        return []
+    
+    # Fetch all components with pagination to bypass the 1000 row limit
+    rows = []
+    limit = 1000
+    offset = 0
+    while True:
+        url = f"{SUPABASE_URL}/rest/v1/components?select=site,category,in_stock&limit={limit}&offset={offset}"
+        try:
+            response = requests.get(url, headers=HEADERS)
+            response.raise_for_status()
+            batch = response.json()
+            rows.extend(batch)
+            if len(batch) < limit:
+                break
+            offset += limit
+        except Exception as e:
+            print(f"Failed to fetch stats: {e}")
+            break
+
+    # Aggregate in Python
+    counts = {}
+    for row in rows:
+        key = (row["site"], row["category"])
+        if key not in counts:
+            counts[key] = {"site": row["site"], "category": row["category"], "in_stock": 0, "out_of_stock": 0, "total": 0}
+        counts[key]["total"] += 1
+        if row.get("in_stock"):
+            counts[key]["in_stock"] += 1
+        else:
+            counts[key]["out_of_stock"] += 1
+
+    return sorted(counts.values(), key=lambda x: (x["site"], x["category"]))
+
 
 if __name__ == "__main__":
     run_sync()
