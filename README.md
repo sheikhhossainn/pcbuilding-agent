@@ -32,7 +32,7 @@ User Prompt
     ▼
 ┌─────────────────────────────────────────┐
 │  Phase 0 — Intent Extraction            │
-│  Groq (Llama 3.3 70B / 8B Instant)      │
+│  Groq (GPT-OSS-120B / GPT-OSS-20B)      │
 │  Parses budget, use case, constraints   │
 │  Outputs a weighted component blueprint │
 └──────────────────┬──────────────────────┘
@@ -111,7 +111,7 @@ graph TD
     end
     
     subgraph "AI Services"
-        Groq["Groq API<br/>(Llama 3 Models)"]:::external
+        Groq["Groq API<br/>(GPT-OSS Models)"]:::external
     end
 
     %% Connections
@@ -144,7 +144,7 @@ graph TD
 
 #### 2. User Intent & Planning (The AI Engine)
 *   When a user submits a search (e.g., *"I want a gaming setup for 75,000 taka, prefer AMD"*), the **React Frontend** POSTs the request to the **Node.js Express Backend**.
-*   The backend delegates the prompt to the primary **Groq API** (`Llama-3.3-70b-versatile`), which serves as our intent extractor.
+*   The backend delegates the prompt to the primary **Groq API** (`openai/gpt-oss-120b`), which serves as our intent extractor.
 *   The LLM translates the query into a structured, typed JSON schema containing exact budget bounds, specific requested categories, and hard component requirements.
 
 #### 3. Build Orchestration & Response
@@ -153,7 +153,7 @@ graph TD
     *   *Socket matching*: CPU socket type strictly matched to motherboards.
     *   *Generation matching*: DDR4 vs. DDR5 memory generation checked across CPU, board, and memory sticks.
     *   *TDP constraints*: PSU wattage computed as CPU TDP + GPU TDP multiplied by safety headroom parameters.
-*   Once a fully verified build is constructed, a secondary Groq LLM (`Llama-3.1-8b-instant`) generates a natural, simple, and neutral compatibility justification explaining exactly why these components are compatible and perfect for the user's budget.
+*   Once a fully verified build is constructed, a secondary Groq LLM (`openai/gpt-oss-20b`) generates a natural, simple, and neutral compatibility justification explaining exactly why these components are compatible and perfect for the user's budget.
 *   The payload (components, pricing, and justification text) is served back to the React UI for an interactive display.
 
 ---
@@ -198,8 +198,8 @@ graph TD
 | Frontend | React 19, Vite 6, Tailwind CSS 4 |
 | Backend | Node.js, Express 4 |
 | Database | Supabase (PostgreSQL) |
-| AI — Primary | Groq (Llama 3.3 70B Versatile) |
-| AI — Fallback | Groq (Llama 8B Instant) |
+| AI — Primary | Groq (GPT-OSS-120B) |
+| AI — Fallback | Groq (GPT-OSS-20B) |
 | Scraper | Python, DrissionPage, BeautifulSoup4, Requests |
 | Frontend Hosting | Vercel |
 | Backend Hosting | Render (Singapore) |
@@ -237,7 +237,7 @@ cd frontend && npm install && cd ..
 Create `backend/.env`:
 
 ```env
-# AI Providers (At least one Groq key required for Llama-3.3-70B)
+# AI Providers (At least one Groq key required for GPT-OSS-120B)
 GROQ_API_KEY=your_primary_groq_key
 GROQ_API_KEY_2=your_fallback_groq_key  # Optional: For automatic 429 rate-limit rotation
 

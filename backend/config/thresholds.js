@@ -69,13 +69,13 @@ export const API = {
 
 export const AI = {
   // Primary LLM model for intent extraction (high accuracy)
-  MODEL_PRIMARY_INTENT: 'llama-3.3-70b-versatile',
+  MODEL_PRIMARY_INTENT: 'openai/gpt-oss-120b',
 
   // Fallback LLM model (faster, for rate limiting)
-  MODEL_FALLBACK_INTENT: 'llama-3.1-8b-instant',
+  MODEL_FALLBACK_INTENT: 'openai/gpt-oss-20b',
 
   // Model for explanation generation (always fast)
-  MODEL_EXPLANATION: 'llama-3.1-8b-instant',
+  MODEL_EXPLANATION: 'openai/gpt-oss-20b',
 
   // Temperature for intent extraction (lower = more deterministic)
   TEMPERATURE_INTENT: 0.1,

@@ -7,7 +7,7 @@
 
 BuildMyPC is a high-performance, full-stack AI PC configurator tailored for the Bangladesh market. It processes natural-language requests (e.g. *"Budget 1080p gaming build under 80K, include a monitor, prefer AMD"*) into optimized hardware configurations by:
 
-1.  **Extracting Intent**: Parsing requirements via Groq LLMs (`Llama-3.3-70B`, with `8B-instant` fallback).
+1.  **Extracting Intent**: Parsing requirements via Groq LLMs (`GPT-OSS-120B`, with `GPT-OSS-20B` fallback).
 2.  **Live Database Querying**: Matching against a Supabase database of ~10,000 components scraped from StarTech, TechLand, and CompMania.
 3.  **Modular Compatibility Engine**: Isolated modules for socket compatibility, RAM type matching, PSU sizing, GPU adequacy, and budget allocation.
 4.  **Intelligent Fallback Degradation**: When exact specs unavailable, gracefully degrades (e.g., 64GB RAM → 32GB → 16GB).
@@ -171,11 +171,11 @@ The system uses **Groq** exclusively for maximum speed and reliability.
 
 | Phase | Model | Purpose | Latency |
 |-------|-------|---------|---------|
-| **Intent Extraction** | `llama-3.3-70b-versatile` | Deep reasoning for complex prompts | ~3-5s |
-| **Fallback Intent** | `llama-3.1-8b-instant` | If 70B fails (503, 429, timeout) | <1s |
-| **Explanation** | `llama-3.1-8b-instant` | Summarize build choices | <500ms |
+| **Intent Extraction** | `openai/gpt-oss-120b` | Deep reasoning for complex prompts | ~3-5s |
+| **Fallback Intent** | `openai/gpt-oss-20b` | If 120B fails (503, 429, timeout) | <1s |
+| **Explanation** | `openai/gpt-oss-20b` | Summarize build choices | <500ms |
 
-**Fallback Strategy**: If 70B model is rate-limited or times out, automatically retry with 8B model.
+**Fallback Strategy**: If 120B model is rate-limited or times out, automatically retry with 20B model.
 
 ## Deployment Checklist
 
@@ -202,8 +202,8 @@ To prevent "component not found" errors on high budgets, the system gracefully d
 
 #### Model Tier Fallback  
 `intentExtractor` implements primary-secondary tier within Groq:
-- Try `llama-3.3-70b-versatile` (best accuracy)
-- If fails (503, 429, timeout), retry with `llama-3.1-8b-instant` (fast)
+- Try `openai/gpt-oss-120b` (best accuracy)
+- If fails (503, 429, timeout), retry with `openai/gpt-oss-20b` (fast)
 - User always gets a build response
 
 #### Peripheral "Combo" Exclusion
