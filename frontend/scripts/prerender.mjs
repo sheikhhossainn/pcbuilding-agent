@@ -76,7 +76,7 @@ function bodyHtml(page, faq) {
   const isLanding = page.path !== '/';
   const others = LANDING_PAGES.filter((p) => `/${p.slug}` !== page.path);
   return [
-    '<div style="max-width:42rem;margin:0 auto;padding:2rem 1rem;line-height:1.6">',
+    '<div class="prerender">',
     `<p><strong>${esc(SITE_NAME)}</strong> — AI PC builder for Bangladesh</p>`,
     `<h1>${esc(page.h1)}</h1>`,
     `<p>${esc(page.lead)}</p>`,
