@@ -1,0 +1,38 @@
+import { motion, AnimatePresence } from 'framer-motion';
+import { CheckCircle2 } from 'lucide-react';
+
+export default function Toast({ toast }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed top-36 lg:top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none print:hidden"
+    >
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            key={toast.message}
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+          >
+            <div className="surface-float pointer-events-auto flex items-center gap-2.5 rounded-full bg-fg text-bg pl-4 pr-1 py-1 text-sm">
+              <CheckCircle2 size={16} className="shrink-0" aria-hidden="true" />
+              <span>{toast.message}</span>
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={toast.action.onClick}
+                  className="ml-1 min-h-11 px-4 rounded-full bg-bg/15 hover:bg-bg/25 font-semibold text-sm transition-colors"
+                >
+                  {toast.action.label}
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
