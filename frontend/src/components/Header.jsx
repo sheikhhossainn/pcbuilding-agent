@@ -23,10 +23,10 @@ export default function Header({
         <div className="flex items-center gap-3 shrink-0">
           <LogoMark size={38} animated={busy} className="shrink-0" />
           <div className="leading-tight">
-            <h1 className="text-lg font-semibold tracking-tight text-fg flex items-center gap-2">
+            <p className="text-lg font-semibold tracking-tight text-fg flex items-center gap-2">
               <span>Build<span className="text-accent">MyPC</span></span>
               <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-accent-soft text-accent border border-accent-line">BD</span>
-            </h1>
+            </p>
             <p className="text-xs text-fg-3 hidden sm:block">AI PC builder for Bangladesh</p>
           </div>
         </div>

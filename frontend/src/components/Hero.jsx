@@ -7,6 +7,8 @@ import StoreSelect from './StoreSelect';
 export default function Hero({
   composerProps, onPickPreset,
   site, onSiteChange, customSiteUrl, onCustomSiteUrlChange,
+  heading = 'Build a PC for your budget',
+  lead = 'Describe what you need. We match live prices from Bangladeshi retailers and check compatibility.',
 }) {
   return (
     <motion.section
@@ -17,11 +19,11 @@ export default function Hero({
       className="max-w-2xl mx-auto pt-4 sm:pt-12"
     >
       <div className="text-center">
-        <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-fg text-balance">
-          Build a PC for your budget
-        </h2>
+        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-fg text-balance">
+          {heading}
+        </h1>
         <p className="mt-3 text-fg-2 text-base text-balance">
-          Describe what you need. We match live prices from Bangladeshi retailers and check compatibility.
+          {lead}
         </p>
       </div>
 

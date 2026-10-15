@@ -1,5 +1,5 @@
 // Flat monogram: a "B" made of two stacked parts, like components racked in a case.
-// One color, no gradient, legible at 16px. Keep in sync with public/favicon.svg.
+// One color, no gradient, legible at 16px. Keep in sync with public/favicon.svg; the PNG/ICO icons are rendered from the same shapes.
 const TOP = 'M16 11h9.5a5.75 5.75 0 0 1 0 11.5H16a2 2 0 0 1-2-2V13a2 2 0 0 1 2-2Z';
 const BOTTOM = 'M16 25.5h11a5.75 5.75 0 0 1 0 11.5H16a2 2 0 0 1-2-2v-7.5a2 2 0 0 1 2-2Z';
 

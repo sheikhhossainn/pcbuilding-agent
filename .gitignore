@@ -47,3 +47,5 @@ backend/parts.json
 !package-lock.json
 !jsconfig.json
 !.vscode/extensions.json
+
+!frontend/vercel.json

@@ -392,3 +392,11 @@ body {
   color: var(--fg-3);
   opacity: 1;
 }
+
+/* Masks API keys like a password field without being one: browsers and password managers
+   autofill real password inputs (and we then persisted that junk as the "key").
+   Only mask once there is a value, so the placeholder stays readable. */
+.secret-input:not(:placeholder-shown) {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
