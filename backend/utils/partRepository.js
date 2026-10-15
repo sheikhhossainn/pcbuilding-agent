@@ -29,7 +29,8 @@ const CATEGORY_MAPPING = {
  * @param {Object} deps.cache - Cache manager
  * @returns {Object} Repository interface
  */
-export const createPartRepository = ({ supabase, specInference, cache }) => {
+export const createPartRepository = ({ db, turso, supabase, specInference, cache }) => {
+  const dbClient = db || turso;
   /**
    * Query parts from database with filters
    * Uses cache to avoid redundant queries
@@ -55,64 +56,58 @@ export const createPartRepository = ({ supabase, specInference, cache }) => {
     }
 
     try {
-      let query = supabase
-        .from('components')
-        .select('*')
-        .eq('site', site)
-        .eq('category', dbCategory)
-        .eq('in_stock', true);
+      const sqlParts = [
+        'SELECT * FROM components WHERE site = ? AND category = ? AND in_stock = 1'
+      ];
+      const args = [site, dbCategory];
 
       if (priceRange?.min !== undefined && priceRange.min !== null) {
-        query = query.gte('price', Math.round(priceRange.min));
+        sqlParts.push('AND price >= ?');
+        args.push(Math.round(priceRange.min));
       }
       if (priceRange?.max !== undefined && priceRange.max !== null) {
-        query = query.lte('price', Math.round(priceRange.max));
+        sqlParts.push('AND price <= ?');
+        args.push(Math.round(priceRange.max));
       }
 
-      if (sortOrder === 'price_asc') {
-        query = query.order('price', { ascending: true });
-      } else {
-        query = query.order('price', { ascending: false });
-      }
+      const orderDirection = sortOrder === 'price_asc' ? 'ASC' : 'DESC';
+      sqlParts.push(`ORDER BY price ${orderDirection}`);
+      sqlParts.push('LIMIT ?');
+      args.push(PART_SELECTION.QUERY_LIMIT);
 
-      query = query.limit(PART_SELECTION.QUERY_LIMIT);
+      const sql = sqlParts.join(' ');
+      const result = await dbClient.execute({ sql, args });
+      const data = result.rows || [];
 
-      const { data, error } = await query;
-
-      if (error) {
-        const errorDetails = error.message || error.details || '';
-        const isNetworkError = errorDetails.includes('fetch failed')
-          || errorDetails.includes('ENOTFOUND')
-          || errorDetails.includes('ECONNREFUSED')
-          || errorDetails.includes('ETIMEDOUT')
-          || errorDetails.includes('ECONNRESET')
-          || errorDetails.includes('socket hang up');
-
-        if (isNetworkError) {
-          console.error(`[Repo] ❌ DATABASE UNREACHABLE while querying ${dbCategory}:`, errorDetails);
-          throw new Error(`Database is currently unreachable. Please try again in a moment.`);
-        }
-
-        // Non-network Supabase errors (e.g. bad query syntax) — safe to return empty
-        console.error(`[Repo] Supabase query error for ${dbCategory}:`, error);
-        return [];
-      }
-
-      console.log(`[Repo] Query for ${dbCategory} at ${site} returned ${data?.length || 0} items`);
+      console.log(`[Repo] Query for ${dbCategory} at ${site} returned ${data.length} items`);
 
       // Enrich with inferred specs
-      const enriched = data.map(p => ({
-        name: p.name,
-        price: p.price,
-        image: p.image,
-        url: p.url,
-        in_stock: p.in_stock,
-        category: category,
-        specs: {
-          ...p.specs,
-          ...specInference.inferSpecs(category, p.name),
+      const enriched = data.map(p => {
+        let specsObj = {};
+        if (p.specs) {
+          if (typeof p.specs === 'object') {
+            specsObj = p.specs;
+          } else {
+            try {
+              specsObj = JSON.parse(p.specs);
+            } catch (e) {
+              specsObj = {};
+            }
+          }
         }
-      }));
+        return {
+          name: p.name,
+          price: Number(p.price),
+          image: p.image,
+          url: p.url,
+          in_stock: Boolean(p.in_stock),
+          category: category,
+          specs: {
+            ...specsObj,
+            ...specInference.inferSpecs(category, p.name),
+          }
+        };
+      });
 
       // Cache results
       await cache.set(cacheKey, enriched);
@@ -124,8 +119,9 @@ export const createPartRepository = ({ supabase, specInference, cache }) => {
       }
       // Unexpected errors (e.g. network failures caught at fetch level)
       const msg = error.message || '';
-      if (msg.includes('fetch failed') || msg.includes('ENOTFOUND') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT')) {
-        console.error(`[Repo] ❌ DATABASE UNREACHABLE (catch) while querying ${category}:`, msg);
+      const isNetwork = msg.includes('fetch failed') || msg.includes('ENOTFOUND') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('URL_INVALID') || msg.includes('SERVER_ERROR');
+      if (isNetwork) {
+        console.error(`[Repo] ❌ DATABASE UNREACHABLE while querying ${category}:`, msg);
         throw new Error(`Database is currently unreachable. Please try again in a moment.`);
       }
       console.error(`[Repo] Failed to query ${category}:`, error);
@@ -274,42 +270,50 @@ export const createPartRepository = ({ supabase, specInference, cache }) => {
    * @returns {Promise<Set<string>>}
    */
   const getAvailableSockets = async (site) => {
-    const query = supabase
-      .from('components')
-      .select('name, specs')
-      .eq('category', 'motherboard');
-    
-    if (site !== 'all') {
-      query.eq('site', site);
-    }
-    
-    const { data } = await query;
-    const enriched = (data || []).map(p => ({
-      ...p,
-      specs: specInference.inferSpecs('Motherboard', p.name)
-    }));
+    try {
+      let sql = 'SELECT name, specs FROM components WHERE category = ?';
+      const args = ['motherboard'];
 
-    if (enriched.length > 0) {
-      console.log(`[Repo] First 5 motherboards at ${site}:`, enriched.slice(0, 5).map(p => `${p.name} -> ${p.specs.socket}`));
-    }
+      if (site !== 'all') {
+        sql += ' AND site = ?';
+        args.push(site);
+      }
 
-    const sockets = new Set();
-    enriched.forEach(m => {
-      const socket = m.specs?.socket;
-      if (socket && socket !== 'UNKNOWN') sockets.add(socket);
-    });
-    return sockets;
+      const result = await dbClient.execute({ sql, args });
+      const data = result.rows || [];
+      const enriched = data.map(p => ({
+        ...p,
+        specs: specInference.inferSpecs('Motherboard', p.name)
+      }));
+
+      if (enriched.length > 0) {
+        console.log(`[Repo] First 5 motherboards at ${site}:`, enriched.slice(0, 5).map(p => `${p.name} -> ${p.specs.socket}`));
+      }
+
+      const sockets = new Set();
+      enriched.forEach(m => {
+        const socket = m.specs?.socket;
+        if (socket && socket !== 'UNKNOWN') sockets.add(socket);
+      });
+      return sockets;
+    } catch (e) {
+      console.error(`[Repo] Failed to getAvailableSockets for ${site}:`, e);
+      return new Set();
+    }
   };
 
   const checkAvailability = async (url) => {
     try {
-      const { data, error } = await supabase
-        .from('components')
-        .select('in_stock, price')
-        .eq('url', url)
-        .single();
-      if (error || !data) return null;
-      return data;
+      const result = await dbClient.execute({
+        sql: 'SELECT in_stock, price FROM components WHERE url = ? LIMIT 1',
+        args: [url]
+      });
+      const row = result.rows?.[0];
+      if (!row) return null;
+      return {
+        in_stock: Boolean(row.in_stock),
+        price: Number(row.price)
+      };
     } catch (e) {
       return null;
     }

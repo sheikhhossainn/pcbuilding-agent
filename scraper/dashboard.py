@@ -152,7 +152,7 @@ async def get_status():
 
 @app.get("/api/stats")
 async def get_stats():
-    stats = sync_db.get_supabase_stats()
+    stats = sync_db.get_turso_stats()
     
     # Compute site totals
     site_totals = {}

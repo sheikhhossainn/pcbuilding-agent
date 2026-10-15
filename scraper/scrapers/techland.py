@@ -29,6 +29,23 @@ def get_first(element, selector):
     res = element.css(selector)
     return res[0] if res else None
 
+import time
+
+def safe_fetch(fetcher, url, max_retries=3):
+    """Fetch URL with automatic retry and exponential backoff on network errors."""
+    for attempt in range(max_retries):
+        try:
+            page = fetcher.get(url)
+            if page and getattr(page, 'status', None) == 200:
+                return page
+            time.sleep(1.5 * (attempt + 1))
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"[Techland] Network error fetching {url} after {max_retries} attempts: {e}")
+                return None
+            time.sleep(1.5 * (attempt + 1))
+    return None
+
 MAX_PAGES = 10  # Increased from 3 because server-side price filtering doesn't work, we need more coverage
 
 # TechLand supports server-side sorting via query params (sort/order). When the backend requests
@@ -45,6 +62,84 @@ def build_url(base_url, params):
     return urlunparse(url_parts)
 
 def scrape_page(page, products):
+    # Support new TechLand v2 layout (.v2-card-title) as well as legacy layout (h4 a)
+    v2_titles = page.css(".v2-card-title")
+    if v2_titles:
+        for title_elem in v2_titles:
+            name = (title_elem.text or "").strip()
+            if not name:
+                continue
+
+            # Find URL from parent <a> or child <a>
+            a = title_elem.parent if getattr(title_elem.parent, 'tag', '') == 'a' else None
+            if not a:
+                a_list = title_elem.css("a")
+                if a_list:
+                    a = a_list[0]
+            product_url = a.attrib.get("href", "") if a else ""
+
+            # Card container
+            card = title_elem
+            for _ in range(6):
+                if card.parent:
+                    card = card.parent
+                    attribs = card.attrib or {}
+                    if "wire:key" in attribs or "listing-card" in str(attribs.get("class", "")):
+                        break
+
+            # Image
+            image = ""
+            img_elems = card.css("img")
+            if img_elems:
+                image = (img_elems[0].attrib.get("src") or
+                         img_elems[0].attrib.get("data-src") or
+                         img_elems[0].attrib.get("data-lazy-src") or "")
+
+            # Price extraction
+            price = None
+            price_elems = card.css(".bengali-text, span, div")
+            regular_prices = []
+            old_prices = []
+            for pe in price_elems:
+                txt = (pe.text or "").strip()
+                if "৳" in txt and not any(w in txt.lower() for w in ["save", "/mo", "off"]):
+                    digits = re.sub(r'[^\d]', '', txt)
+                    if digits:
+                        val = int(digits)
+                        cls = (pe.attrib.get("class") or "").lower()
+                        if "line-through" in cls:
+                            old_prices.append(val)
+                        else:
+                            regular_prices.append(val)
+
+            if regular_prices:
+                price = regular_prices[0]
+            elif old_prices:
+                price = old_prices[0]
+
+            # In-stock check
+            buttons = card.css("button")
+            btn_text = " ".join((b.text or "") for b in buttons).lower()
+            card_html = (card.html_content or "").lower()
+            if "out of stock" in btn_text or "out of stock" in card_html:
+                in_stock = False
+            elif "add to cart" in btn_text or "addedtocart" in card_html:
+                in_stock = True
+            elif "pre order" in btn_text or "pre-order" in btn_text:
+                in_stock = False
+            else:
+                in_stock = True
+
+            products.append({
+                "name": name,
+                "price": price,
+                "image": image,
+                "url": product_url,
+                "in_stock": in_stock
+            })
+
+        return v2_titles
+
     name_elements = page.css("h4 a")
 
     for name_elem in name_elements:
@@ -70,10 +165,6 @@ def scrape_page(page, products):
                          img_elem.attrib.get("data-lazy-src") or "")
 
         # Price
-        # TechLand cards often render a bold current price and (optionally) a struck-through old price.
-        # Some cards also show an ultra-low bold value (e.g., "৳ 199") that appears to be an EMI/metadata
-        # number rather than the real product price. We guard against that by preferring the old price
-        # when the bold value is implausibly small relative to it.
         price = None
         price_container = card or parent
         if price_container:
@@ -94,7 +185,6 @@ def scrape_page(page, products):
                 cls = (span.attrib.get("class") or "").lower()
                 if not old_text and "line-through" in cls:
                     old_text = t
-                # Prefer the bold (non line-through) price as the primary candidate
                 if not bold_text and ("font-bold" in cls) and ("line-through" not in cls):
                     bold_text = t
 
@@ -103,8 +193,6 @@ def scrape_page(page, products):
             old_price = clean_price(old_text)
 
             if primary_price is not None and old_price is not None:
-                # Heuristic: if the "current" value is far too small compared to the old price,
-                # treat it as non-product (EMI/metadata) and use the old price instead.
                 if old_price >= 5000 and primary_price < int(old_price * 0.2):
                     price = old_price
                 else:
@@ -112,10 +200,6 @@ def scrape_page(page, products):
             else:
                 price = primary_price
 
-        # Stock check
-        # TechLand shows availability as text like "In Stock" / "Out Of Stock" in a <p>.
-        # Relying on `card.text` is unreliable with Scrapling for nested content, so we
-        # instead extract specific <p> text, with an HTML fallback.
         in_stock = True
         stock_text = ""
         if card:
@@ -173,10 +257,12 @@ def scrape(category: str, price_min=None, price_max=None, sort_order=None):
     if price_max is not None:
         filter_params["filter_max_price"] = int(price_max)
 
-    for page_num in range(1, 50 + 1): # Increase limit drastically to fetch all
+    for page_num in range(1, 60 + 1): # Fetch up to 60 pages
         page_params = {"page": page_num} if page_num > 1 else {}
         url = build_url(base_url, {**sort_params, **filter_params, **page_params})
-        page = fetcher.get(url)
+        page = safe_fetch(fetcher, url)
+        if not page:
+            break
         name_elements = scrape_page(page, all_products)
 
         if not name_elements:

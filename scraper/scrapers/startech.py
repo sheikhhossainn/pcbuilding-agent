@@ -29,7 +29,22 @@ def get_first(element, selector):
     res = element.css(selector)
     return res[0] if res else None
 
-MAX_PAGES = 3
+import time
+
+def safe_fetch(fetcher, url, max_retries=3):
+    """Fetch URL with automatic retry and exponential backoff on network errors."""
+    for attempt in range(max_retries):
+        try:
+            page = fetcher.get(url)
+            if page and getattr(page, 'status', None) == 200:
+                return page
+            time.sleep(1.5 * (attempt + 1))
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"[Startech] Network error fetching {url} after {max_retries} attempts: {e}")
+                return None
+            time.sleep(1.5 * (attempt + 1))
+    return None
 
 def build_url(base_url, params):
     url_parts = list(urlparse(base_url))
@@ -39,7 +54,9 @@ def build_url(base_url, params):
     return urlunparse(url_parts)
 
 def scrape_page(url: str, fetcher):
-    page = fetcher.get(url)
+    page = safe_fetch(fetcher, url)
+    if not page:
+        return []
     products = []
 
     items = page.css(".p-item")
@@ -47,7 +64,10 @@ def scrape_page(url: str, fetcher):
         name_elem = get_first(item, ".p-item-name a")
         if not name_elem:
             continue
-        name = name_elem.text.strip()
+        name = (name_elem.get_all_text() if hasattr(name_elem, 'get_all_text') else name_elem.text or "").strip()
+        if not name:
+            span = get_first(name_elem, "span")
+            name = (span.text or "").strip() if span else ""
         product_url = name_elem.attrib.get("href", "")
 
         img_elem = get_first(item, ".p-item-img img")
@@ -126,6 +146,8 @@ def scrape(category: str, price_min=None, price_max=None, sort_order=None):
         page_params = {"page": page_num} if page_num > 1 else {}
         url = build_url(base_url, {**sort_params, **filter_params, **page_params})
         page_products = scrape_page(url, fetcher)
+        if not page_products:
+            break
         all_products.extend(page_products)
         if len(page_products) < 10:
             break

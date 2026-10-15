@@ -118,8 +118,10 @@ async function processNext(worker) {
   console.log(`[queue] Worker ${worker.id} processing job ${jobId.slice(0, 8)}...`);
 
   try {
-    const groqKey = job.payload.customKeys?.groq || worker.groqKey;
-    const deps = depsFactory(groqKey);
+    const customKey = job.payload.customKeys?.ollama || job.payload.customKeys?.groq;
+    const provider = job.payload.customKeys?.ollama ? 'ollama' : (job.payload.customKeys?.provider || process.env.AI_PROVIDER || 'ollama');
+    const apiKey = customKey || worker.groqKey;
+    const deps = depsFactory({ key: apiKey, provider });
     const result = await buildFn(job.payload, deps);
     job.status = 'completed';
     job.result = result;

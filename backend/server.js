@@ -16,9 +16,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import Groq from 'groq-sdk';
+import OpenAI from 'openai';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@libsql/client';
 
 // ──── Imports: Configuration ────
 import { BUDGET } from './config/budget.js';
@@ -74,60 +75,52 @@ const apiLimiter = rateLimit({
     // Skip test endpoint
     if (req.path === '/api/test/build') return true;
     // Skip for custom API keys
-    return (req.body && req.body.customKeys && req.body.customKeys.groq);
+    return Boolean(req.body && req.body.customKeys && (req.body.customKeys.groq || req.body.customKeys.ollama));
   }
 });
 
-// ──── Initialize Supabase ────
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = supabaseUrl && supabaseServiceKey
-  ? createClient(supabaseUrl, supabaseServiceKey)
+// ──── Initialize Database (Turso LibSQL) ────
+const tursoUrl = process.env.TURSO_DATABASE_URL;
+const tursoAuthToken = process.env.TURSO_AUTH_TOKEN;
+const db = (tursoUrl && tursoAuthToken)
+  ? createClient({ url: tursoUrl, authToken: tursoAuthToken })
   : null;
 
-if (!supabase) {
-  console.error("[init] ⚠️  Supabase not configured. Database queries will fail.");
+if (!db) {
+  console.error("[init] ⚠️  Turso database not configured. Database queries will fail.");
 }
 
-// ──── Rotating Groq Client ────
-class RotatingGroqClient {
-  constructor(apiKeys) {
-    this.clients = apiKeys.filter(k => k).map(key => new Groq({ apiKey: key }));
-    this.currentIndex = 0;
-    if (this.clients.length === 0) {
-      throw new Error("No Groq API keys found in environment (GROQ_API_KEY, GROQ_API_KEY_2)");
+// ──── Universal AI Client (Ollama Cloud & Groq) ────
+export function createUniversalAIClient(keyConfig) {
+  let key = typeof keyConfig === 'object' && keyConfig !== null ? keyConfig.key : keyConfig;
+  let provider = typeof keyConfig === 'object' && keyConfig !== null ? keyConfig.provider : null;
+
+  if (!provider) {
+    if (key && (key.includes('.') || key.startsWith('ollama_'))) {
+      provider = 'ollama';
+    } else if (key && key.startsWith('gsk_')) {
+      provider = 'groq';
+    } else {
+      provider = process.env.AI_PROVIDER || (process.env.OLLAMA_API_KEY ? 'ollama' : 'groq');
     }
-    console.log(`[AI] Initialized with ${this.clients.length} API keys`);
   }
 
-  get chat() {
-    return {
-      completions: {
-        create: async (params) => {
-          let retryCount = 0;
-          while (retryCount < this.clients.length) {
-            try {
-              return await this.clients[this.currentIndex].chat.completions.create(params);
-            } catch (error) {
-              const isRateLimit = error.status === 429 || (error.message && error.message.includes('rate limit'));
-              if (isRateLimit && this.clients.length > 1 && retryCount < this.clients.length - 1) {
-                console.warn(`[AI] Rate limit on key ${this.currentIndex + 1}. Rotating to next key...`);
-                this.currentIndex = (this.currentIndex + 1) % this.clients.length;
-                retryCount++;
-                continue;
-              }
-              throw error;
-            }
-          }
-        }
-      }
-    };
+  if (provider === 'ollama') {
+    const apiKey = key || process.env.OLLAMA_API_KEY;
+    const baseURL = process.env.AI_BASE_URL || 'https://ollama.com/v1';
+    return new OpenAI({ apiKey, baseURL });
   }
+
+  // Fallback to Groq via OpenAI client
+  const apiKey = key || process.env.GROQ_API_KEY;
+  return new OpenAI({
+    apiKey,
+    baseURL: 'https://api.groq.com/openai/v1',
+  });
 }
 
-const getGroqClient = () => {
-  const keys = [process.env.GROQ_API_KEY, process.env.GROQ_API_KEY_2];
-  return new RotatingGroqClient(keys);
+const getAIClient = () => {
+  return createUniversalAIClient();
 };
 
 // ──── Intent Prompt ────
@@ -333,9 +326,9 @@ const cacheManager = createCacheManager({
 // Spec inference (extract CPU socket, GPU brand, etc. from product names)
 const specInference = createSpecInference();
 
-// Part repository (unified Supabase query interface)
-const partRepository = supabase
-  ? createPartRepository({ supabase, specInference, cache: cacheManager })
+// Part repository (unified Turso LibSQL query interface)
+const partRepository = db
+  ? createPartRepository({ db, specInference, cache: cacheManager })
   : null;
 
 // Compatibility checker
@@ -355,15 +348,30 @@ console.log("[init] ✓ All modules initialized");
 
 // ──── Routes ────
 
+// API Root Info
+app.get('/', (req, res) => {
+  res.json({
+    name: 'BuildMyPC Backend API',
+    status: 'online',
+    version: '1.0.0',
+    documentation: 'AI-Powered PC Configurator for Bangladesh',
+    endpoints: {
+      health: 'GET /health',
+      submitBuild: 'POST /api/build',
+      buildStatus: 'GET /api/build/:jobId'
+    }
+  });
+});
+
 // Health check
 app.get('/health', async (req, res) => {
   let dbActive = false;
   
-  if (supabase) {
+  if (db) {
     try {
-      // A lightweight query to keep the DB connection warm
-      const { error } = await supabase.from('components').select('id').limit(1);
-      dbActive = !error;
+      // Lightweight query to check Turso DB connectivity
+      await db.execute('SELECT 1;');
+      dbActive = true;
     } catch (e) {
       dbActive = false;
     }
@@ -373,9 +381,10 @@ app.get('/health', async (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     modules: {
-      supabase: dbActive,
+      turso: dbActive,
       cache: !!cacheManager,
-      groq: !!getGroqClient(),
+      aiProvider: process.env.AI_PROVIDER || 'ollama',
+      aiReady: !!(process.env.OLLAMA_API_KEY || process.env.GROQ_API_KEY),
     }
   });
 });
@@ -394,12 +403,12 @@ app.use((err, req, res, next) => {
   sendError(res, ERROR_INTERNAL);
 });
 
-// ──── Deps Factory (creates fresh deps per Groq key) ────
-const createDepsForKey = (groqApiKey) => {
-  const keyClient = new RotatingGroqClient([groqApiKey]);
+// ──── Deps Factory (creates fresh deps per AI key/provider) ────
+const createDepsForKey = (keyConfig) => {
+  const client = createUniversalAIClient(keyConfig);
   return {
-    intentExtractor: createIntentExtractor({ groqClient: keyClient, systemPrompt: INTENT_PROMPT }),
-    explanationGenerator: createExplanationGenerator({ groqClient: keyClient }),
+    intentExtractor: createIntentExtractor({ groqClient: client, systemPrompt: INTENT_PROMPT }),
+    explanationGenerator: createExplanationGenerator({ groqClient: client }),
     compatibilityChecker,
     budgetAllocator,
     partSelector,
@@ -409,19 +418,25 @@ const createDepsForKey = (groqApiKey) => {
 };
 
 // ──── Initialize Queue Workers ────
-const groqKeys = [process.env.GROQ_API_KEY, process.env.GROQ_API_KEY_2].filter(Boolean);
+const defaultAiKeys = [
+  process.env.OLLAMA_API_KEY,
+  process.env.GROQ_API_KEY,
+  process.env.GROQ_API_KEY_2
+].filter(Boolean);
+
 initWorkers({
   buildFn: executeBuild,
   depsFactory: createDepsForKey,
-  groqKeys,
+  groqKeys: defaultAiKeys.length > 0 ? defaultAiKeys : ['ollama-default'],
 });
 
 // ──── Startup ────
 app.listen(port, () => {
   console.log(`[server] ✓ Backend running on http://localhost:${port}`);
   console.log(`[server] Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`[server] Supabase: ${supabase ? 'connected' : 'disconnected'}`);
-  console.log(`[server] Queue workers: ${groqKeys.length}`);
+  console.log(`[server] AI Provider: ${process.env.AI_PROVIDER || 'ollama'} (Endpoint: ${process.env.AI_BASE_URL || 'https://ollama.com/v1'})`);
+  console.log(`[server] Turso Database: ${db ? 'connected' : 'disconnected'}`);
+  console.log(`[server] Queue workers: ${defaultAiKeys.length || 1}`);
 });
 
 export default app;
