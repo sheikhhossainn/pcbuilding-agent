@@ -8,7 +8,7 @@
 BuildMyPC is a high-performance, full-stack AI PC configurator tailored for the Bangladesh market. It processes natural-language requests (e.g. *"Budget 1080p gaming build under 80K, include a monitor, prefer AMD"*) into optimized hardware configurations by:
 
 1.  **Extracting Intent**: Parsing requirements via Groq LLMs (`GPT-OSS-120B`, with `GPT-OSS-20B` fallback).
-2.  **Live Database Querying**: Matching against a Supabase database of ~10,000 components scraped from StarTech, TechLand, and CompMania.
+2.  **Live Database Querying**: Matching against a Turso (libSQL) database of ~10,000 components scraped from StarTech, TechLand, and CompMania.
 3.  **Modular Compatibility Engine**: Isolated modules for socket compatibility, RAM type matching, PSU sizing, GPU adequacy, and budget allocation.
 4.  **Intelligent Fallback Degradation**: When exact specs unavailable, gracefully degrades (e.g., 64GB RAM → 32GB → 16GB).
 5.  **Premium UX**: Skeleton loaders, fluid animations, mobile-optimized navigation.
@@ -47,14 +47,14 @@ BuildMyPC is a high-performance, full-stack AI PC configurator tailored for the 
 │  │  └─ partSelector.js → best part per budget         │
 │  │                                                      │
 │  └─ /utils/ (Shared - DI Pattern)                      │
-│     ├─ partRepository.js → Supabase abstraction        │
+│     ├─ partRepository.js → database abstraction        │
 │     ├─ specInference.js → parse specs from names      │
 │     ├─ cacheManager.js → Memory + Redis (optional)     │
 │     └─ errors.js → standardized error responses        │
 └──────────────┬─────────────────────────────────────────┘
                │ SELECT * FROM components WHERE ...
 ┌──────────────▼─────────────────────────────────────────┐
-│  Database (Supabase PostgreSQL)                        │
+│  Database (Turso / libSQL)                            │
 │  → Composite Index: (site, category, in_stock, price)  │
 │  → ~10K components, <100ms queries                     │
 └──────────────┬─────────────────────────────────────────┘
@@ -126,7 +126,7 @@ backend/
 │   └── partSelector.js              # Intelligent part selection
 │
 ├── utils/                           # ✅ Shared utilities
-│   ├── partRepository.js            # Supabase abstraction + caching
+│   ├── partRepository.js            # Database abstraction + caching
 │   ├── specInference.js             # Extract specs from product names
 │   ├── cacheManager.js              # Memory + Redis cache
 │   └── errors.js                    # Standardized error responses
@@ -270,7 +270,7 @@ npm test -- --coverage
 
 Test the full `/api/build` flow:
 - Mock Groq LLM responses
-- Mock Supabase queries
+- Mock database queries
 - Verify 400K build succeeds with fallback degradation
 
 ### Manual Testing (Node REPL)
@@ -316,7 +316,7 @@ console.log(isCompatible); // false → AM4 boards don't support DDR5
 - ✅ **DDR Keyword Matching**: Spec-based fallback for boards that don't say "DDR4" in name
 - ✅ **Post-Build Validation**: Restored 60+ lines of compatibility warnings to build response
 - 📊 **Add Prometheus Metrics**: Track request latency, cache hit rate, part selection time
-- 🚀 **Deploy to Staging**: Test with real Groq/Supabase in staging environment
+- 🚀 **Deploy to Staging**: Test with real LLM/Turso in staging environment
 - 🗄️ **Set Up Redis**: Optional but recommended for high-traffic scenarios
 - 📈 **Monitor Cache Stats**: Verify stampede protection is working, measure cache effectiveness
 
@@ -394,7 +394,7 @@ These files are no longer needed after Phase 2:
 
 ### Backend
 - `groq-sdk` (Exclusive AI provider)
-- `@supabase/supabase-js` (Direct DB access)
+- `@libsql/client` (Direct Turso DB access)
 - `express-rate-limit` (5 requests / 15 mins)
 - *(Optional)* `ioredis` (Redis caching layer)
 
@@ -410,8 +410,8 @@ These files are no longer needed after Phase 2:
 ```bash
 # Backend (Required)
 GROQ_API_KEY=gsk_...
-SUPABASE_URL=https://...
-SUPABASE_SERVICE_ROLE_KEY=...
+TURSO_DATABASE_URL=libsql://...
+TURSO_AUTH_TOKEN=...
 PORT=3001 (optional, defaults to 3001)
 
 # Redis (Optional, for production caching)
@@ -504,12 +504,11 @@ REDIS_URL=redis://localhost:6379
 ### Keep-Alive Cron Job
 - **Problem**: Render free tier spins down after 15 min of no inbound HTTP requests
 - **Solution**: External cron job (cron-job.org) pings `GET /health` every 10 minutes
-- **Bonus**: `/health` endpoint now also pings Supabase with a lightweight query to keep the DB connection warm
+- **Bonus**: `/health` endpoint now also pings Turso with a lightweight query to keep the DB connection warm
 
 ### pg_cron TTL Removed
 - **Problem**: `pg_cron` job deleted all components older than 72 hours, emptying the DB when scraper wasn't run frequently
 - **Solution**: Removed the cron job. Components now persist until explicitly updated by the scraper
-- **Action Required**: Run `SELECT cron.unschedule('cleanup-stale-parts');` in Supabase SQL Editor
 
 ### ComputerMania BD Scraper (May 20, 2026)
 - **Site**: [computermania.com.bd](https://computermania.com.bd) — 3rd retailer source

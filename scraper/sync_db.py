@@ -282,9 +282,6 @@ def upsert_to_turso(data):
     except Exception as e:
         print(f"Failed to upsert to Turso: {e}")
 
-# Backwards compatibility alias
-upsert_to_supabase = upsert_to_turso
-
 def mark_stale_out_of_stock(site, category, scraped_urls):
     """Mark components in DB as out-of-stock if they weren't in the latest scrape."""
     if not TURSO_DATABASE_URL or not scraped_urls:
@@ -364,7 +361,7 @@ def _scrape_site(site_info, state, log, progress, stop_event):
                 })
             
             for j in range(0, len(batch), 50):
-                upsert_to_supabase(batch[j:j+50])
+                upsert_to_turso(batch[j:j+50])
             
             in_stock_count = sum(1 for p in batch if p.get('in_stock', True))
             out_of_stock_count = len(batch) - in_stock_count
@@ -489,9 +486,6 @@ def get_turso_stats():
     except Exception as e:
         print(f"Failed to fetch stats from Turso: {e}")
         return []
-
-# Backwards compatibility alias
-get_supabase_stats = get_turso_stats
 
 
 if __name__ == "__main__":
