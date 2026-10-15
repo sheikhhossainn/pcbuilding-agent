@@ -5,7 +5,7 @@ import {
   Cpu, Layers, Database, HardDrive, Monitor, Zap, Fan, Box, 
   Tv, MousePointer2, Keyboard, BatteryCharging, FileDown, 
   Trash2, Send, Loader2, Sparkles, AlertCircle, AlertTriangle, ExternalLink, Key, X, Menu, RefreshCw,
-  Copy, ShieldCheck, CheckCircle2, Flame
+  Copy, ShieldCheck, ShieldAlert, CircleHelp, CheckCircle2, Flame, Gamepad2, Rocket, Clapperboard, Briefcase
 } from 'lucide-react';
 
 const CATEGORY_ICONS = {
@@ -36,11 +36,11 @@ const PERIPHERAL_CATEGORIES = [
 ];
 
 const PRESET_WORKLOADS = [
-  { label: "1080p Gaming", prompt: "I need a budget 1080p gaming PC under 60,000 BDT with dedicated GPU", tag: "60k BDT", icon: "🎮" },
-  { label: "1440p AAA Gaming", prompt: "I need a high-end 1440p gaming PC under 120,000 BDT with fast GPU and 32GB RAM", tag: "120k BDT", icon: "🚀" },
-  { label: "4K Video Editing", prompt: "I need a video editing and rendering PC under 90,000 BDT with fast multi-core CPU and 32GB RAM", tag: "90k BDT", icon: "🎬" },
-  { label: "Productivity & Office", prompt: "I need a fast office productivity PC under 35,000 BDT with fast SSD, no dedicated GPU", tag: "35k BDT", icon: "💼" },
-  { label: "High-End Workstation", prompt: "I need an extreme workstation PC under 180,000 BDT for 3D modeling and heavy multitasking", tag: "180k BDT", icon: "⚡" },
+  { label: "1080p Gaming", prompt: "I need a budget 1080p gaming PC under 60,000 BDT with dedicated GPU", tag: "60k BDT", icon: Gamepad2 },
+  { label: "1440p AAA Gaming", prompt: "I need a high-end 1440p gaming PC under 120,000 BDT with fast GPU and 32GB RAM", tag: "120k BDT", icon: Rocket },
+  { label: "4K Video Editing", prompt: "I need a video editing and rendering PC under 90,000 BDT with fast multi-core CPU and 32GB RAM", tag: "90k BDT", icon: Clapperboard },
+  { label: "Productivity & Office", prompt: "I need a fast office productivity PC under 35,000 BDT with fast SSD, no dedicated GPU", tag: "35k BDT", icon: Briefcase },
+  { label: "High-End Workstation", prompt: "I need an extreme workstation PC under 180,000 BDT for 3D modeling and heavy multitasking", tag: "180k BDT", icon: Zap },
 ];
 
 const PROMPT_MODIFIERS = [
@@ -65,6 +65,27 @@ const INITIAL_BUILD = {
   "Keyboard": null,
   "UPS": null
 };
+
+const SESSION_KEY = 'buildmypc.session.v1';
+
+function loadSavedSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!saved || typeof saved !== 'object' || !saved.build) return null;
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+function sumBuild(build) {
+  return Object.values(build).reduce((sum, item) => sum + (item?.price || 0), 0);
+}
+
+const formatPrice = (price) =>
+  `৳${new Intl.NumberFormat('en-BD', { maximumFractionDigits: 0 }).format(price || 0)}`;
 
 // Spec inference for hardware telemetry
 function parseComponentTelemetry(category, name) {
@@ -139,16 +160,16 @@ const SkeletonRow = ({ isHero = false }) => (
 
 function Builder() {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-  const [build, setBuild] = useState(INITIAL_BUILD);
-  const [total, setTotal] = useState(0);
-  const [explanation, setExplanation] = useState("");
+  const [savedSession] = useState(loadSavedSession);
+  const [build, setBuild] = useState(() => ({ ...INITIAL_BUILD, ...(savedSession?.build || {}) }));
+  const [explanation, setExplanation] = useState(savedSession?.explanation || "");
   const [chatInput, setChatInput] = useState("");
   const [selectedSite, setSelectedSite] = useState("startech");
   const [customSiteUrl, setCustomSiteUrl] = useState("");
   const [loadingState, setLoadingState] = useState("idle"); // idle, analyzing, selecting, checking, success, error
   const [hideUnconfigured, setHideUnconfigured] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [buildWarnings, setBuildWarnings] = useState([]);
+  const [buildWarnings, setBuildWarnings] = useState(savedSession?.buildWarnings || []);
   const [customGroqKey, setCustomGroqKey] = useState(localStorage.getItem('customGroqKey') || "");
   const [customOllamaKey, setCustomOllamaKey] = useState(localStorage.getItem('customOllamaKey') || "");
   const [selectedProvider, setSelectedProvider] = useState(localStorage.getItem('aiProvider') || "ollama");
@@ -156,25 +177,94 @@ function Builder() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [queuePosition, setQueuePosition] = useState(0);
   const [showTrafficWarning, setShowTrafficWarning] = useState(false);
-  const [previousIntent, setPreviousIntent] = useState(null);
-  const [previousBuild, setPreviousBuild] = useState(null);
-  const [toastMessage, setToastMessage] = useState("");
+  const [previousIntent, setPreviousIntent] = useState(savedSession?.previousIntent || null);
+  const [previousBuild, setPreviousBuild] = useState(savedSession?.previousBuild || null);
+  const [toast, setToast] = useState(null); // { message, action?: { label, onClick } }
   const pollRef = useRef(null);
-  
+
   const builderRef = useRef();
   const textareaRef = useRef(null);
   const loadingTimersRef = useRef([]);
   const abortControllerRef = useRef(null);
   const requestIdRef = useRef(0);
   const toastTimerRef = useRef(null);
+  const settingsDialogRef = useRef(null);
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches
+  );
 
-  const showToast = (msg) => {
-    setToastMessage(msg);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const onChange = (e) => setIsNarrow(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Total is always the sum of selected parts, so removals/undos can never drift.
+  const total = useMemo(() => sumBuild(build), [build]);
+
+  const dismissToast = () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(null);
+  };
+
+  const showToast = (message, action = null) => {
+    setToast({ message, action });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => {
-      setToastMessage("");
-    }, 2800);
+      setToast(null);
+    }, action ? 6000 : 2800);
   };
+
+  // Persist the working build so a refresh doesn't lose it.
+  useEffect(() => {
+    try {
+      const hasParts = Object.values(build).some(Boolean);
+      if (!hasParts) {
+        localStorage.removeItem(SESSION_KEY);
+        return;
+      }
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        build, explanation, buildWarnings, previousIntent, previousBuild,
+      }));
+    } catch {
+      // storage unavailable (private mode / quota) — session just won't persist
+    }
+  }, [build, explanation, buildWarnings, previousIntent, previousBuild]);
+
+  // Settings dialog: Esc closes, Tab stays inside, focus returns to the opener.
+  useEffect(() => {
+    if (!showSettings) return undefined;
+    const opener = document.activeElement;
+    const dialog = settingsDialogRef.current;
+    dialog?.focus();
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowSettings(false);
+        return;
+      }
+      if (e.key !== 'Tab' || !dialog) return;
+      const focusable = dialog.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (opener && typeof opener.focus === 'function') opener.focus();
+    };
+  }, [showSettings]);
 
   useEffect(() => {
     if (chatInput === "" && textareaRef.current) {
@@ -198,8 +288,14 @@ function Builder() {
   };
 
   const handleClear = () => {
+    // Cancel any in-flight job so a late result can't repopulate a cleared build.
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    requestIdRef.current += 1;
+    clearLoadingTimers();
     setBuild(INITIAL_BUILD);
-    setTotal(0);
     setExplanation("");
     setErrorMsg("");
     setBuildWarnings([]);
@@ -210,6 +306,19 @@ function Builder() {
     setPreviousBuild(null);
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     showToast("Build cleared");
+  };
+
+  const handleRemoveComponent = (category) => {
+    const removed = build[category];
+    if (!removed) return;
+    setBuild((prev) => ({ ...prev, [category]: null }));
+    showToast(`Removed ${category}`, {
+      label: 'Undo',
+      onClick: () => {
+        setBuild((prev) => (prev[category] ? prev : { ...prev, [category]: removed }));
+        dismissToast();
+      },
+    });
   };
 
   const clearLoadingTimers = () => {
@@ -310,7 +419,6 @@ function Builder() {
             pollRef.current = null;
             clearLoadingTimers();
             setBuild({ ...INITIAL_BUILD, ...data.result.build });
-            setTotal(data.result.total);
             setExplanation(data.result.explanation);
             setBuildWarnings(data.result.warnings || []);
             setPreviousIntent(data.result.intent || null);
@@ -319,7 +427,7 @@ function Builder() {
             setQueuePosition(0);
             setShowTrafficWarning(false);
             setChatInput("");
-            showToast("✨ Compatible build configured successfully!");
+            showToast("Build ready");
           }
 
           if (data.status === 'failed') {
@@ -354,10 +462,6 @@ function Builder() {
     }
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('en-BD', { style: 'currency', currency: 'BDT', minimumFractionDigits: 0 }).format(price);
-  };
-
   // Hardware telemetry calculations
   const telemetry = useMemo(() => {
     const cpuItem = build["Processor"];
@@ -388,6 +492,9 @@ function Builder() {
       else psuStatus = "warning";
     }
 
+    const incompatibleCount = buildWarnings.filter((w) => String(w).includes('INCOMPATIBLE')).length;
+    const noteCount = buildWarnings.length - incompatibleCount;
+
     // Budget distribution
     const configuredCount = Object.values(build).filter(Boolean).length;
     const gpuCost = gpuItem?.price || 0;
@@ -412,8 +519,23 @@ function Builder() {
       gpuPct,
       cpuPct,
       otherPct,
+      incompatibleCount,
+      noteCount,
     };
-  }, [build, total]);
+  }, [build, total, buildWarnings]);
+
+  // Budget the user asked for (from the engine's parsed intent), for the "% of budget" readout.
+  const budget = Number(previousIntent?.budget_bdt) || 0;
+  const budgetPct = budget > 0 ? Math.round((total / budget) * 100) : 0;
+  const isOverBudget = budget > 0 && total > budget;
+
+  const scrollToSummary = () => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.getElementById('summary-rail')?.scrollIntoView({
+      behavior: reduceMotion ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  };
 
   // Copy build spec to clipboard
   const handleCopySpecSheet = () => {
@@ -423,20 +545,23 @@ function Builder() {
       return;
     }
 
-    let text = `🖥️ BuildMyPC Configuration — ${formatPrice(total)}\n`;
+    let text = `BuildMyPC Configuration — ${formatPrice(total)}\n`;
     text += `Source: ${selectedSite.toUpperCase()} (Bangladesh)\n`;
     text += `═══════════════════════════════════════\n`;
     configuredItems.forEach(([category, item]) => {
       text += `• ${category}: ${item.name} — ${formatPrice(item.price)}\n`;
-      if (item.url) text += `  🔗 ${item.url}\n`;
+      if (item.url) text += `  ${item.url}\n`;
     });
     text += `═══════════════════════════════════════\n`;
-    text += `⚡ Estimated Power Draw: ~${telemetry.estimatedDraw}W (Rec. PSU: ${telemetry.recommendedPsu}W+)\n`;
-    if (explanation) text += `\n💡 AI Notes: ${explanation}\n`;
+    text += `Estimated power draw: ~${telemetry.estimatedDraw}W (recommended PSU: ${telemetry.recommendedPsu}W+)\n`;
+    if (buildWarnings.length > 0) {
+      text += `\nWarnings:\n${buildWarnings.map((w) => `- ${w}`).join('\n')}\n`;
+    }
+    if (explanation) text += `\nAI notes: ${explanation}\n`;
     text += `\nBuilt with BuildMyPC AI Configurator`;
 
     navigator.clipboard.writeText(text).then(() => {
-      showToast("✓ Full spec sheet copied to clipboard!");
+      showToast("Spec sheet copied");
     }).catch(() => {
       showToast("Unable to copy to clipboard");
     });
@@ -445,10 +570,10 @@ function Builder() {
   const getLoadingMessage = () => {
     if (queuePosition > 0) return `Queue position #${queuePosition} — estimated ~${queuePosition * 12}s`;
     switch (loadingState) {
-      case 'analyzing': return "Parsing hardware constraints & budget...";
-      case 'selecting': return "Matching live retail inventory...";
-      case 'checking': return "Enforcing socket & wattage compatibility...";
-      default: return "Configuring your system...";
+      case 'analyzing': return "Reading your requirements...";
+      case 'selecting': return "Finding parts in stock...";
+      case 'checking': return "Checking compatibility...";
+      default: return "Building your PC...";
     }
   };
 
@@ -492,21 +617,15 @@ function Builder() {
                   {category}
                 </span>
                 
-                {isHero && (
-                  <span className="text-[10px] font-mono uppercase tracking-wider bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30">
-                    Core Anchor
-                  </span>
-                )}
-
                 {isRequired && (
-                  <span className="text-[10px] font-mono uppercase tracking-wider bg-red-500/10 text-red-400 px-2 py-0.5 rounded border border-red-500/20">
+                  <span className="text-xs font-medium bg-red-500/10 text-red-400 px-2 py-0.5 rounded border border-red-500/20">
                     Required
                   </span>
                 )}
-                
+
                 {dependencyStr && (
-                  <span className="text-xs text-zinc-500 font-mono">
-                    *linked to {dependencyStr}
+                  <span className="text-xs text-zinc-400">
+                    Must match {dependencyStr}
                   </span>
                 )}
               </div>
@@ -539,9 +658,9 @@ function Builder() {
                   </div>
                 </div>
               ) : (
-                <div className="text-zinc-600 text-xs sm:text-sm mt-1.5 font-mono flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-700"></span>
-                  Awaiting configuration
+                <div className="text-zinc-400 text-xs sm:text-sm mt-1.5 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
+                  Not selected
                 </div>
               )}
             </div>
@@ -559,29 +678,26 @@ function Builder() {
                     href={item.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="tactile-btn p-2.5 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 transition-colors"
+                    className="tactile-btn w-11 h-11 flex items-center justify-center text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 transition-colors"
                     title="View on store retailer"
+                    aria-label={`View ${category} on retailer site`}
                   >
                     <ExternalLink size={16} strokeWidth={1.75} />
                   </a>
                 )}
-                <button 
-                  className="tactile-btn p-2.5 text-zinc-400 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-xl border border-white/10 hover:border-red-500/30 transition-colors"
+                <button
+                  type="button"
+                  className="tactile-btn w-11 h-11 flex items-center justify-center text-zinc-400 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-xl border border-white/10 hover:border-red-500/30 transition-colors"
                   title="Remove component"
-                  onClick={() => {
-                     const newBuild = {...build};
-                     newBuild[category] = null;
-                     setBuild(newBuild);
-                     setTotal(Math.max(0, total - item.price));
-                     showToast(`Removed ${category}`);
-                  }}
+                  aria-label={`Remove ${category}`}
+                  onClick={() => handleRemoveComponent(category)}
                 >
                   <Trash2 size={16} strokeWidth={1.75} />
                 </button>
               </div>
             </div>
           ) : (
-            <div className="hidden sm:block text-zinc-700 font-mono text-sm">—</div>
+            <div className="hidden sm:block text-zinc-500 text-sm" aria-hidden="true">—</div>
           )}
         </div>
       </motion.div>
@@ -592,8 +708,8 @@ function Builder() {
     <div className="min-h-screen pb-44 sm:pb-36 bg-[#08090C] text-zinc-100 selection:bg-blue-500/30 selection:text-white">
       
       {/* Floating Island Navigation */}
-      <div className="sticky top-0 z-40 pt-4 px-3 sm:px-6 print:hidden">
-        <header className="max-w-7xl mx-auto titanium-card rounded-2xl px-4 sm:px-6 py-3 flex items-center justify-between border border-white/10">
+      <div className="sticky top-0 z-40 pt-2 pb-2 sm:pt-4 sm:pb-0 px-3 sm:px-6 bg-[#08090C]/95 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none print:hidden">
+        <header className="max-w-7xl mx-auto titanium-card rounded-2xl px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between border border-white/10">
           <div className="flex items-center gap-3 shrink-0">
             <div className="bg-gradient-to-br from-blue-500 to-blue-700 p-2 rounded-xl text-white shadow-[0_0_15px_rgba(59,130,246,0.4)]">
               <Sparkles size={18} strokeWidth={2.2} />
@@ -601,11 +717,10 @@ function Builder() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
-                  BuildMyPC <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-normal">BD</span>
+                  BuildMyPC <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-normal">BD</span>
                 </h1>
-                <span className="hidden sm:inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               </div>
-              <p className="text-[11px] text-zinc-400 font-mono hidden sm:block">AI Hardware Telemetry & Inventory Engine</p>
+              <p className="text-xs text-zinc-400 hidden sm:block">AI PC builder for Bangladesh</p>
             </div>
           </div>
           
@@ -613,11 +728,12 @@ function Builder() {
           <div className="hidden lg:flex items-center gap-2.5">
             {/* Store Source Selector */}
             <div className="flex items-center gap-2 bg-[#0c0e14] px-3 py-1.5 rounded-xl border border-white/10 shadow-inner">
-              <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Store:</span>
-              <select 
-                value={selectedSite} 
+              <label htmlFor="store-select-desktop" className="text-xs text-zinc-400">Store</label>
+              <select
+                id="store-select-desktop"
+                value={selectedSite}
                 onChange={(e) => setSelectedSite(e.target.value)}
-                className="bg-transparent text-xs font-semibold text-zinc-200 focus:outline-none cursor-pointer"
+                className="bg-transparent text-xs font-semibold text-zinc-200 cursor-pointer"
                 disabled={loadingState !== 'idle' && loadingState !== 'error' && loadingState !== 'success'}
               >
                 <option className="bg-zinc-900 text-zinc-200" value="startech">StarTech BD</option>
@@ -631,7 +747,8 @@ function Builder() {
                   placeholder="https://retailer.com"
                   value={customSiteUrl}
                   onChange={(e) => setCustomSiteUrl(e.target.value)}
-                  className="bg-zinc-900/90 border border-white/10 rounded-lg px-2 py-0.5 text-xs text-zinc-200 w-32 focus:outline-none font-mono"
+                  aria-label="Custom retailer URL"
+                  className="bg-zinc-900/90 border border-white/10 rounded-lg px-2 py-0.5 text-xs text-zinc-200 w-32 font-mono"
                 />
               )}
             </div>
@@ -647,13 +764,15 @@ function Builder() {
             </button>
 
             {/* Groq API Key Settings */}
-            <button 
+            <button
+              type="button"
               onClick={() => setShowSettings(true)}
               className={`tactile-btn px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-medium ${
                 showTrafficWarning
                   ? 'text-yellow-400 border-yellow-400/40 bg-yellow-400/10 ring-1 ring-yellow-400/30'
                   : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border-white/10'
               }`}
+              aria-haspopup="dialog"
             >
               <Key size={14} strokeWidth={1.75} />
               <span>API Key</span>
@@ -681,9 +800,12 @@ function Builder() {
           </div>
 
           {/* Mobile Hamburger Toggle */}
-          <button 
+          <button
+            type="button"
             onClick={() => setShowMobileMenu(!showMobileMenu)}
-            className="lg:hidden p-2 text-zinc-300 hover:text-white bg-white/5 rounded-xl border border-white/10 transition-colors tactile-btn"
+            aria-label={showMobileMenu ? 'Close menu' : 'Open menu'}
+            aria-expanded={showMobileMenu}
+            className="lg:hidden w-11 h-11 flex items-center justify-center text-zinc-300 hover:text-white bg-white/5 rounded-xl border border-white/10 transition-colors tactile-btn"
           >
             {showMobileMenu ? <X size={20} strokeWidth={1.75} /> : <Menu size={20} strokeWidth={1.75} />}
           </button>
@@ -700,11 +822,12 @@ function Builder() {
               className="titanium-card mt-2.5 p-4 rounded-2xl lg:hidden flex flex-col gap-3.5 border border-white/15 shadow-2xl"
             >
               <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">Inventory Retailer</label>
-                <select 
-                  value={selectedSite} 
+                <label htmlFor="store-select-mobile" className="text-xs text-zinc-400">Retailer</label>
+                <select
+                  id="store-select-mobile"
+                  value={selectedSite}
                   onChange={(e) => setSelectedSite(e.target.value)}
-                  className="w-full bg-[#0c0e14] border border-white/10 rounded-xl px-3.5 py-2.5 text-zinc-200 text-sm focus:outline-none"
+                  className="w-full bg-[#0c0e14] border border-white/10 rounded-xl px-3.5 py-2.5 text-zinc-200 text-sm"
                 >
                   <option className="bg-zinc-900 text-zinc-200" value="startech">StarTech BD</option>
                   <option className="bg-zinc-900 text-zinc-200" value="techland">TechLand BD</option>
@@ -717,7 +840,8 @@ function Builder() {
                     placeholder="https://retailer.com"
                     value={customSiteUrl}
                     onChange={(e) => setCustomSiteUrl(e.target.value)}
-                    className="w-full bg-[#0c0e14] border border-white/10 rounded-xl px-3.5 py-2 text-zinc-200 text-xs focus:outline-none font-mono mt-1"
+                    aria-label="Custom retailer URL"
+                    className="w-full bg-[#0c0e14] border border-white/10 rounded-xl px-3.5 py-2 text-zinc-200 text-xs font-mono mt-1"
                   />
                 )}
               </div>
@@ -725,28 +849,28 @@ function Builder() {
               <div className="grid grid-cols-2 gap-2">
                 <button 
                   onClick={() => { handleCopySpecSheet(); setShowMobileMenu(false); }}
-                  className="tactile-btn flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-xl py-2.5 text-xs font-medium text-zinc-200"
+                  className="tactile-btn flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-xl py-2.5 min-h-11 text-xs font-medium text-zinc-200"
                 >
                   <Copy size={15} />
                   <span>Copy Spec</span>
                 </button>
                 <button 
                   onClick={() => { setShowSettings(true); setShowMobileMenu(false); }}
-                  className="tactile-btn flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-xl py-2.5 text-xs font-medium text-zinc-200"
+                  className="tactile-btn flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-xl py-2.5 min-h-11 text-xs font-medium text-zinc-200"
                 >
                   <Key size={15} />
                   <span>API Key</span>
                 </button>
                 <button 
                   onClick={() => { handleDownloadPDF(); setShowMobileMenu(false); }}
-                  className="tactile-btn flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-xl py-2.5 text-xs font-medium text-zinc-200"
+                  className="tactile-btn flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-xl py-2.5 min-h-11 text-xs font-medium text-zinc-200"
                 >
                   <FileDown size={15} />
                   <span>Export PDF</span>
                 </button>
                 <button 
                   onClick={() => { handleClear(); setShowMobileMenu(false); }}
-                  className="tactile-btn flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl py-2.5 text-xs font-medium"
+                  className="tactile-btn flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl py-2.5 min-h-11 text-xs font-medium"
                 >
                   <Trash2 size={15} />
                   <span>Clear All</span>
@@ -755,27 +879,80 @@ function Builder() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Mobile summary bar: keeps total, budget and compat status in view while scrolling */}
+        {telemetry.configuredCount > 0 && (
+          <button
+            type="button"
+            onClick={scrollToSummary}
+            aria-label={`Build summary: ${formatPrice(total)}. Tap for details.`}
+            className="lg:hidden tactile-btn w-full mt-2 titanium-card rounded-2xl px-4 py-2 min-h-14 flex items-center justify-between gap-3 text-left border border-white/10"
+          >
+            <span className="min-w-0">
+              <span className="block font-mono-num font-bold text-lg text-white leading-tight">{formatPrice(total)}</span>
+              <span className={`block text-xs truncate ${isOverBudget ? 'text-red-300' : 'text-zinc-400'}`}>
+                {budget > 0
+                  ? isOverBudget
+                    ? `${formatPrice(total - budget)} over ${formatPrice(budget)} budget`
+                    : `${budgetPct}% of ${formatPrice(budget)} budget`
+                  : `${telemetry.configuredCount} of 12 parts`}
+              </span>
+            </span>
+            {telemetry.incompatibleCount > 0 ? (
+              <span className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-300">
+                <ShieldAlert size={14} aria-hidden="true" />
+                {telemetry.incompatibleCount} incompatible
+              </span>
+            ) : telemetry.noteCount > 0 ? (
+              <span className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-200">
+                <AlertTriangle size={14} aria-hidden="true" />
+                {telemetry.noteCount} {telemetry.noteCount === 1 ? 'note' : 'notes'}
+              </span>
+            ) : (
+              <span className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                <CheckCircle2 size={14} aria-hidden="true" />
+                No issues
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Main Cockpit Layout */}
       <main className="max-w-7xl mx-auto mt-6 px-3 sm:px-6" ref={builderRef}>
 
         {/* Global Toast Notification */}
-        <AnimatePresence>
-          {toastMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none"
-            >
-              <div className="bg-zinc-900/95 border border-white/20 text-zinc-100 px-5 py-2.5 rounded-full shadow-2xl backdrop-blur-xl flex items-center gap-2.5 text-xs font-mono">
-                <CheckCircle2 size={16} className="text-emerald-400" />
-                <span>{toastMessage}</span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none print:hidden"
+        >
+          <AnimatePresence>
+            {toast && (
+              <motion.div
+                key={toast.message}
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+              >
+                <div className="bg-zinc-900/95 border border-white/20 text-zinc-100 pl-4 pr-1 py-1 rounded-full shadow-2xl backdrop-blur-xl flex items-center gap-2.5 text-sm pointer-events-auto">
+                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" aria-hidden="true" />
+                  <span>{toast.message}</span>
+                  {toast.action && (
+                    <button
+                      type="button"
+                      onClick={toast.action.onClick}
+                      className="tactile-btn ml-1 px-4 min-h-11 rounded-full bg-white/10 hover:bg-white/20 text-blue-300 font-semibold text-sm"
+                    >
+                      {toast.action.label}
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* High Traffic Warning Banner */}
         <AnimatePresence>
@@ -792,7 +969,7 @@ function Builder() {
                 <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="underline font-semibold text-amber-200 hover:text-white">free Groq API key</a>{' '}
                 in <button onClick={() => setShowSettings(true)} className="underline font-semibold text-amber-200 hover:text-white">API Settings</button> for instant queue-free builds.
               </div>
-              <button onClick={() => setShowTrafficWarning(false)} className="text-amber-400 hover:text-white p-1">
+              <button type="button" onClick={() => setShowTrafficWarning(false)} aria-label="Dismiss warning" className="text-amber-400 hover:text-white w-11 h-11 -m-2 flex items-center justify-center shrink-0">
                 <X size={16} />
               </button>
             </motion.div>
@@ -801,7 +978,8 @@ function Builder() {
 
         {/* Error Banner */}
         {errorMsg && (
-          <motion.div 
+          <motion.div
+            role="alert"
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-400 shadow-sm"
@@ -821,35 +999,54 @@ function Builder() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                  <span>Hardware Blueprint</span>
-                  <span className="text-xs font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">
-                    {telemetry.configuredCount} / 12 Configured
+                  <span>Your build</span>
+                  <span className="text-xs font-medium text-zinc-300 bg-white/5 px-2 py-0.5 rounded border border-white/10">
+                    {telemetry.configuredCount} of 12 parts
                   </span>
                 </h2>
-                <p className="text-xs text-zinc-400 mt-1">Live Bangladeshi Retail Inventory Verification</p>
+                <p className="text-xs text-zinc-400 mt-1">Prices from live Bangladeshi retailers</p>
               </div>
 
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 cursor-pointer text-zinc-400 text-xs font-medium hover:text-zinc-200 transition-colors">
+                <label className="flex items-center gap-2 min-h-11 cursor-pointer text-zinc-400 text-xs font-medium hover:text-zinc-200 transition-colors">
                   <input 
                     type="checkbox" 
                     className="rounded border-zinc-700 bg-zinc-900 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
                     checked={hideUnconfigured}
                     onChange={(e) => setHideUnconfigured(e.target.checked)}
                   />
-                  <span>Hide Empty</span>
+                  <span>Hide empty</span>
                 </label>
               </div>
             </div>
 
+            {/* Compatibility warnings: surfaced above the list, not buried under the AI notes */}
+            {buildWarnings.length > 0 && !['analyzing', 'selecting', 'checking'].includes(loadingState) && (
+              <div role="alert" className="space-y-2">
+                {buildWarnings.map((warning, i) => {
+                  const isIncompatible = String(warning).includes('INCOMPATIBLE');
+                  return (
+                    <div key={i} className={`flex items-start gap-2.5 p-3.5 rounded-xl text-sm leading-relaxed ${
+                      isIncompatible
+                        ? 'bg-red-500/10 border border-red-500/30 text-red-300'
+                        : 'bg-amber-500/10 border border-amber-500/30 text-amber-200'
+                    }`}>
+                      <AlertTriangle className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+                      <span>{warning}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {/* TIER 1: Core Anchor Components (CPU & GPU) */}
             <div>
               <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2 text-xs font-mono text-blue-400 uppercase tracking-wider font-semibold">
-                  <Flame size={14} />
-                  <span>Anchor Processing Silicon</span>
+                <div className="flex items-center gap-2 text-sm text-blue-400 font-semibold">
+                  <Flame size={14} aria-hidden="true" />
+                  <span>Core</span>
                 </div>
-                <span className="text-[11px] font-mono text-zinc-500">Determines platform & power draw</span>
+                <span className="text-xs text-zinc-400 hidden sm:inline">Sets platform and power needs</span>
               </div>
               <div className="space-y-1">
                 <AnimatePresence mode="popLayout">
@@ -865,11 +1062,11 @@ function Builder() {
             {/* TIER 2: Core Platform Infrastructure */}
             <div>
               <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2 text-xs font-mono text-zinc-300 uppercase tracking-wider font-semibold">
-                  <Layers size={14} className="text-zinc-400" />
-                  <span>Platform & Enclosure</span>
+                <div className="flex items-center gap-2 text-sm text-zinc-200 font-semibold">
+                  <Layers size={14} className="text-zinc-400" aria-hidden="true" />
+                  <span>Platform</span>
                 </div>
-                <span className="text-[11px] font-mono text-zinc-500">Sockets, memory, power & thermal</span>
+                <span className="text-xs text-zinc-400 hidden sm:inline">Board, memory, storage, power, cooling, case</span>
               </div>
               <div className="space-y-1">
                 <AnimatePresence mode="popLayout">
@@ -890,11 +1087,11 @@ function Builder() {
             {/* TIER 3: Peripherals & Gear */}
             <div>
               <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2 text-xs font-mono text-zinc-300 uppercase tracking-wider font-semibold">
-                  <Monitor size={14} className="text-zinc-400" />
-                  <span>Peripherals & Power Backup</span>
+                <div className="flex items-center gap-2 text-sm text-zinc-200 font-semibold">
+                  <Monitor size={14} className="text-zinc-400" aria-hidden="true" />
+                  <span>Peripherals</span>
                 </div>
-                <span className="text-[11px] font-mono text-zinc-500">Displays, controls, UPS</span>
+                <span className="text-xs text-zinc-400 hidden sm:inline">Monitor, mouse, keyboard, UPS</span>
               </div>
               <div className="space-y-1">
                 <AnimatePresence mode="popLayout">
@@ -916,89 +1113,84 @@ function Builder() {
               >
                 <div className="flex items-center gap-2 mb-3">
                   <Sparkles className="text-blue-400" size={18} />
-                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">AI Engineering Rationale</h3>
+                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">Why these parts</h3>
                 </div>
                 <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-line">
                   {explanation}
                 </p>
-
-                {buildWarnings.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    {buildWarnings.map((warning, i) => (
-                      <div key={i} className={`flex items-start gap-2.5 p-3 rounded-xl text-xs sm:text-sm font-mono ${
-                        warning.includes('INCOMPATIBLE') 
-                          ? 'bg-red-500/10 border border-red-500/30 text-red-400' 
-                          : 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
-                      }`}>
-                        <AlertTriangle className="mt-0.5 shrink-0" size={16} />
-                        <span>{warning}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </motion.div>
             )}
 
           </div>
 
           {/* Right Column: Sticky Telemetry & Inspector (col-span-4) */}
-          <div className="lg:col-span-4 space-y-5 lg:sticky lg:top-24">
+          <div id="summary-rail" className="lg:col-span-4 space-y-5 lg:sticky lg:top-24 scroll-mt-40">
             
             {/* Total System Value Card */}
             <div className="titanium-card rounded-2xl p-5 border border-white/10 shadow-xl">
-              <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mb-2">
-                <span>ESTIMATED SYSTEM VALUE</span>
-                <span className="text-emerald-400 flex items-center gap-1 font-semibold">
-                  <ShieldCheck size={14} /> LIVE BDT
+              <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
+                <span>Total</span>
+                <span className="text-zinc-400 flex items-center gap-1">
+                  <ShieldCheck size={14} className="text-emerald-400" aria-hidden="true" /> Live prices
                 </span>
               </div>
               <div className="font-mono-num font-bold text-3xl sm:text-4xl text-white tracking-tight">
                 {formatPrice(total)}
               </div>
               <div className="text-xs text-zinc-400 mt-2 flex items-center justify-between pt-3 border-t border-white/5">
-                <span>Items Selected:</span>
-                <span className="font-mono text-zinc-200">{telemetry.configuredCount} Components</span>
+                <span>Parts selected</span>
+                <span className="font-mono-num text-zinc-200">{telemetry.configuredCount} of 12</span>
               </div>
             </div>
 
-            {/* Power Telemetry & TDP Meter */}
+            {/* Power estimate: only meaningful once there are parts to estimate from */}
+            {telemetry.configuredCount > 0 && (
             <div className="titanium-card rounded-2xl p-5 border border-white/10">
-              <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mb-3">
-                <span className="flex items-center gap-1.5 text-zinc-200 font-semibold">
-                  <Zap size={14} className="text-amber-400" /> POWER TELEMETRY
+              <div className="flex items-center justify-between text-xs text-zinc-400 mb-3">
+                <span className="flex items-center gap-1.5 text-zinc-200 font-semibold text-sm">
+                  <Zap size={14} className="text-amber-400" aria-hidden="true" /> Power
                 </span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
-                  telemetry.psuStatus === 'optimal' 
-                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                    : telemetry.psuStatus === 'warning'
-                    ? 'bg-red-500/15 text-red-400 border border-red-500/30'
-                    : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                }`}>
-                  {telemetry.psuStatus === 'optimal' ? 'Optimal Load' : telemetry.psuStatus === 'warning' ? 'Power Warning' : 'Calculated'}
-                </span>
+                {telemetry.installedPsu > 0 && (
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    telemetry.psuStatus === 'optimal'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                      : telemetry.psuStatus === 'warning'
+                      ? 'bg-red-500/15 text-red-400 border border-red-500/30'
+                      : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                  }`}>
+                    {telemetry.psuStatus === 'optimal' ? 'Good headroom' : telemetry.psuStatus === 'warning' ? 'Too tight' : 'Tight'}
+                  </span>
+                )}
               </div>
 
               <div className="space-y-3">
-                <div className="flex justify-between items-baseline text-xs">
-                  <span className="text-zinc-400">Estimated Power Draw:</span>
-                  <span className="font-mono text-sm font-semibold text-white">~{telemetry.estimatedDraw} Watts</span>
+                <div className="flex justify-between items-baseline text-sm">
+                  <span className="text-zinc-400">Estimated draw</span>
+                  <span className="font-mono-num font-semibold text-white">~{telemetry.estimatedDraw}W</span>
                 </div>
 
-                <div className="flex justify-between items-baseline text-xs">
-                  <span className="text-zinc-400">Recommended PSU:</span>
-                  <span className="font-mono text-sm font-semibold text-blue-400">{telemetry.recommendedPsu}W+</span>
+                <div className="flex justify-between items-baseline text-sm">
+                  <span className="text-zinc-400">Recommended PSU</span>
+                  <span className="font-mono-num font-semibold text-blue-400">{telemetry.recommendedPsu}W+</span>
                 </div>
 
                 {telemetry.installedPsu > 0 && (
-                  <div className="flex justify-between items-baseline text-xs pt-2 border-t border-white/5">
-                    <span className="text-zinc-400">Installed PSU Capacity:</span>
-                    <span className="font-mono text-sm font-semibold text-emerald-400">{telemetry.installedPsu}W ({telemetry.psuRatio}% Load)</span>
+                  <div className="flex justify-between items-baseline text-sm pt-2 border-t border-white/5">
+                    <span className="text-zinc-400">Your PSU</span>
+                    <span className="font-mono-num font-semibold text-zinc-100">{telemetry.installedPsu}W ({telemetry.psuRatio}% load)</span>
                   </div>
                 )}
 
                 {/* Visual Power Load Bar */}
-                <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden mt-2 border border-white/5">
-                  <div 
+                <div
+                  className="w-full bg-white/5 h-2 rounded-full overflow-hidden mt-2 border border-white/5"
+                  role="progressbar"
+                  aria-label="Estimated power load"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(Math.min(100, telemetry.installedPsu > 0 ? telemetry.psuRatio : (telemetry.estimatedDraw / 750) * 100))}
+                >
+                  <div
                     className={`h-full transition-all duration-500 ${
                       telemetry.psuRatio > 85 ? 'bg-red-500' : telemetry.psuRatio > 65 ? 'bg-amber-400' : 'bg-emerald-400'
                     }`}
@@ -1007,13 +1199,13 @@ function Builder() {
                 </div>
               </div>
             </div>
+            )}
 
             {/* Budget Allocation Breakdown */}
             {total > 0 && (
               <div className="titanium-card rounded-2xl p-5 border border-white/10">
-                <div className="text-xs font-mono text-zinc-400 mb-3 font-semibold uppercase flex items-center justify-between">
-                  <span>BUDGET SPLIT</span>
-                  <span className="text-zinc-500 text-[10px]">WEIGHTED RATIOS</span>
+                <div className="text-sm text-zinc-200 mb-3 font-semibold">
+                  Where the money goes
                 </div>
 
                 {/* Segmented Bar */}
@@ -1026,15 +1218,15 @@ function Builder() {
                 <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono">
                   <div className="p-2 rounded-lg bg-purple-500/10 border border-purple-500/20">
                     <div className="text-purple-400 font-bold">{telemetry.gpuPct}%</div>
-                    <div className="text-[10px] text-zinc-400 mt-0.5">Graphics</div>
+                    <div className="text-xs text-zinc-400 mt-0.5">Graphics</div>
                   </div>
                   <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
                     <div className="text-blue-400 font-bold">{telemetry.cpuPct}%</div>
-                    <div className="text-[10px] text-zinc-400 mt-0.5">Processor</div>
+                    <div className="text-xs text-zinc-400 mt-0.5">Processor</div>
                   </div>
                   <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                     <div className="text-emerald-400 font-bold">{telemetry.otherPct}%</div>
-                    <div className="text-[10px] text-zinc-400 mt-0.5">Platform</div>
+                    <div className="text-xs text-zinc-400 mt-0.5">Platform</div>
                   </div>
                 </div>
               </div>
@@ -1042,36 +1234,44 @@ function Builder() {
 
             {/* Hardware Compatibility Checklist */}
             <div className="titanium-card rounded-2xl p-5 border border-white/10">
-              <div className="text-xs font-mono text-zinc-400 mb-3 uppercase font-semibold flex items-center gap-1.5">
-                <ShieldCheck size={14} className="text-emerald-400" />
-                <span>INTEGRITY VERIFICATION</span>
+              <div className="text-sm text-zinc-200 mb-3 font-semibold">
+                Compatibility
               </div>
 
-              <div className="space-y-2 text-xs font-mono">
-                <div className="flex items-center gap-2 text-zinc-300">
-                  <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                  <span>CPU & Socket Compatibility</span>
+              {/* Status reflects the engine's actual warnings; nothing is claimed that wasn't checked. */}
+              {telemetry.configuredCount === 0 ? (
+                <div className="flex items-center gap-2 text-sm text-zinc-400">
+                  <CircleHelp size={16} className="shrink-0" aria-hidden="true" />
+                  <span>Not checked yet. Build a PC to see results.</span>
                 </div>
-                <div className="flex items-center gap-2 text-zinc-300">
-                  <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                  <span>DDR Generation Synchronized</span>
+              ) : telemetry.incompatibleCount > 0 ? (
+                <div className="flex items-start gap-2 text-sm text-red-300">
+                  <ShieldAlert size={16} className="shrink-0 mt-0.5 text-red-400" aria-hidden="true" />
+                  <span>
+                    {telemetry.incompatibleCount} incompatible {telemetry.incompatibleCount === 1 ? 'part' : 'parts'}
+                    {telemetry.noteCount > 0 && ` and ${telemetry.noteCount} ${telemetry.noteCount === 1 ? 'note' : 'notes'}`}. See details above the parts list.
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 text-zinc-300">
-                  <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                  <span>Thermal Headroom Verified</span>
+              ) : telemetry.noteCount > 0 ? (
+                <div className="flex items-start gap-2 text-sm text-amber-200">
+                  <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-400" aria-hidden="true" />
+                  <span>
+                    {telemetry.noteCount} {telemetry.noteCount === 1 ? 'note' : 'notes'} to review. See details above the parts list.
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 text-zinc-300">
-                  <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                  <span>Live Retail Inventory Matched</span>
+              ) : (
+                <div className="flex items-start gap-2 text-sm text-zinc-200">
+                  <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-400" aria-hidden="true" />
+                  <span>No compatibility issues found when this build was generated.</span>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Quick Action Dock */}
             <div className="grid grid-cols-2 gap-2.5">
               <button
                 onClick={handleCopySpecSheet}
-                className="tactile-btn p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center gap-2 text-xs font-medium text-zinc-200 hover:text-white"
+                className="tactile-btn p-3 min-h-11 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center gap-2 text-xs font-medium text-zinc-200 hover:text-white"
               >
                 <Copy size={14} />
                 <span>Copy Summary</span>
@@ -1079,7 +1279,7 @@ function Builder() {
 
               <button
                 onClick={handleDownloadPDF}
-                className="tactile-btn p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center gap-2 text-xs font-medium text-zinc-200 hover:text-white"
+                className="tactile-btn p-3 min-h-11 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center gap-2 text-xs font-medium text-zinc-200 hover:text-white"
               >
                 <FileDown size={14} />
                 <span>Print PDF</span>
@@ -1099,8 +1299,8 @@ function Builder() {
           {/* Active Generation Status Banner */}
           {loadingState !== 'idle' && loadingState !== 'success' && loadingState !== 'error' && (
             <div className="absolute left-1/2 -top-12 transform -translate-x-1/2 z-50 pointer-events-none">
-              <div className="bg-zinc-900/95 text-blue-300 border border-blue-500/30 px-5 py-2 rounded-full shadow-2xl flex items-center gap-3 text-xs font-mono">
-                <Loader2 size={14} className="animate-spin text-blue-400" />
+              <div role="status" className="bg-zinc-900/95 text-blue-300 border border-blue-500/30 px-5 py-2 rounded-full shadow-2xl flex items-center gap-3 text-sm">
+                <Loader2 size={14} className="animate-spin text-blue-400" aria-hidden="true" />
                 <span>{getLoadingMessage()}</span>
               </div>
             </div>
@@ -1110,18 +1310,18 @@ function Builder() {
           {previousIntent && loadingState !== 'analyzing' && loadingState !== 'selecting' && loadingState !== 'checking' && (
             <div className="mb-2.5 flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px] font-mono flex items-center gap-1.5">
-                  <RefreshCw size={11} className="animate-spin-slow" />
-                  Refining Current Architecture
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs font-medium flex items-center gap-1.5">
+                  <RefreshCw size={12} aria-hidden="true" />
+                  Refining your build
                 </span>
-                <span className="text-xs text-zinc-400 hidden sm:inline">Ask to swap parts, raise budget, or tweak cooling</span>
+                <span className="text-xs text-zinc-400 hidden sm:inline">Ask to swap parts, raise the budget, or change cooling</span>
               </div>
               <button
                 type="button"
                 onClick={handleClear}
-                className="text-[11px] font-mono text-zinc-400 hover:text-red-400 transition-colors"
+                className="text-xs text-zinc-400 hover:text-red-400 transition-colors px-3 min-h-11 shrink-0"
               >
-                Reset to Blank
+                Start over
               </button>
             </div>
           )}
@@ -1129,31 +1329,34 @@ function Builder() {
           {/* Quick Workload Preset Chips (When Input is Empty) */}
           {chatInput === "" && !previousIntent && total === 0 && loadingState === 'idle' && (
             <div className="mb-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 mask-fade-edges">
-              {PRESET_WORKLOADS.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => setChatInput(preset.prompt)}
-                  className="tactile-btn whitespace-nowrap px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/40 text-xs text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all shrink-0"
-                >
-                  <span>{preset.icon}</span>
-                  <span className="font-medium">{preset.label}</span>
-                  <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-1.5 py-0.2 rounded border border-blue-500/20">{preset.tag}</span>
-                </button>
-              ))}
+              {PRESET_WORKLOADS.map((preset) => {
+                const PresetIcon = preset.icon;
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => { setChatInput(preset.prompt); textareaRef.current?.focus(); }}
+                    className="tactile-btn whitespace-nowrap px-3.5 min-h-11 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/40 text-xs text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all shrink-0"
+                  >
+                    <PresetIcon size={14} className="text-blue-400" aria-hidden="true" />
+                    <span className="font-medium">{preset.label}</span>
+                    <span className="text-xs text-blue-300 bg-blue-500/10 px-1.5 rounded border border-blue-500/20">{preset.tag}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
 
           {/* Quick Modifier Chips */}
           {chatInput !== "" && loadingState === 'idle' && (
             <div className="mb-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-              <span className="text-[10px] font-mono text-zinc-500 shrink-0">Add tag:</span>
+              <span className="text-xs text-zinc-400 shrink-0">Add:</span>
               {PROMPT_MODIFIERS.map((mod) => (
                 <button
                   key={mod.label}
                   type="button"
                   onClick={() => setChatInput((prev) => prev.trim() + mod.append)}
-                  className="tactile-btn whitespace-nowrap px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-mono text-zinc-400 hover:text-zinc-200 shrink-0"
+                  className="tactile-btn whitespace-nowrap px-3 min-h-11 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-zinc-300 hover:text-white shrink-0"
                 >
                   {mod.label}
                 </button>
@@ -1166,11 +1369,13 @@ function Builder() {
             <div className="relative flex-1">
               <textarea 
                 ref={textareaRef}
-                className="w-full bg-[#0D0F14] border border-white/15 focus:border-blue-500/70 rounded-2xl px-4 sm:px-5 py-3 sm:py-3.5 text-zinc-100 placeholder:text-zinc-500 placeholder:font-normal focus:outline-none transition-colors text-sm sm:text-base leading-6 resize-none overflow-y-auto min-h-12 sm:min-h-[52px] max-h-36 shadow-inner font-sans block"
+                className="w-full bg-[#0D0F14] border border-white/15 focus:border-blue-500/70 rounded-2xl px-4 sm:px-5 py-3 sm:py-3.5 text-zinc-100 placeholder:text-zinc-400 placeholder:font-normal transition-colors text-sm sm:text-base leading-6 resize-none overflow-y-auto min-h-12 sm:min-h-[52px] max-h-36 shadow-inner font-sans block"
                 placeholder={
-                  previousIntent
-                    ? 'Tweak architecture... e.g. "Upgrade GPU to RTX 4060", "Change RAM to 32GB"'
-                    : 'Describe requirements... e.g. "Gaming build under 75,000 BDT with Ryzen 5"'
+                  isNarrow
+                    ? (previousIntent ? 'e.g. Upgrade GPU to RTX 4060' : 'e.g. Gaming PC under 75,000 BDT')
+                    : (previousIntent
+                        ? 'Tweak your build, e.g. "Upgrade GPU to RTX 4060" or "Change RAM to 32GB"'
+                        : 'Describe your PC, e.g. "Gaming build under 75,000 BDT with Ryzen 5"')
                 }
                 aria-label="Build description input"
                 value={chatInput}
@@ -1199,7 +1404,8 @@ function Builder() {
                   type="submit" 
                   className="tactile-btn bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-xl w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(59,130,246,0.3)] disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={!chatInput.trim()}
-                  title="Generate configuration"
+                  title="Build"
+                  aria-label="Build"
                 >
                   <Send size={18} strokeWidth={2.2} className="ml-0.5" />
                 </button>
@@ -1208,7 +1414,8 @@ function Builder() {
                   type="button" 
                   onClick={handleStop}
                   className="tactile-btn bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/30 rounded-xl w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center shrink-0"
-                  title="Stop generation"
+                  title="Stop"
+                  aria-label="Stop building"
                 >
                   <div className="w-3.5 h-3.5 bg-current rounded-[3px]"></div>
                 </button>
@@ -1219,9 +1426,23 @@ function Builder() {
       </div>
 
       {/* Groq API Settings Modal */}
+      <AnimatePresence>
       {showSettings && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <motion.div 
+        <motion.div
+          key="settings-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setShowSettings(false); }}
+        >
+          <motion.div
+            ref={settingsDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+            tabIndex={-1}
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
@@ -1229,15 +1450,17 @@ function Builder() {
             className="titanium-card rounded-2xl max-w-md w-full shadow-2xl border border-white/15 overflow-hidden"
           >
             <div className="flex items-center justify-between p-5 border-b border-white/10">
-              <h3 className="text-base sm:text-lg font-bold flex items-center gap-2 text-white">
-                <Key className="text-blue-400" size={18} strokeWidth={1.75} />
-                <span>API Settings & Rate Limits</span>
+              <h3 id="settings-title" className="text-base sm:text-lg font-bold flex items-center gap-2 text-white">
+                <Key className="text-blue-400" size={18} strokeWidth={1.75} aria-hidden="true" />
+                <span>AI settings</span>
               </h3>
-              <button 
-                onClick={() => setShowSettings(false)} 
-                className="text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 p-1.5 rounded-lg transition-colors"
+              <button
+                type="button"
+                onClick={() => setShowSettings(false)}
+                aria-label="Close settings"
+                className="text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 w-11 h-11 flex items-center justify-center rounded-lg transition-colors"
               >
-                <X size={18} />
+                <X size={18} aria-hidden="true" />
               </button>
             </div>
 
@@ -1247,7 +1470,8 @@ function Builder() {
                 <button
                   type="button"
                   onClick={() => setSelectedProvider('ollama')}
-                  className={`flex-1 py-2 text-xs font-mono font-medium rounded-lg transition-all ${
+                  aria-pressed={selectedProvider === 'ollama'}
+                  className={`flex-1 min-h-11 text-sm font-medium rounded-lg transition-all ${
                     selectedProvider === 'ollama'
                       ? 'bg-blue-600 text-white shadow'
                       : 'text-zinc-400 hover:text-white'
@@ -1258,7 +1482,8 @@ function Builder() {
                 <button
                   type="button"
                   onClick={() => setSelectedProvider('groq')}
-                  className={`flex-1 py-2 text-xs font-mono font-medium rounded-lg transition-all ${
+                  aria-pressed={selectedProvider === 'groq'}
+                  className={`flex-1 min-h-11 text-sm font-medium rounded-lg transition-all ${
                     selectedProvider === 'groq'
                       ? 'bg-blue-600 text-white shadow'
                       : 'text-zinc-400 hover:text-white'
@@ -1271,8 +1496,8 @@ function Builder() {
               {selectedProvider === 'ollama' ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-mono font-semibold text-zinc-300 uppercase tracking-wider">
-                      Ollama API Key
+                    <label htmlFor="ollama-key" className="text-sm font-semibold text-zinc-200">
+                      Ollama API key
                     </label>
                     <a 
                       href="https://ollama.com/settings/keys" 
@@ -1283,22 +1508,24 @@ function Builder() {
                       ollama.com ↗
                     </a>
                   </div>
-                  <input 
+                  <input
+                    id="ollama-key"
                     type="password"
+                    autoComplete="off"
                     placeholder="Enter your Ollama API key..."
                     value={customOllamaKey}
                     onChange={(e) => setCustomOllamaKey(e.target.value)}
-                    className="w-full bg-[#0D0F14] border border-white/15 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-blue-500 font-mono text-xs shadow-inner"
+                    className="w-full bg-[#0D0F14] border border-white/15 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-500 focus:border-blue-500 font-mono text-sm shadow-inner"
                   />
-                  <p className="text-[11px] text-zinc-400 leading-relaxed font-mono">
+                  <p className="text-xs text-zinc-400 leading-relaxed font-mono">
                     Connected to <strong className="text-zinc-200">gpt-oss:120b</strong> on Ollama Cloud with free API quota.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-mono font-semibold text-zinc-300 uppercase tracking-wider">
-                      Groq API Key
+                    <label htmlFor="groq-key" className="text-sm font-semibold text-zinc-200">
+                      Groq API key
                     </label>
                     <a 
                       href="https://console.groq.com/keys" 
@@ -1309,14 +1536,16 @@ function Builder() {
                       console.groq.com ↗
                     </a>
                   </div>
-                  <input 
+                  <input
+                    id="groq-key"
                     type="password"
+                    autoComplete="off"
                     placeholder="gsk_..."
                     value={customGroqKey}
                     onChange={(e) => setCustomGroqKey(e.target.value)}
-                    className="w-full bg-[#0D0F14] border border-white/15 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-blue-500 font-mono text-sm shadow-inner"
+                    className="w-full bg-[#0D0F14] border border-white/15 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-500 focus:border-blue-500 font-mono text-sm shadow-inner"
                   />
-                  <p className="text-[11px] text-zinc-400 leading-relaxed font-mono">
+                  <p className="text-xs text-zinc-400 leading-relaxed font-mono">
                     High-speed LPU inference with custom API key to skip public queue limits.
                   </p>
                 </div>
@@ -1326,14 +1555,15 @@ function Builder() {
             <div className="p-5 border-t border-white/10 flex justify-end bg-white/[0.02]">
               <button 
                 onClick={() => { setShowSettings(false); showToast("API Settings Saved"); }}
-                className="tactile-btn bg-white hover:bg-zinc-200 text-zinc-950 px-5 py-2 rounded-xl text-xs font-semibold shadow"
+                className="tactile-btn bg-white hover:bg-zinc-200 text-zinc-950 px-5 min-h-11 rounded-xl text-sm font-semibold shadow"
               >
                 Save & Close
               </button>
             </div>
           </motion.div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
     </div>
   );
