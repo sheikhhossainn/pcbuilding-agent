@@ -65,14 +65,14 @@ export const createPartSelector = ({ partRepository, compatChecker }) => {
         part = await selectPart(site, category, aboveRange, 'price_asc', filterFn);
       }
 
-      // Try: below allocated range
-      if (!part) {
+      // Try: below allocated range if range had a positive minimum
+      if (!part && range.min > 0) {
         const belowRange = { min: 0, max: range.min };
         part = await selectPart(site, category, belowRange, 'price_desc', filterFn);
       }
 
-      // Try: survival range (anything available)
-      if (!part && fallbackMax > 0) {
+      // Try: survival range (any compatible part within entire expanded ceiling)
+      if (!part && fallbackMax > 0 && range.min > 0) {
         const survivalRange = { min: 0, max: fallbackMax };
         part = await selectPart(site, category, survivalRange, 'price_asc', filterFn);
       }

@@ -103,11 +103,11 @@ export const createSpecInference = () => {
     // ──── MOTHERBOARD SPECS ────
     if (category === 'Motherboard') {
       // Socket and Brand detection
-      if (n.includes('am5') || n.includes('b650') || n.includes('x670') || n.includes('a620') || n.includes('x870')) {
+      if (n.includes('am5') || n.includes('b650') || n.includes('x670') || n.includes('a620') || n.includes('x870') || n.includes('b850')) {
         specs.socket = 'AM5';
         specs.ram_type = 'DDR5';
         specs.brand = 'amd';
-      } else if (n.includes('am4') || n.includes('b450') || n.includes('b550') || n.includes('x570') || n.includes('a320') || n.includes('a520')) {
+      } else if (n.includes('am4') || n.includes('b450') || n.includes('b550') || n.includes('x570') || n.includes('a320') || n.includes('a520') || n.includes('b350') || n.includes('x370') || n.includes('x470')) {
         specs.socket = 'AM4';
         specs.ram_type = 'DDR4';
         specs.brand = 'amd';
@@ -119,19 +119,19 @@ export const createSpecInference = () => {
         specs.socket = 'LGA1700';
         specs.ram_type = (n.includes('ddr5')) ? 'DDR5' : (n.includes('ddr4') ? 'DDR4' : 'UNKNOWN');
         specs.brand = 'intel';
-      } else if (n.includes('lga1200') || n.includes('lga 1200') || n.includes('h410') || n.includes('b460') || n.includes('h510') || n.includes('b560')) {
+      } else if (n.includes('lga1200') || n.includes('lga 1200') || n.includes('h410') || n.includes('b460') || n.includes('h510') || n.includes('b560') || n.includes('z490') || n.includes('z590')) {
         specs.socket = 'LGA1200';
         specs.ram_type = 'DDR4';
         specs.brand = 'intel';
-      } else if (n.includes('lga1151') || n.includes('lga 1151') || n.includes('h110') || n.includes('b250') || n.includes('h310') || n.includes('b360') || n.includes('b365')) {
+      } else if (n.includes('lga1151') || n.includes('lga 1151') || n.includes('h110') || n.includes('b150') || n.includes('b250') || n.includes('h310') || n.includes('b360') || n.includes('b365') || n.includes('z170') || n.includes('z270') || n.includes('z370') || n.includes('z390')) {
         specs.socket = 'LGA1151';
         specs.ram_type = 'DDR4';
         specs.brand = 'intel';
-      } else if (n.includes('lga1150') || n.includes('lga 1150') || n.includes('h81') || n.includes('b85')) {
+      } else if (n.includes('lga1150') || n.includes('lga 1150') || n.includes('h81') || n.includes('b85') || n.includes('h97') || n.includes('z87') || n.includes('z97')) {
         specs.socket = 'LGA1150';
         specs.ram_type = 'DDR3';
         specs.brand = 'intel';
-      } else if (n.includes('lga1155') || n.includes('lga 1155') || n.includes('h61') || n.includes('b75')) {
+      } else if (n.includes('lga1155') || n.includes('lga 1155') || n.includes('h61') || n.includes('b75') || n.includes('z68') || n.includes('z77')) {
         specs.socket = 'LGA1155';
         specs.ram_type = 'DDR3';
         specs.brand = 'intel';
@@ -140,27 +140,6 @@ export const createSpecInference = () => {
         specs.brand = 'intel';
       } else if (n.includes('n100') || n.includes('j4105') || n.includes('j4125') || n.includes('n5105')) {
         specs.socket = 'INTEGRATED';
-        specs.brand = 'intel';
-      } else if (n.includes('a320') || n.includes('b350') || n.includes('x370') || n.includes('b450') || n.includes('x470') || n.includes('a520') || n.includes('b550') || n.includes('x570')) {
-        specs.socket = 'AM4';
-        specs.brand = 'amd';
-      } else if (n.includes('a620') || n.includes('b650') || n.includes('x670') || n.includes('b850') || n.includes('x870')) {
-        specs.socket = 'AM5';
-        specs.brand = 'amd';
-      } else if (n.includes('h61') || n.includes('b75')) {
-        specs.socket = 'LGA1155';
-        specs.brand = 'intel';
-      } else if (n.includes('h81') || n.includes('b85') || n.includes('h97') || n.includes('z97')) {
-        specs.socket = 'LGA1150';
-        specs.brand = 'intel';
-      } else if (n.includes('h110') || n.includes('b150') || n.includes('b250') || n.includes('h310') || n.includes('b360') || n.includes('b365') || n.includes('z370') || n.includes('z390')) {
-        specs.socket = 'LGA1151';
-        specs.brand = 'intel';
-      } else if (n.includes('h410') || n.includes('b460') || n.includes('h510') || n.includes('b560')) {
-        specs.socket = 'LGA1200';
-        specs.brand = 'intel';
-      } else if (n.includes('h610') || n.includes('b660') || n.includes('b760') || n.includes('z690') || n.includes('z790')) {
-        specs.socket = 'LGA1700';
         specs.brand = 'intel';
       } else {
         specs.socket = 'UNKNOWN';
@@ -181,7 +160,7 @@ export const createSpecInference = () => {
       // Brand detection
       if (n.includes('nvidia') || n.includes('geforce') || n.includes('rtx') || n.includes('gtx')) {
         specs.gpu_brand = 'nvidia';
-      } else if (n.includes('radeon') || n.includes('rx ')) {
+      } else if (n.includes('radeon') || n.includes('rx ') || /\brx\s?\d{3,4}/i.test(n)) {
         specs.gpu_brand = 'amd';
       } else {
         specs.gpu_brand = 'unknown';

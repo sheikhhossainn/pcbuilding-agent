@@ -144,6 +144,7 @@ Extract the user's requirements and return ONLY a valid JSON object, no explanat
     "Keyboard": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
     "UPS": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean }
   },
+  "no_gpu": boolean,
   "preferred_site": "startech" | "techland" | "computermania" | null,
   "preferred_cpu_brand": "amd" | "intel" | null,
   "preferred_gpu_brand": "nvidia" | "amd" | null,
@@ -156,6 +157,7 @@ Rules:
 - Keyword Constraints: Use only 1-2 standard retail terms. Never use subjective adjectives.
 - Structured First: For numerical requirements (min_gb, min_hz, min_tb, min_wattage), use structured_reqs.
 - Exclusions: Use exclude_keywords for "no RGB", "no combo", etc.
+- If user requests no dedicated GPU / APU build, set "no_gpu": true and set Graphics Card "required": false and "weight": 0. Otherwise set "no_gpu": false.
 - Default needs_monitor, needs_mouse, needs_keyboard to true unless user says they have them.
 - Return ONLY valid JSON.
 `;
@@ -266,7 +268,8 @@ const applyIntentOverrideApplier = (intent, message) => {
   }
 
   // Apply RAM requirement from message (must be explicitly about RAM, not storage/VRAM)
-  if (text.includes('16gb')) addStructured(strat, 'RAM', 'min_gb', 16);
+  const isStorageOrVram16 = /16gb\s*(?:ssd|hdd|storage|vram|graphics|gpu|card)/i.test(text);
+  if (text.includes('16gb') && !isStorageOrVram16) addStructured(strat, 'RAM', 'min_gb', 16);
   if (text.includes('32gb') && (text.includes('ram') || text.includes('memory'))) addStructured(strat, 'RAM', 'min_gb', 32);
   if (text.includes('64gb') && (text.includes('ram') || text.includes('memory'))) addStructured(strat, 'RAM', 'min_gb', 64);
 
@@ -294,13 +297,14 @@ const applyIntentOverrideApplier = (intent, message) => {
     intent.preferred_gpu_brand = 'nvidia';
     if (strat['Graphics Card']) strat['Graphics Card'].required = true;
   }
-  if (text.includes('radeon') || text.includes('rx ')) {
+  if (text.includes('radeon') || text.includes('rx ') || /\brx\s?\d{3,4}/i.test(text)) {
     intent.preferred_gpu_brand = 'amd';
     if (strat['Graphics Card']) strat['Graphics Card'].required = true;
   }
 
   // Handle "no GPU" request
-  if (text.includes('no gpu') || text.includes('without gpu') || text.includes('no graphics')) {
+  if (text.includes('no gpu') || text.includes('without gpu') || text.includes('no graphics') || text.includes('apu build') || text.includes('integrated graphics only')) {
+    intent.no_gpu = true;
     if (strat['Graphics Card']) {
       strat['Graphics Card'].required = false;
       strat['Graphics Card'].weight = 0;

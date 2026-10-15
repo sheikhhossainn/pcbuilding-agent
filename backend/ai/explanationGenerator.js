@@ -79,7 +79,7 @@ ${buildWarnings.length > 0 ? '\nIMPORTANT WARNINGS to mention naturally:\n' + bu
         model: AI.MODEL_EXPLANATION,
         messages: [{ role: "user", content: explanationPrompt }],
         temperature: AI.TEMPERATURE_EXPLANATION,
-      });
+      }, { timeout: 30000 });
 
       const explanation = response.choices[0].message.content;
       console.log(`[AI] ✓ Explanation generated`);

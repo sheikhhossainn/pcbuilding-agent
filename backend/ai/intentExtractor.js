@@ -7,6 +7,93 @@
 
 import { AI } from '../config/thresholds.js';
 
+const EXPECTED_CATEGORIES = [
+  'Processor', 'Motherboard', 'RAM', 'Storage', 'Graphics Card',
+  'PSU', 'Casing', 'CPU Cooler', 'Monitor', 'Mouse', 'Keyboard', 'UPS'
+];
+
+const DEFAULT_STRATEGY = { weight: 1, required_keywords: [], exclude_keywords: [], structured_reqs: {}, required: false };
+
+/**
+ * Validate and normalize intent JSON from LLM output.
+ * Fills missing fields with safe defaults, coerces types, ensures all categories exist.
+ * @param {Object} raw - Raw parsed JSON from LLM
+ * @returns {Object} Normalized intent object
+ */
+function validateAndNormalizeIntent(raw) {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Intent extraction returned invalid data (not an object).');
+  }
+
+  // Coerce budget to number
+  if (raw.budget_bdt !== null && raw.budget_bdt !== undefined) {
+    raw.budget_bdt = Number(raw.budget_bdt);
+    if (!Number.isFinite(raw.budget_bdt)) raw.budget_bdt = null;
+  }
+
+  // Ensure component_strategy exists
+  if (!raw.component_strategy || typeof raw.component_strategy !== 'object') {
+    raw.component_strategy = {};
+  }
+
+  // Normalize category names (common LLM mistakes)
+  const aliases = {
+    'GPU': 'Graphics Card', 'gpu': 'Graphics Card', 'graphics card': 'Graphics Card',
+    'CPU': 'Processor', 'cpu': 'Processor', 'processor': 'Processor',
+    'motherboard': 'Motherboard', 'ram': 'RAM', 'storage': 'Storage',
+    'psu': 'PSU', 'casing': 'Casing', 'monitor': 'Monitor',
+    'mouse': 'Mouse', 'keyboard': 'Keyboard', 'ups': 'UPS',
+    'cpu cooler': 'CPU Cooler', 'CPU cooler': 'CPU Cooler', 'cooler': 'CPU Cooler',
+    'cpu-cooler': 'CPU Cooler',
+  };
+  const strat = raw.component_strategy;
+  for (const [key, value] of Object.entries(strat)) {
+    const canonical = aliases[key] || aliases[key.toLowerCase()];
+    if (canonical && canonical !== key) {
+      strat[canonical] = value;
+      delete strat[key];
+    }
+  }
+
+  // Ensure all expected categories exist with valid structure
+  for (const cat of EXPECTED_CATEGORIES) {
+    if (!strat[cat]) {
+      strat[cat] = { ...DEFAULT_STRATEGY };
+    } else {
+      const s = strat[cat];
+      s.weight = typeof s.weight === 'number' && Number.isFinite(s.weight) ? s.weight : 1;
+      s.required = typeof s.required === 'boolean' ? s.required : false;
+      s.required_keywords = Array.isArray(s.required_keywords) ? s.required_keywords.map(String) : [];
+      s.exclude_keywords = Array.isArray(s.exclude_keywords) ? s.exclude_keywords.map(String) : [];
+      s.structured_reqs = (s.structured_reqs && typeof s.structured_reqs === 'object') ? s.structured_reqs : {};
+    }
+  }
+
+  // Normalize string fields
+  if (raw.use_case && typeof raw.use_case === 'string') {
+    raw.use_case = raw.use_case.toLowerCase();
+    if (!['gaming', 'editing', 'office', 'general'].includes(raw.use_case)) {
+      raw.use_case = 'general';
+    }
+  } else {
+    raw.use_case = 'general';
+  }
+
+  if (raw.preferred_cpu_brand && typeof raw.preferred_cpu_brand === 'string') {
+    raw.preferred_cpu_brand = raw.preferred_cpu_brand.toLowerCase();
+    if (!['amd', 'intel'].includes(raw.preferred_cpu_brand)) raw.preferred_cpu_brand = null;
+  }
+  if (raw.preferred_gpu_brand && typeof raw.preferred_gpu_brand === 'string') {
+    raw.preferred_gpu_brand = raw.preferred_gpu_brand.toLowerCase();
+    if (!['nvidia', 'amd'].includes(raw.preferred_gpu_brand)) raw.preferred_gpu_brand = null;
+  }
+
+  // Ensure no_gpu is a boolean and in sync with Graphics Card required status
+  raw.no_gpu = Boolean(raw.no_gpu || (raw.component_strategy?.['Graphics Card'] && !raw.component_strategy['Graphics Card'].required));
+
+  return raw;
+}
+
 /**
  * Create intent extractor with dependency injection
  * @param {Object} deps - Dependencies
@@ -48,6 +135,9 @@ Rules:
 - Do NOT change budget_bdt unless the user explicitly mentions a new budget.
 - Do NOT change preferred_cpu_brand or preferred_gpu_brand unless the user explicitly mentions a brand.
 - Do NOT change use_case unless the user explicitly mentions a different use case.
+- Do NOT change no_gpu unless the user explicitly asks to add or remove dedicated graphics.
+- If the user wants to remove dedicated GPU (e.g. "no gpu", "remove graphics card"), set "no_gpu": true and set Graphics Card "required": false and "weight": 0.
+- If the user wants to add a dedicated GPU, set "no_gpu": false and set Graphics Card "required": true.
 - If the user wants to remove a component, set its "required" to false and "weight" to 0.
 - If the user says "start over" or "new build", ignore the previous config entirely.
 - Return ONLY the full updated JSON. No explanation.`;
@@ -84,14 +174,14 @@ Rules:
         model: AI.MODEL_PRIMARY_INTENT,
         messages,
         temperature: AI.TEMPERATURE_INTENT,
-      });
+      }, { timeout: 30000 });
       
       const intentText = response.choices[0].message.content
         .replace(/```json/g, '')
         .replace(/```/g, '')
         .trim();
       
-      const intent = JSON.parse(intentText);
+      const intent = validateAndNormalizeIntent(JSON.parse(intentText));
       console.log(`[AI] ✓ Intent extracted via ${AI.MODEL_PRIMARY_INTENT}${isFollowUp ? ' (follow-up)' : ''}`);
       return intent;
     } catch (error) {
@@ -106,14 +196,14 @@ Rules:
         model: AI.MODEL_FALLBACK_INTENT,
         messages,
         temperature: AI.TEMPERATURE_INTENT,
-      });
+      }, { timeout: 30000 });
 
       const intentText = fallbackResponse.choices[0].message.content
         .replace(/```json/g, '')
         .replace(/```/g, '')
         .trim();
 
-      const intent = JSON.parse(intentText);
+      const intent = validateAndNormalizeIntent(JSON.parse(intentText));
       console.log(`[AI] ✓ Intent extracted via ${AI.MODEL_FALLBACK_INTENT} (fallback${isFollowUp ? ', follow-up' : ''})`);
       return intent;
     } catch (fallbackError) {

@@ -111,8 +111,14 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
    * @param {string} params.site - Retailer site
    * @returns {Promise<Object>} {minimums, totalFloor, error, updatedBlueprint}
    */
+  const MAX_EMERGENCY_DEPTH = 5;
+
   const calculateFloorPrices = async (params) => {
-    const { blueprint, budgetCeiling, site } = params;
+    const { budgetCeiling, site, _depth = 0 } = params;
+    // Deep-clone blueprint so original input is not mutated
+    const blueprint = JSON.parse(JSON.stringify(params.blueprint));
+    const degradations = params.degradations ? [...params.degradations] : [];
+
     let totalFloor = 0;
     let error = null;
     const minimums = {};
@@ -207,7 +213,20 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
           }
           if (category === 'PSU') {
             const noGpu = blueprint.no_gpu || (blueprint.component_strategy?.['Graphics Card'] && !blueprint.component_strategy['Graphics Card'].required);
-            const gpuTdp = (!noGpu && (blueprint.use_case === 'gaming' || blueprint.use_case === 'editing')) ? 220 : 0;
+            let gpuTdp = 0;
+            if (!noGpu) {
+              if (floorParts['Graphics Card']?.specs?.tdp) {
+                gpuTdp = floorParts['Graphics Card'].specs.tdp;
+              } else if (blueprint.budget_bdt >= 200000) {
+                gpuTdp = GPU_TDP.HIGH_END;
+              } else if (blueprint.budget_bdt >= 100000) {
+                gpuTdp = GPU_TDP.MID_RANGE;
+              } else if (blueprint.use_case === 'gaming' || blueprint.use_case === 'editing') {
+                gpuTdp = GPU_TDP.BUDGET;
+              } else {
+                gpuTdp = GPU_TDP.DEFAULT;
+              }
+            }
             const targetW = computeTargetPsuWattage(floorParts.Processor, noGpu ? null : { specs: { tdp: gpuTdp } }, blueprint.use_case, blueprint.budget_bdt);
             if ((p.specs?.wattage || 0) < targetW) return false;
           }
@@ -229,37 +248,46 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
             const dropIndex = keywordsToTry.findIndex(k => !['ddr4', 'ddr5'].includes(k.toLowerCase()));
             const dropped = keywordsToTry.splice(dropIndex, 1)[0];
             console.warn(`[Floor] Dropped keyword '${dropped}' for ${category} to find matching part`);
+            degradations.push(`Dropped required keyword "${dropped}" for ${category} to find available stock.`);
           } else if (category === 'RAM' && structuredReqs.min_gb && structuredReqs.min_gb > 8) {
             // Degrade RAM requirement
             const previous = structuredReqs.min_gb;
             if (previous > 32) {
               structuredReqs.min_gb = 32;
               console.warn(`[Floor] Reduced ${category} requirement from ${previous}GB to 32GB`);
+              degradations.push(`Reduced ${category} requirement from ${previous}GB to 32GB due to budget/stock limitations.`);
             } else if (previous > 16) {
               structuredReqs.min_gb = 16;
               console.warn(`[Floor] Reduced ${category} requirement from ${previous}GB to 16GB`);
+              degradations.push(`Reduced ${category} requirement from ${previous}GB to 16GB due to budget/stock limitations.`);
             } else {
               structuredReqs.min_gb = 8;
               console.warn(`[Floor] Reduced ${category} requirement from ${previous}GB to 8GB`);
+              degradations.push(`Reduced ${category} requirement from ${previous}GB to 8GB due to budget/stock limitations.`);
             }
           } else if (category === 'Storage' && structuredReqs.min_tb && structuredReqs.min_tb > 1) {
             // Degrade storage requirement
             const previous = structuredReqs.min_tb;
             structuredReqs.min_tb = 1;
             console.warn(`[Floor] Reduced ${category} requirement from ${previous}TB to 1TB`);
+            degradations.push(`Reduced ${category} requirement from ${previous}TB to 1TB due to budget/stock limitations.`);
           } else if (category === 'Monitor' && structuredReqs.min_hz && structuredReqs.min_hz > 60) {
             // Degrade monitor Hz
             const previous = structuredReqs.min_hz;
             structuredReqs.min_hz = 60;
             console.warn(`[Floor] Reduced ${category} requirement from ${previous}Hz to 60Hz`);
+            degradations.push(`Reduced ${category} refresh rate requirement from ${previous}Hz to 60Hz due to budget/stock limitations.`);
           } else if (strategy.exclude_keywords && strategy.exclude_keywords.length > 0) {
             const dropped = strategy.exclude_keywords.shift();
             console.warn(`[Floor] Dropped exclude_keyword '${dropped}' for ${category} to find match`);
+            degradations.push(`Relaxed excluded keyword "${dropped}" for ${category} to find available stock.`);
           } else if (category === 'Processor' && blueprint.preferred_cpu_brand) {
             console.warn(`[Floor] Dropped preferred CPU brand '${blueprint.preferred_cpu_brand}' for ${category} to find match`);
+            degradations.push(`Switched CPU brand preference from ${blueprint.preferred_cpu_brand} to find compatible parts.`);
             blueprint.preferred_cpu_brand = null;
           } else if (category === 'Graphics Card' && blueprint.preferred_gpu_brand) {
             console.warn(`[Floor] Dropped preferred GPU brand '${blueprint.preferred_gpu_brand}' for ${category} to find match`);
+            degradations.push(`Switched GPU brand preference from ${blueprint.preferred_gpu_brand} to find compatible parts.`);
             blueprint.preferred_gpu_brand = null;
           } else {
             break; // No more fallbacks
@@ -280,51 +308,65 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
       totalFloor += part.price;
 
       if (category === 'Processor' && (part.specs?.tdp || 65) >= 105) {
-        if (!blueprint.component_strategy['CPU Cooler'] || !blueprint.component_strategy['CPU Cooler'].required) {
-          const cooler = await partRepository.findCheapest(site, 'CPU Cooler', budgetCeiling, null);
-          if (cooler) {
-            minimums['CPU Cooler'] = cooler.price;
-            totalFloor += cooler.price;
+        if (!blueprint.component_strategy['CPU Cooler']) {
+          blueprint.component_strategy['CPU Cooler'] = { weight: 1.5, required_keywords: [], exclude_keywords: [], structured_reqs: {}, required: true };
+        } else if (!blueprint.component_strategy['CPU Cooler'].required) {
+          blueprint.component_strategy['CPU Cooler'].required = true;
+          if (!blueprint.component_strategy['CPU Cooler'].weight) {
+            blueprint.component_strategy['CPU Cooler'].weight = 1.5;
           }
+        }
+        const cooler = await partRepository.findCheapest(site, 'CPU Cooler', budgetCeiling, null);
+        if (cooler) {
+          minimums['CPU Cooler'] = cooler.price;
+          floorParts['CPU Cooler'] = cooler;
+          totalFloor += cooler.price;
         }
       }
     }
 
     if (!error && totalFloor > budgetCeiling) {
-      console.warn(`[Floor] Total floor (${totalFloor}) exceeds budget (${budgetCeiling}). Attempting emergency requirement reduction...`);
+      console.warn(`[Floor] Total floor (${totalFloor}) exceeds budget (${budgetCeiling}). Attempting emergency requirement reduction (depth ${_depth})...`);
       
-      // Try to drop keywords from categories that have them, starting with most expensive
-      const categoriesToReduce = categories.filter(c => minimums[c] !== undefined).sort((a, b) => minimums[b] - minimums[a]);
-      
-      for (const cat of categoriesToReduce) {
-        const strat = blueprint.component_strategy[cat];
-        if (!strat) continue;
+      if (_depth >= MAX_EMERGENCY_DEPTH) {
+        error = `Minimum cost (${totalFloor} BDT) exceeds your budget (${budgetCeiling} BDT) even after reducing requirements. Please try increasing your budget or simplifying your request.`;
+      } else {
+        // Try to drop keywords from categories that have them, starting with most expensive
+        const categoriesToReduce = categories.filter(c => minimums[c] !== undefined).sort((a, b) => minimums[b] - minimums[a]);
+        
+        for (const cat of categoriesToReduce) {
+          const strat = blueprint.component_strategy[cat];
+          if (!strat) continue;
 
-        // 1. Try dropping required_keywords
-        if (strat.required_keywords && strat.required_keywords.length > 0) {
-          const dropped = strat.required_keywords.shift();
-          console.warn(`[Floor] Emergency: Dropping required_keyword '${dropped}' from ${cat} to fit budget`);
-          return calculateFloorPrices({ site, blueprint, budgetCeiling });
-        }
+          // 1. Try dropping required_keywords
+          if (strat.required_keywords && strat.required_keywords.length > 0) {
+            const dropped = strat.required_keywords.shift();
+            console.warn(`[Floor] Emergency: Dropping required_keyword '${dropped}' from ${cat} to fit budget`);
+            degradations.push(`Emergency: Dropped keyword "${dropped}" from ${cat} to fit budget ceiling.`);
+            return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
+          }
 
-        // 2. Try dropping structured_reqs
-        if (strat.structured_reqs && Object.keys(strat.structured_reqs).length > 0) {
-          const keys = Object.keys(strat.structured_reqs);
-          const dropped = keys[0];
-          delete strat.structured_reqs[dropped];
-          console.warn(`[Floor] Emergency: Dropping structured_req '${dropped}' from ${cat} to fit budget`);
-          return calculateFloorPrices({ site, blueprint, budgetCeiling });
-        }
+          // 2. Try dropping structured_reqs
+          if (strat.structured_reqs && Object.keys(strat.structured_reqs).length > 0) {
+            const keys = Object.keys(strat.structured_reqs);
+            const dropped = keys[0];
+            delete strat.structured_reqs[dropped];
+            console.warn(`[Floor] Emergency: Dropping structured_req '${dropped}' from ${cat} to fit budget`);
+            degradations.push(`Emergency: Relaxed specification "${dropped}" on ${cat} to fit budget ceiling.`);
+            return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
+          }
 
-        // 3. Try dropping exclude_keywords
-        if (strat.exclude_keywords && strat.exclude_keywords.length > 0) {
-          const dropped = strat.exclude_keywords.shift();
-          console.warn(`[Floor] Emergency: Dropping exclude_keyword '${dropped}' from ${cat} to fit budget`);
-          return calculateFloorPrices({ site, blueprint, budgetCeiling });
+          // 3. Try dropping exclude_keywords
+          if (strat.exclude_keywords && strat.exclude_keywords.length > 0) {
+            const dropped = strat.exclude_keywords.shift();
+            console.warn(`[Floor] Emergency: Dropping exclude_keyword '${dropped}' from ${cat} to fit budget`);
+            degradations.push(`Emergency: Relaxed excluded keyword "${dropped}" on ${cat} to fit budget ceiling.`);
+            return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
+          }
         }
+        
+        error = `Minimum cost (${totalFloor} BDT) exceeds your budget (${budgetCeiling} BDT). Please try increasing your budget or simplifying your request.`;
       }
-      
-      error = `Minimum cost (${totalFloor} BDT) exceeds your budget (${budgetCeiling} BDT). Please try increasing your budget or simplifying your request.`;
     }
 
     return {
@@ -332,6 +374,7 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
       totalFloor,
       error,
       updatedBlueprint: blueprint,
+      degradations,
     };
   };
 

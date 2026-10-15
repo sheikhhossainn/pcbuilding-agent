@@ -91,7 +91,11 @@ export async function executeBuild(payload, deps) {
     throw new BuildError(400, floorResult.error, 'BUDGET_FLOOR_EXCEEDED');
   }
 
-  const dynamicBudgets = deps.budgetAllocator.allocateBudgets({
+  if (floorResult.updatedBlueprint) {
+    intent = floorResult.updatedBlueprint;
+  }
+
+  let dynamicBudgets = deps.budgetAllocator.allocateBudgets({
     blueprint: intent,
     minimums: floorResult.minimums,
     totalFloor: floorResult.totalFloor,
@@ -118,6 +122,19 @@ export async function executeBuild(payload, deps) {
   let totalCost = 0;
   let globalRemaining = budgetCeiling;
   const buildWarnings = [];
+
+  if (floorResult.degradations && floorResult.degradations.length > 0) {
+    buildWarnings.push(...floorResult.degradations);
+  }
+
+  if (site === 'computermania') {
+    const rawMsg = (message || '').toLowerCase();
+    const requestedPeripherals = ['Monitor', 'Mouse', 'Keyboard'].some(p => intent.component_strategy?.[p]?.required) ||
+      rawMsg.includes('monitor') || rawMsg.includes('mouse') || rawMsg.includes('keyboard');
+    if (requestedPeripherals) {
+      buildWarnings.push('Monitor, mouse, and keyboard are not tracked in ComputerMania catalog and were omitted from this build.');
+    }
+  }
 
   // ─── Follow-up: Lock unchanged components from previous build ───
   const lockedCategories = new Set();
@@ -179,6 +196,9 @@ export async function executeBuild(payload, deps) {
       }
     }
 
+    // Re-apply user overrides AFTER cascade stripping so explicit DDR requests survive
+    deps.intentOverrideApplier(intent, message);
+
     // Verify inventory availability and apply final locks
     for (const category of initialLocks) {
       const prevPart = prevBuild[category];
@@ -200,16 +220,42 @@ export async function executeBuild(payload, deps) {
 
     if (lockedCategories.size > 0) {
       console.log(`[Follow-up] Locked ${lockedCategories.size} unchanged categories, re-selecting ${Object.keys(selectedBuild).length - lockedCategories.size}`);
+      
+      // Recalculate dynamic budgets with reduced ceiling for unlocked categories
+      const adjustedCeiling = budgetCeiling - totalCost;
+      const adjustedMinimums = {};
+      let adjustedFloor = 0;
+      for (const cat of Object.keys(floorResult.minimums)) {
+        if (lockedCategories.has(cat)) continue; // Skip locked categories
+        adjustedMinimums[cat] = floorResult.minimums[cat] || 0;
+        adjustedFloor += adjustedMinimums[cat];
+      }
+      dynamicBudgets = deps.budgetAllocator.allocateBudgets({
+        blueprint: intent,
+        minimums: adjustedMinimums,
+        totalFloor: adjustedFloor,
+        budgetCeiling: adjustedCeiling + adjustedFloor, // totalFloor is subtracted inside allocateBudgets
+        site,
+      });
+      // Zero out locked categories in dynamic budgets
+      for (const cat of lockedCategories) {
+        dynamicBudgets[cat] = 0;
+      }
+      console.log(`[Follow-up] Recalculated dynamic budgets for unlocked categories:`, dynamicBudgets);
     }
   }
+
+  const availableSockets = await deps.partRepository.getAvailableSockets(site);
 
   const createFilterFn = (category, strat, selectedParts) => {
     return (part) => {
       if (!deps.partRepository.matchesStrategy(part, strat, category)) return false;
 
       if (category === 'Processor') {
+        // Trap CPU prevention: Must have motherboard in stock
+        if (part.specs?.socket && part.specs.socket !== 'UNKNOWN' && !availableSockets.has(part.specs.socket)) return false;
         if (intent.preferred_cpu_brand && part.specs?.brand !== intent.preferred_cpu_brand.toLowerCase()) return false;
-        if (noGpu && !deps.compatibilityChecker.cpuHasIntegratedGraphics(part)) return false;
+        if (noGpu && !deps.compatibilityChecker.isCpuIntegratedGpuAdequate(part, intent.use_case)) return false;
         if (!deps.compatibilityChecker.isCpuModern(part, intent.budget_bdt)) return false;
         const ramStrategy = intent.component_strategy?.['RAM'] || {};
         const requestedRamType = (ramStrategy.required_keywords || []).find(k => k.toLowerCase() === 'ddr4' || k.toLowerCase() === 'ddr5');
@@ -221,11 +267,18 @@ export async function executeBuild(payload, deps) {
         }
       }
 
-      if (category === 'Motherboard' && selectedParts.Processor) {
-        if (!deps.compatibilityChecker.isSocketCompatible(selectedParts.Processor, part)) return false;
-        const cpuRamType = selectedParts.Processor.specs?.ram_type;
-        if (cpuRamType && cpuRamType !== 'UNKNOWN' && part.specs?.ram_type && part.specs.ram_type !== 'UNKNOWN') {
-          if (cpuRamType !== part.specs.ram_type) return false;
+      if (category === 'Motherboard') {
+        if (part.specs?.socket === 'UNKNOWN' || part.specs?.socket === 'INTEGRATED') return false;
+        const targetBrand = intent.preferred_cpu_brand || selectedParts.Processor?.specs?.brand;
+        if (targetBrand && part.specs?.brand && part.specs.brand !== 'unknown' && part.specs.brand !== targetBrand.toLowerCase()) {
+          return false;
+        }
+        if (selectedParts.Processor) {
+          if (!deps.compatibilityChecker.isSocketCompatible(selectedParts.Processor, part)) return false;
+          const cpuRamType = selectedParts.Processor.specs?.ram_type;
+          if (cpuRamType && cpuRamType !== 'UNKNOWN' && part.specs?.ram_type && part.specs.ram_type !== 'UNKNOWN') {
+            if (cpuRamType !== part.specs.ram_type) return false;
+          }
         }
       }
 
@@ -373,7 +426,7 @@ export async function executeBuild(payload, deps) {
           if (!deps.compatibilityChecker.isGpuAdequateForUseCase(part, intent.use_case)) continue;
           if (selectedBuild.Processor && !deps.compatibilityChecker.isCpuBalanced(selectedBuild.Processor, part)) continue;
           if (selectedBuild.PSU?.specs?.wattage) {
-            const targetW = deps.budgetAllocator.computeTargetPsuWattage(selectedBuild.Processor || {}, part);
+            const targetW = deps.budgetAllocator.computeTargetPsuWattage(selectedBuild.Processor || {}, part, intent.use_case, intent.budget_bdt);
             if (selectedBuild.PSU.specs.wattage < targetW) continue;
           }
         }
@@ -382,7 +435,7 @@ export async function executeBuild(payload, deps) {
           if (noGpu && !deps.compatibilityChecker.cpuHasIntegratedGraphics(part)) continue;
           if (selectedBuild.Motherboard && !deps.compatibilityChecker.isSocketCompatible(part, selectedBuild.Motherboard)) continue;
           if (selectedBuild.PSU?.specs?.wattage) {
-            const targetW = deps.budgetAllocator.computeTargetPsuWattage(part, selectedBuild["Graphics Card"]);
+            const targetW = deps.budgetAllocator.computeTargetPsuWattage(part, selectedBuild["Graphics Card"], intent.use_case, intent.budget_bdt);
             if (selectedBuild.PSU.specs.wattage < targetW) continue;
           }
         }
@@ -394,7 +447,7 @@ export async function executeBuild(payload, deps) {
           if (selectedBuild.Motherboard && !deps.compatibilityChecker.isRamTypeCompatible(selectedBuild.Motherboard, part)) continue;
         }
         if (best.category === 'PSU') {
-          const targetW = deps.budgetAllocator.computeTargetPsuWattage(selectedBuild.Processor || {}, selectedBuild["Graphics Card"]);
+          const targetW = deps.budgetAllocator.computeTargetPsuWattage(selectedBuild.Processor || {}, selectedBuild["Graphics Card"], intent.use_case, intent.budget_bdt);
           if ((part.specs?.wattage || 0) < targetW) continue;
         }
         upgradedPart = part;
@@ -417,8 +470,8 @@ export async function executeBuild(payload, deps) {
   // ─── PHASE 5: Post-Build Validation ───
   console.log("\nPHASE 5: Post-Build Validation...");
   
-  if (totalCost > intent.budget_bdt + 3000) {
-    throw new Error(`This configuration exceeds your budget by ${(totalCost - intent.budget_bdt).toLocaleString('en-BD')} BDT (max allowed overshoot is 3,000 BDT). Try adjusting your request, reducing requirements, or removing optional components like peripherals.`);
+  if (totalCost > budgetCeiling) {
+    throw new Error(`This configuration costs ${totalCost.toLocaleString('en-BD')} BDT, which exceeds your budget ceiling of ${budgetCeiling.toLocaleString('en-BD')} BDT. Try adjusting your request, reducing requirements, or removing optional components like peripherals.`);
   }
 
   const requestedTb = intent.component_strategy?.['Storage']?.structured_reqs?.min_tb;

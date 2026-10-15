@@ -75,15 +75,19 @@ export const createCompatibilityChecker = ({ config = {} } = {}) => {
     if (!cpu) return false;
     const n = cpu.name.toLowerCase();
     
+    // F-suffix detection via regex on model numbers (e.g., i5-12400F, 7600F, 13700KF)
+    const hasFSuffix = /i[3579]-?\d{4,5}k?f\b/i.test(n) || /ryzen\s*\d\s*\d{4}f\b/i.test(n);
+    
     if (n.includes('amd') || n.includes('ryzen') || n.includes('athlon') || n.includes('radeon')) {
-      // Ryzen 7000/9000 (AM5) have iGPUs by default unless they have 'F'
-      if (cpu.specs?.socket === 'AM5' || n.includes('am5') || n.match(/ryzen\s*[789]\d{3}/)) {
-        return !n.includes('f ') && !n.includes('f-') && !n.endsWith('f');
+      // Ryzen 7000/9000/8000 (AM5) have iGPUs by default unless they have F-suffix
+      if (cpu.specs?.socket === 'AM5' || n.match(/ryzen\s*[3-9]\s*[789]\d{3}/)) {
+        return !hasFSuffix;
       }
-      return n.includes('g ') || n.includes('ge ') || n.includes('g-') || n.match(/\d+[g]\b/) || n.includes('graphics') || n.includes('radeon');
+      // Older AMD: only G-series APUs have iGPU
+      return n.includes('g ') || n.includes('ge ') || n.includes('g-') || /\d+g\b/.test(n) || n.includes('graphics') || n.includes('radeon');
     }
     if (n.includes('intel') || n.includes('core') || n.includes('pentium') || n.includes('celeron')) {
-      return !n.includes('f ') && !n.includes('f-') && !n.endsWith('f') && !n.includes('kf');
+      return !hasFSuffix;
     }
     return true; // Fail-open
   };
@@ -95,12 +99,25 @@ export const createCompatibilityChecker = ({ config = {} } = {}) => {
    * @returns {boolean}
    */
   const isCpuIntegratedGpuAdequate = (cpu, useCase) => {
-    const name = cpu.name.toLowerCase();
-    if (name.includes(' f ') || name.includes('f-') || name.endsWith(' f') || name.includes('kf ')) return false;
+    if (!cpuHasIntegratedGraphics(cpu)) return false;
 
-    // Gaming/Editing need decent iGPU (Ryzen G-series)
+    // Gaming/Editing need capable iGPU (Ryzen G-series, AM5, or modern Intel Core 12th gen+)
     if (useCase === 'gaming' || useCase === 'editing') {
-      return name.includes('ryzen') && (name.includes(' g') || name.includes('ge'));
+      const name = cpu.name.toLowerCase();
+      // Ryzen G/GE APUs
+      if (name.includes('ryzen') && (name.includes(' g') || name.includes('ge') || /\d+g\b/.test(name))) {
+        return true;
+      }
+      // AM5 Ryzen processors with integrated RDNA graphics
+      if (cpu.specs?.socket === 'AM5' || /ryzen\s*[3-9]\s*[789]\d{3}/i.test(name)) {
+        return true;
+      }
+      // Modern Intel with UHD 770 or better (12th gen+ or Core Ultra)
+      const gen = cpu.specs?.gen || 0;
+      if (cpu.specs?.brand === 'intel' && (gen >= 12 || name.includes('ultra'))) {
+        return true;
+      }
+      return false;
     }
     return true; // For office/general, any iGPU is fine
   };
@@ -193,10 +210,13 @@ export const createCompatibilityChecker = ({ config = {} } = {}) => {
     if (n.includes('AM4')) return 'AM4';
     if (n.includes('AM3')) return 'AM3';
     
-    // Intel sockets
+    // Intel sockets — check longer strings first to avoid substring collisions
+    if (n.includes('LGA1851')) return 'LGA1851';
     if (n.includes('LGA1700')) return 'LGA1700';
     if (n.includes('LGA1200')) return 'LGA1200';
-    if (n.includes('LGA115')) return 'LGA1150'; // Generic match for LGA115x
+    if (n.includes('LGA1155')) return 'LGA1155';
+    if (n.includes('LGA1151')) return 'LGA1151';
+    if (n.includes('LGA1150')) return 'LGA1150';
     
     return null;
   };

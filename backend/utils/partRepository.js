@@ -271,7 +271,7 @@ export const createPartRepository = ({ db, turso, supabase, specInference, cache
    */
   const getAvailableSockets = async (site) => {
     try {
-      let sql = 'SELECT name, specs FROM components WHERE category = ?';
+      let sql = 'SELECT name, specs FROM components WHERE category = ? AND in_stock = 1';
       const args = ['motherboard'];
 
       if (site !== 'all') {
