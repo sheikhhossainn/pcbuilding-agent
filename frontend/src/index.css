@@ -1,80 +1,236 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+   Design tokens — light is the default, dark via [data-theme="dark"].
+   Color carries meaning: neutrals + one accent; ok/warn/bad only mean state.
+   ------------------------------------------------------------------ */
 :root {
-  --bg-base: #08090c;
-  --bg-surface: #0e1117;
-  --bg-surface-elevated: #151821;
-  --text-primary: #f4f4f6;
-  --text-secondary: #9da3af;
-  --text-muted: #5e6473;
-  --accent-cobalt: #3b82f6;
-  --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(255, 255, 255, 0.16);
-  --font-display: 'Outfit', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  color-scheme: light;
+
+  --bg: #fafaf9;
+  --surface: #ffffff;
+  --surface-2: #f5f5f4;
+  --line: #e7e5e4;
+  --line-strong: #d6d3d1;
+
+  --fg: #1c1917;
+  --fg-2: #57534e;
+  --fg-3: #78716c;
+
+  --accent: #4f46e5;
+  --accent-fg: #ffffff;
+  --accent-soft: #eef2ff;
+  --accent-line: #c7d2fe;
+
+  --ok: #15803d;
+  --ok-soft: #f0fdf4;
+  --ok-line: #bbf7d0;
+
+  --warn: #b45309;
+  --warn-soft: #fffbeb;
+  --warn-line: #fde68a;
+
+  --bad: #b91c1c;
+  --bad-soft: #fef2f2;
+  --bad-line: #fecaca;
+
+  --scrim: rgba(28, 25, 23, 0.45);
+  --shadow-float: 0 8px 24px rgba(28, 25, 23, 0.12);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0c0d10;
+  --surface: #14161b;
+  --surface-2: #1b1e25;
+  --line: #2a2e37;
+  --line-strong: #3a3f4b;
+
+  --fg: #f4f4f5;
+  --fg-2: #a1a1aa;
+  --fg-3: #8b8f9a;
+
+  --accent: #818cf8;
+  --accent-fg: #0c0d10;
+  --accent-soft: rgba(129, 140, 248, 0.14);
+  --accent-line: rgba(129, 140, 248, 0.35);
+
+  --ok: #4ade80;
+  --ok-soft: rgba(74, 222, 128, 0.1);
+  --ok-line: rgba(74, 222, 128, 0.3);
+
+  --warn: #fbbf24;
+  --warn-soft: rgba(251, 191, 36, 0.1);
+  --warn-line: rgba(251, 191, 36, 0.3);
+
+  --bad: #f87171;
+  --bad-soft: rgba(248, 113, 113, 0.1);
+  --bad-line: rgba(248, 113, 113, 0.3);
+
+  --scrim: rgba(0, 0, 0, 0.65);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+@theme inline {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-line: var(--ok-line);
+
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-line: var(--warn-line);
+
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-bad-line: var(--bad-line);
 }
 
 body {
-  background-color: var(--bg-base);
-  color: var(--text-primary);
-  font-family: var(--font-display);
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
-  background-image: 
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.07), transparent),
-    radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.03), transparent 40%);
-  background-attachment: fixed;
 }
 
-/* Tabular figures for numbers, currency, and specs */
-.font-mono-num {
-  font-family: var(--font-mono);
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+/* Prices, watts, counts: aligned digits */
+@utility num {
   font-variant-numeric: tabular-nums;
 }
 
-/* Double-Bezel Architectural Enclosures (Machined Hardware Feel) */
-.bezel-shell {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0.375rem;
-  border-radius: 1.25rem;
-  transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
-}
+/* Shared component primitives. In a layer so Tailwind utilities can override. */
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+  }
 
-.bezel-shell:hover {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.045);
-}
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--fg-2);
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease,
+      border-color 160ms ease, color 160ms ease;
+  }
+  .btn:hover {
+    background: var(--surface-2);
+    color: var(--fg);
+  }
+  .btn:active {
+    transform: scale(0.97);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-touch {
+    min-height: 2.75rem;
+  }
+  .btn-icon {
+    width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
+  }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+  }
+  .btn-primary:hover {
+    background: var(--accent);
+    color: var(--accent-fg);
+    filter: brightness(1.08);
+  }
+  .btn-danger {
+    background: var(--bad-soft);
+    border-color: var(--bad-line);
+    color: var(--bad);
+  }
+  .btn-danger:hover {
+    background: var(--bad-soft);
+    color: var(--bad);
+    filter: brightness(0.97);
+  }
 
-.bezel-inner {
-  background: rgba(14, 17, 23, 0.92);
-  border-radius: calc(1.25rem - 0.375rem);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.07), 0 4px 20px -2px rgba(0, 0, 0, 0.5);
-}
+  .tactile-btn {
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease,
+      border-color 160ms ease;
+  }
+  .tactile-btn:active {
+    transform: scale(0.98);
+  }
 
-/* Titanium Frosted Glass Cards */
-.titanium-card {
-  background: rgba(15, 18, 25, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
-}
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--fg-2);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.125rem 0.625rem;
+  }
 
-.titanium-card-active {
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 0 25px -5px rgba(59, 130, 246, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  .spec-tag {
+    display: inline-block;
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+    padding: 0 0.5rem;
+    border-radius: 0.375rem;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 /* Keyboard focus ring for every interactive control */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent-cobalt) !important;
+  outline: 2px solid var(--accent) !important;
   outline-offset: 2px;
 }
 
@@ -93,63 +249,25 @@ body {
   }
 }
 
-/* Tactile Button Micro-Physics (Emil Kowalski Philosophy) */
-.tactile-btn {
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+/* Floating layers (toast, dialog, composer pill) are the only things with shadow */
+.surface-float {
+  box-shadow: var(--shadow-float);
 }
 
-.tactile-btn:active {
-  transform: scale(0.97);
-}
-
-/* Minimalist Custom Scrollbar */
+/* Minimalist custom scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 8px;
+  height: 8px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--line-strong);
   border-radius: 9999px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
-}
-
-/* Spec Badges */
-.spec-tag {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.025em;
-  padding: 0.1875rem 0.5rem;
-  border-radius: 0.375rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #9da3af;
-}
-
-/* Pulse Glows */
-@keyframes cobalt-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3); }
-  70% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
-}
-
-.pulse-cobalt {
-  animation: cobalt-pulse 2.2s infinite cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-/* Utility mask for horizontal scroll pills */
-.mask-fade-edges {
-  mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
-}
-
+/* Horizontal chip rows: hide scrollbar, fade edges */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -157,26 +275,37 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+.mask-fade-edges {
+  mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+}
 
-/* Print Optimization */
+/* Print: always light, no chrome */
 @media print {
+  :root,
+  :root[data-theme="dark"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f5f5f4;
+    --line: #d6d3d1;
+    --fg: #111827;
+    --fg-2: #374151;
+    --fg-3: #4b5563;
+    --accent: #4f46e5;
+    --ok: #15803d;
+    --warn: #b45309;
+    --bad: #b91c1c;
+    --ok-soft: #ffffff;
+    --warn-soft: #ffffff;
+    --bad-soft: #ffffff;
+    --accent-soft: #ffffff;
+    color-scheme: light;
+  }
   body {
     background: #ffffff !important;
     color: #111827 !important;
   }
-  header, form, .chatbox-shell, nav, [class*="print:hidden"] {
+  header, form, nav {
     display: none !important;
-  }
-  .titanium-card, .bezel-shell, .bezel-inner {
-    background: #ffffff !important;
-    border: 1px solid #e5e7eb !important;
-    box-shadow: none !important;
-    color: #111827 !important;
-  }
-  .text-zinc-100, .text-zinc-200, .text-zinc-300, .text-white {
-    color: #111827 !important;
-  }
-  .text-zinc-400, .text-zinc-500, .text-zinc-600 {
-    color: #4b5563 !important;
   }
 }
