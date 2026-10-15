@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Copy, Key, FileDown, Trash2, Menu, X, Link2 } from 'lucide-react';
+import { Copy, Key, FileDown, Trash2, Menu, X, Link2 } from 'lucide-react';
+import { LogoMark } from './Logo';
 import StoreSelect from './StoreSelect';
-import ThemeToggle from './ThemeToggle';
 
 /**
  * Sticky app header. `children` render inside the sticky wrapper beneath the
@@ -10,9 +10,8 @@ import ThemeToggle from './ThemeToggle';
  */
 export default function Header({
   site, onSiteChange, customSiteUrl, onCustomSiteUrlChange, siteDisabled,
-  theme, onToggleTheme,
   onCopy, onShare, onExport, onClear, onOpenSettings, settingsHighlighted,
-  hideStore = false,
+  hideStore = false, busy = false,
   children,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -22,12 +21,10 @@ export default function Header({
     <div className="sticky top-0 z-40 pt-2 pb-2 sm:pt-4 sm:pb-0 px-3 sm:px-6 bg-bg/95 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none print:hidden">
       <header className="max-w-7xl mx-auto card px-4 sm:px-5 py-2 sm:py-2.5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 shrink-0">
-          <div className="bg-accent text-accent-fg p-2 rounded-lg" aria-hidden="true">
-            <Sparkles size={18} strokeWidth={2.2} />
-          </div>
+          <LogoMark size={38} animated={busy} className="shrink-0" />
           <div className="leading-tight">
             <h1 className="text-lg font-semibold tracking-tight text-fg flex items-center gap-2">
-              BuildMyPC
+              <span>Build<span className="text-accent">MyPC</span></span>
               <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-accent-soft text-accent border border-accent-line">BD</span>
             </h1>
             <p className="text-xs text-fg-3 hidden sm:block">AI PC builder for Bangladesh</p>
@@ -69,7 +66,6 @@ export default function Header({
             <FileDown size={14} strokeWidth={1.75} aria-hidden="true" />
             <span>Export</span>
           </button>
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           <button type="button" onClick={onClear} className="btn btn-danger" title="Clear current build">
             <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
             <span>Clear</span>
@@ -123,7 +119,6 @@ export default function Header({
                 <FileDown size={16} aria-hidden="true" />
                 <span>Export PDF</span>
               </button>
-              <ThemeToggle theme={theme} onToggle={onToggleTheme} touch withLabel />
               <button type="button" onClick={closeThen(onClear)} className="btn btn-touch btn-danger col-span-2">
                 <Trash2 size={16} aria-hidden="true" />
                 <span>Clear build</span>

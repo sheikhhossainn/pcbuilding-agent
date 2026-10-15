@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import AmbientBackground from './AmbientBackground';
+import BuildProgress from './BuildProgress';
 import { useBuild } from '../hooks/useBuild';
 import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../hooks/useToast';
-import { useTheme } from '../hooks/useTheme';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { computeTelemetry } from '../lib/telemetry';
 import { formatPrice } from '../lib/format';
@@ -35,7 +36,6 @@ const STAGE_MESSAGES = {
 function Builder() {
   const { toast, showToast, dismissToast } = useToast();
   const settings = useSettings();
-  const { theme, toggleTheme } = useTheme();
   const isNarrow = useMediaQuery('(max-width: 639px)');
 
   // A share link (#b=...) opens as the working build; it is validated server-side after load.
@@ -184,15 +184,14 @@ function Builder() {
   const handleExport = () => window.print();
 
   return (
-    <div className="min-h-screen pb-44 sm:pb-36 bg-bg text-fg">
+    <div className="min-h-screen pb-44 sm:pb-36 text-fg">
+      <AmbientBackground />
       <Header
         site={site}
         onSiteChange={setSite}
         customSiteUrl={customSiteUrl}
         onCustomSiteUrlChange={setCustomSiteUrl}
         siteDisabled={isBusy}
-        theme={theme}
-        onToggleTheme={toggleTheme}
         onCopy={handleCopySpecSheet}
         onShare={handleShare}
         onExport={handleExport}
@@ -200,6 +199,7 @@ function Builder() {
         onOpenSettings={openSettings}
         settingsHighlighted={showTrafficWarning}
         hideStore={showHero}
+        busy={isBusy}
       >
         <MobileSummaryBar
           total={total}
@@ -270,6 +270,10 @@ function Builder() {
                 <span>Hide empty</span>
               </label>
             </div>
+
+            <AnimatePresence>
+              {isBusy && <BuildProgress key="progress" stage={stage} message={loadingMessage} />}
+            </AnimatePresence>
 
             {!isBusy && <WarningsBanner warnings={warnings} />}
 
