@@ -82,7 +82,7 @@ export default function SettingsDialog({
                     id="ollama-key"
                     type="password"
                     autoComplete="off"
-                    placeholder="Enter your Ollama API key..."
+                    placeholder="Paste your Ollama API key"
                     value={ollamaKey}
                     onChange={(e) => onOllamaKeyChange(e.target.value)}
                     className="w-full min-h-11 bg-surface border border-line focus:border-accent rounded-lg px-4 text-fg placeholder:text-fg-3 font-mono text-sm"

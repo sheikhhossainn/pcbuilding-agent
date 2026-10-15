@@ -1,60 +1,26 @@
 @import "tailwindcss";
 
 /* ------------------------------------------------------------------
-   Design tokens — light is the default, dark via [data-theme="dark"].
+   Design tokens — dark only.
    Color carries meaning: neutrals + one accent; ok/warn/bad only mean state.
    ------------------------------------------------------------------ */
 :root {
-  color-scheme: light;
-
-  --bg: #fafaf9;
-  --surface: #ffffff;
-  --surface-2: #f5f5f4;
-  --line: #e7e5e4;
-  --line-strong: #d6d3d1;
-
-  --fg: #1c1917;
-  --fg-2: #57534e;
-  --fg-3: #78716c;
-
-  --accent: #4f46e5;
-  --accent-fg: #ffffff;
-  --accent-soft: #eef2ff;
-  --accent-line: #c7d2fe;
-
-  --ok: #15803d;
-  --ok-soft: #f0fdf4;
-  --ok-line: #bbf7d0;
-
-  --warn: #b45309;
-  --warn-soft: #fffbeb;
-  --warn-line: #fde68a;
-
-  --bad: #b91c1c;
-  --bad-soft: #fef2f2;
-  --bad-line: #fecaca;
-
-  --scrim: rgba(28, 25, 23, 0.45);
-  --shadow-float: 0 8px 24px rgba(28, 25, 23, 0.12);
-}
-
-:root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #0c0d10;
-  --surface: #14161b;
-  --surface-2: #1b1e25;
-  --line: #2a2e37;
-  --line-strong: #3a3f4b;
+  --bg: #0b0c10;
+  --surface: #14161c;
+  --surface-2: #1b1e26;
+  --line: #2a2e38;
+  --line-strong: #3b4150;
 
-  --fg: #f4f4f5;
-  --fg-2: #a1a1aa;
-  --fg-3: #8b8f9a;
+  --fg: #f4f4f6;
+  --fg-2: #a6a9b6;
+  --fg-3: #8d92a1;
 
   --accent: #818cf8;
-  --accent-fg: #0c0d10;
+  --accent-fg: #0b0c10;
   --accent-soft: rgba(129, 140, 248, 0.14);
-  --accent-line: rgba(129, 140, 248, 0.35);
+  --accent-line: rgba(129, 140, 248, 0.38);
 
   --ok: #4ade80;
   --ok-soft: rgba(74, 222, 128, 0.1);
@@ -67,6 +33,10 @@
   --bad: #f87171;
   --bad-soft: rgba(248, 113, 113, 0.1);
   --bad-line: rgba(248, 113, 113, 0.3);
+
+  --grid-line: rgba(165, 180, 252, 0.06);
+  --trace: rgba(129, 140, 248, 0.7);
+  --glow: rgba(99, 102, 241, 0.2);
 
   --scrim: rgba(0, 0, 0, 0.65);
   --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -238,7 +208,7 @@ body {
 }
 
 /* Keyboard focus ring for every interactive control */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+:where(a, button, input, select, textarea:not(.composer-input), [tabindex]):focus-visible {
   outline: 2px solid var(--accent) !important;
   outline-offset: 2px;
 }
@@ -246,6 +216,80 @@ body {
 /* Dialog container takes programmatic focus; the ring belongs on its controls */
 [role="dialog"]:focus {
   outline: none !important;
+}
+
+/* Ambient background: blueprint grid with data pulses running along its lines. */
+.ambient {
+  --cell: 44px;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+.ambient-glow {
+  position: absolute;
+  left: 50%;
+  top: -30vh;
+  width: 90vw;
+  height: 70vh;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, var(--glow), transparent);
+}
+.ambient-field {
+  position: absolute;
+  inset: 0;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 18%, black 25%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 18%, black 25%, transparent 78%);
+}
+.ambient-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--cell) var(--cell);
+}
+.ambient-trace {
+  position: absolute;
+  will-change: transform;
+}
+.ambient-trace-h {
+  left: 0;
+  width: 28vw;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--trace), transparent);
+  animation: trace-x linear infinite;
+}
+.ambient-trace-v {
+  top: 0;
+  width: 1px;
+  height: 26vh;
+  background: linear-gradient(to bottom, transparent, var(--trace), transparent);
+  animation: trace-y linear infinite;
+}
+@keyframes trace-x { from { transform: translateX(-30vw); } to { transform: translateX(105vw); } }
+@keyframes trace-y { from { transform: translateY(-30vh); } to { transform: translateY(105vh); } }
+@media (max-width: 640px) {
+  .ambient-trace-v { display: none; }
+  .ambient-trace-h:nth-of-type(n + 4) { display: none; }
+}
+@media print {
+  .ambient { display: none !important; }
+}
+
+/* Logo "searching" state: the two parts slide in turn, like parts being fitted. */
+.logo-anim .logo-part {
+  animation: logo-part 1.4s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+.logo-anim .logo-part-b {
+  animation-delay: 0.35s;
+}
+@keyframes logo-part {
+  0%, 100% { transform: translateX(0); opacity: 1; }
+  40% { transform: translateX(-3px); opacity: 0.45; }
+  70% { transform: translateX(1.5px); opacity: 1; }
 }
 
 /* Honor the OS "reduce motion" setting */
@@ -291,8 +335,7 @@ body {
 
 /* Print: always light, no chrome */
 @media print {
-  :root,
-  :root[data-theme="dark"] {
+  :root {
     --bg: #ffffff;
     --surface: #ffffff;
     --surface-2: #f5f5f4;
@@ -317,4 +360,35 @@ body {
   header, form, nav {
     display: none !important;
   }
+}
+
+/* Active pipeline step breathes */
+.progress-pulse {
+  animation: progress-pulse 1.2s ease-in-out infinite;
+}
+@keyframes progress-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* Composer: one focus ring around the whole field, not a box around the textarea */
+.composer {
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.composer:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-float);
+}
+.composer-input,
+.composer-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Disabled primary reads as "not ready", not as a washed-out accent */
+.btn-primary:disabled {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--fg-3);
+  opacity: 1;
 }

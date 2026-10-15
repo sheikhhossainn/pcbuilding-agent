@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
-import { Send, Loader2, RefreshCw } from 'lucide-react';
+import { Send, RefreshCw } from 'lucide-react';
 import ModifiersMenu from './ModifiersMenu';
+import { LogoMark } from './Logo';
 
 const MAX_HEIGHT_NARROW = 120;
 const MAX_HEIGHT_WIDE = 200;
@@ -61,8 +62,8 @@ export default function Composer({
   const textarea = (
     <textarea
       ref={textareaRef}
-      className={`flex-1 min-w-0 bg-transparent border-0 resize-none overflow-y-auto block text-fg placeholder:text-fg-3 text-base leading-6 ${
-        isHero ? 'w-full px-2 py-2 min-h-24' : 'px-1 py-3 min-h-12'
+      className={`composer-input flex-1 min-w-0 bg-transparent border-0 resize-none overflow-y-auto block text-fg placeholder:text-fg-3 text-base leading-6 ${
+        isHero ? 'w-full px-1 py-1 min-h-24' : 'px-1 py-3 min-h-12'
       }`}
       placeholder={placeholder}
       aria-label="Describe the PC you want"
@@ -93,9 +94,9 @@ export default function Composer({
 
   if (isHero) {
     return (
-      <form onSubmit={handleSubmit} className="card surface-float p-2 sm:p-3">
+      <form onSubmit={handleSubmit} className="composer card surface-float p-3 sm:p-4">
         {textarea}
-        <div className="flex items-center justify-between gap-2 pt-1">
+        <div className="flex items-center justify-between gap-2 pt-3 mt-1 border-t border-line">
           <ModifiersMenu onPick={addModifier} disabled={isBusy} />
           {sendOrStop || (
             <button type="submit" disabled={!canSubmit} className="btn btn-primary btn-touch px-5 gap-2">
@@ -117,7 +118,7 @@ export default function Composer({
               role="status"
               className="surface-float bg-surface border border-line text-fg px-5 py-2 rounded-full flex items-center gap-3 text-sm whitespace-nowrap"
             >
-              <Loader2 size={14} className="animate-spin text-accent" aria-hidden="true" />
+              <LogoMark size={22} animated className="shrink-0" />
               <span>{loadingMessage}</span>
             </div>
           </div>
@@ -139,7 +140,7 @@ export default function Composer({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="card surface-float rounded-2xl p-1.5 flex items-end gap-1">
+        <form onSubmit={handleSubmit} className="composer card surface-float rounded-2xl p-1.5 flex items-end gap-1">
           <ModifiersMenu onPick={addModifier} disabled={isBusy} />
           {textarea}
           {sendOrStop || (
