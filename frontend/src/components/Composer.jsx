@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Send, RefreshCw } from 'lucide-react';
+import { Send, RefreshCw, RotateCcw } from 'lucide-react';
 import ModifiersMenu from './ModifiersMenu';
 import { LogoMark } from './Logo';
 
@@ -125,7 +125,7 @@ export default function Composer({
         )}
 
         {isRefining && !isBusy && (
-          <div className="hidden sm:flex mb-2 items-center justify-between gap-2 px-1">
+          <div className="flex mb-2 items-center justify-between gap-2 px-1">
             <span className="chip bg-accent-soft border-accent-line text-accent">
               <RefreshCw size={12} aria-hidden="true" />
               Refining your build
@@ -133,8 +133,9 @@ export default function Composer({
             <button
               type="button"
               onClick={onReset}
-              className="text-xs text-fg-2 hover:text-bad px-2 min-h-9"
+              className="btn border-line-strong text-fg hover:border-bad-line hover:bg-bad-soft hover:text-bad"
             >
+              <RotateCcw size={14} aria-hidden="true" />
               Start over
             </button>
           </div>
