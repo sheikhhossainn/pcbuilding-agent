@@ -23,7 +23,7 @@ function Badge({ opt }) {
 // Retailer picker: a custom listbox so the open menu matches the app (a native
 // <select> popup can't be themed). Keyboard: arrows, Home/End, Enter, Esc.
 export default function StoreSelect({
-  id, value, onChange, customUrl, onCustomUrlChange, disabled = false, label = 'Store', className = '',
+  id, value, onChange, customUrl, onCustomUrlChange, disabled = false, label = 'Store', showLabel = true, className = '',
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -64,7 +64,7 @@ export default function StoreSelect({
   return (
     <div className={className}>
       <div className="flex items-center gap-2">
-        <label htmlFor={id} className="text-xs text-fg-3 shrink-0">{label}</label>
+        <label htmlFor={id} className={showLabel ? 'text-xs text-fg-3 shrink-0' : 'sr-only'}>{label}</label>
         <div ref={ref} className="relative flex-1 min-w-[10rem]">
           <button
             id={id}

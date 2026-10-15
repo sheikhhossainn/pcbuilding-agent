@@ -6,7 +6,7 @@ export default function Toast({ toast }) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed top-36 lg:top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none print:hidden"
+      className="fixed top-36 lg:top-24 inset-x-0 flex justify-center px-4 z-50 pointer-events-none print:hidden"
     >
       <AnimatePresence>
         {toast && (
@@ -17,7 +17,7 @@ export default function Toast({ toast }) {
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
           >
-            <div className="surface-float pointer-events-auto flex items-center gap-2.5 rounded-full bg-fg text-bg pl-4 pr-1 py-1 text-sm">
+            <div className={`surface-float pointer-events-auto flex items-center gap-2.5 rounded-full bg-fg text-bg pl-4 text-sm ${toast.action ? 'pr-1 py-1' : 'pr-5 py-2.5'}`}>
               <CheckCircle2 size={16} className="shrink-0" aria-hidden="true" />
               <span>{toast.message}</span>
               {toast.action && (
