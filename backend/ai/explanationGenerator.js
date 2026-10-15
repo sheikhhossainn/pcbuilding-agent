@@ -81,7 +81,10 @@ ${buildWarnings.length > 0 ? '\nIMPORTANT WARNINGS to mention naturally:\n' + bu
         temperature: AI.TEMPERATURE_EXPLANATION,
       }, { timeout: 30000 });
 
-      const explanation = response.choices[0].message.content;
+      const explanation = response.choices?.[0]?.message?.content;
+      if (!explanation || !explanation.trim()) {
+        return "Here is your build. The parts are checked for compatibility; see the notes below for anything to double-check.";
+      }
       console.log(`[AI] ✓ Explanation generated`);
       return explanation;
     } catch (error) {

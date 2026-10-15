@@ -27,6 +27,7 @@ import { API, RATE_LIMITING, AI } from './config/thresholds.js';
 
 // ──── Imports: Modules ────
 import { createIntentExtractor } from './ai/intentExtractor.js';
+import { INTENT_PROMPT } from './ai/intentPrompt.js';
 import { createExplanationGenerator } from './ai/explanationGenerator.js';
 import { createCompatibilityChecker } from './engine/compatibilityChecker.js';
 import { createBudgetAllocator } from './engine/budgetAllocator.js';
@@ -39,6 +40,7 @@ import { createAlternativesHandler, createValidateHandler } from './routes/parts
 import { sendError, ERROR_INTERNAL } from './utils/errors.js';
 import { initWorkers } from './utils/queueManager.js';
 import { executeBuild } from './engine/buildOrchestrator.js';
+import { applyIntentOverrides } from './engine/intentOverrides.js';
 
 // ──── Setup ────
 const __filename = fileURLToPath(import.meta.url);
@@ -59,6 +61,8 @@ app.use(express.json());
 
 // HTTP request logging
 app.use((req, res, next) => {
+  // Uptime monitors hit /health every few minutes; logging each one only buries real traffic.
+  if (req.path === '/health') return next();
   const line = `[http] ${req.method} ${req.url}`;
   console.log(line);
   process.stdout.write(`${line}\n`);
@@ -133,200 +137,6 @@ const getAIClient = () => {
   return createUniversalAIClient();
 };
 
-// ──── Intent Prompt ────
-const INTENT_PROMPT = `
-You are a PC building assistant for the Bangladesh market.
-Extract the user's requirements and return ONLY a valid JSON object, no explanation.
-
-{
-  "budget_bdt": number or null,
-  "component_strategy": {
-    "Monitor": { "weight": number, "required_keywords": ["keyword1"], "exclude_keywords": [], "structured_reqs": { "min_hz": 60 }, "required": boolean },
-    "Processor": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
-    "Motherboard": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
-    "RAM": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": { "min_gb": 16 }, "required": boolean },
-    "Graphics Card": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
-    "Storage": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": { "min_tb": 1 }, "required": boolean },
-    "PSU": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": { "min_wattage": 500 }, "required": boolean },
-    "Casing": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
-    "CPU Cooler": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
-    "Mouse": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
-    "Keyboard": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean },
-    "UPS": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean }
-  },
-  "no_gpu": boolean,
-  "preferred_site": "startech" | "techland" | "computermania" | null,
-  "preferred_cpu_brand": "amd" | "intel" | null,
-  "preferred_gpu_brand": "nvidia" | "amd" | null,
-  "use_case": "gaming" | "editing" | "office" | "general"
-}
-
-Rules:
-- component_strategy MUST include all 12 categories.
-- Weights dictate budget distribution. Total weight can be any number.
-- Keyword Constraints: Use only 1-2 standard retail terms. Never use subjective adjectives.
-- Structured First: For numerical requirements (min_gb, min_hz, min_tb, min_wattage), use structured_reqs.
-- Exclusions: Use exclude_keywords for "no RGB", "no combo", etc.
-- If user requests no dedicated GPU / APU build, set "no_gpu": true and set Graphics Card "required": false and "weight": 0. Otherwise set "no_gpu": false.
-- Default needs_monitor, needs_mouse, needs_keyboard to true unless user says they have them.
-- Return ONLY valid JSON.
-`;
-
-// ──── Helper Functions for Intent Overrides ────
-const parseBudgetFromMessage = (message) => {
-  if (!message) return null;
-  const text = message.toLowerCase();
-  const normalized = text.replace(/[,]/g, '');
-  
-  // Explicit budget pattern: "budget 80k" or "80k bdt"
-  const budgetMatch = normalized.match(/budget\s*.*?(\d+(?:\.\d+)?)\s*k\b/) || normalized.match(/(\d+(?:\.\d+)?)\s*k\s*(?:bdt|tk|taka)/);
-  if (budgetMatch) {
-    const value = Math.round(parseFloat(budgetMatch[1]) * 1000);
-    return Number.isFinite(value) ? value : null;
-  }
-
-  // Fallback: general K matching, but ignore common resolutions (4k, 5k, 8k)
-  const kMatches = [...normalized.matchAll(/(\d+(?:\.\d+)?)\s*k\b/g)];
-  for (const match of kMatches) {
-    const num = parseFloat(match[1]);
-    if (num !== 4 && num !== 5 && num !== 8) {
-      const value = Math.round(num * 1000);
-      if (value >= 15000) return value;
-    }
-  }
-
-  // Final fallback: raw 4-7 digit number ≥15000
-  const numberMatch = normalized.match(/\b(\d{4,7})\b/);
-  if (numberMatch) {
-    const value = parseInt(numberMatch[1], 10);
-    if (value >= 15000) return value;
-  }
-
-  return null;
-};
-
-const parseMonitorHz = (message) => {
-  if (!message) return null;
-  const match = message.toLowerCase().match(/(\d{2,3})\s*hz/);
-  if (!match) return null;
-  const value = parseInt(match[1], 10);
-  return Number.isFinite(value) ? value : null;
-};
-
-const addKeyword = (strat, cat, kw) => {
-  if (strat[cat]) {
-    strat[cat].required_keywords = strat[cat].required_keywords || [];
-    if (!strat[cat].required_keywords.some(k => k.toLowerCase() === kw.toLowerCase())) {
-      strat[cat].required_keywords.push(kw);
-    }
-  }
-};
-
-const addStructured = (strat, cat, key, val) => {
-  if (strat[cat]) {
-    strat[cat].structured_reqs = strat[cat].structured_reqs || {};
-    strat[cat].structured_reqs[key] = val;
-  }
-};
-
-const addExclude = (strat, cat, kw) => {
-  if (strat[cat]) {
-    strat[cat].exclude_keywords = strat[cat].exclude_keywords || [];
-    if (!strat[cat].exclude_keywords.some(k => k.toLowerCase() === kw.toLowerCase())) {
-      strat[cat].exclude_keywords.push(kw);
-    }
-  }
-};
-
-const applyIntentOverrideApplier = (intent, message) => {
-  // Parse budget from message (handles "400k", "400K BDT", etc.)
-  const parsedBudget = parseBudgetFromMessage(message);
-  if (parsedBudget) {
-    const currentBudget = Number.isFinite(intent.budget_bdt) ? intent.budget_bdt : 0;
-    const delta = Math.abs(parsedBudget - currentBudget);
-    if (!currentBudget || delta >= Math.max(2000, currentBudget * 0.05)) {
-      intent.budget_bdt = parsedBudget;
-    }
-  }
-
-  if (!intent.component_strategy) return;
-
-  const text = (message || '').toLowerCase();
-  const strat = intent.component_strategy;
-
-  // Apply DDR4/DDR5 preferences
-  const hasDdr5 = text.includes('ddr5');
-  const hasDdr4 = text.includes('ddr4');
-  if (hasDdr5 && !hasDdr4) {
-    addKeyword(strat, 'Motherboard', 'DDR5');
-    addKeyword(strat, 'RAM', 'DDR5');
-  }
-  if (hasDdr4 && !hasDdr5) {
-    addKeyword(strat, 'Motherboard', 'DDR4');
-    addKeyword(strat, 'RAM', 'DDR4');
-  }
-  if (hasDdr4 && hasDdr5) {
-    // Both mentioned (e.g., "DDR4 or DDR5"): pick based on budget
-    const currentBudget = intent.budget_bdt || 0;
-    if (currentBudget > 100000) {
-      addKeyword(strat, 'Motherboard', 'DDR5');
-      addKeyword(strat, 'RAM', 'DDR5');
-    } else {
-      addKeyword(strat, 'Motherboard', 'DDR4');
-      addKeyword(strat, 'RAM', 'DDR4');
-    }
-  }
-
-  // Apply RAM requirement from message (must be explicitly about RAM, not storage/VRAM)
-  const isStorageOrVram16 = /16gb\s*(?:ssd|hdd|storage|vram|graphics|gpu|card)/i.test(text);
-  if (text.includes('16gb') && !isStorageOrVram16) addStructured(strat, 'RAM', 'min_gb', 16);
-  if (text.includes('32gb') && (text.includes('ram') || text.includes('memory'))) addStructured(strat, 'RAM', 'min_gb', 32);
-  if (text.includes('64gb') && (text.includes('ram') || text.includes('memory'))) addStructured(strat, 'RAM', 'min_gb', 64);
-
-  // Apply monitor Hz requirement
-  const hz = parseMonitorHz(message);
-  if (hz) addStructured(strat, 'Monitor', 'min_hz', hz);
-
-  // Apply storage requirement
-  const storageTbMatch = text.match(/(\d+)\s*tb/);
-  if (storageTbMatch) {
-    addStructured(strat, 'Storage', 'min_tb', parseInt(storageTbMatch[1], 10));
-  }
-
-  // Apply storage requirement (GB fallback for "512gb SSD" etc.)
-  if (!storageTbMatch) {
-    const storageGbMatch = text.match(/(\d+)\s*gb\s*(?:ssd|hdd|nvme|storage|m\.2)/);
-    if (storageGbMatch) {
-      const gb = parseInt(storageGbMatch[1], 10);
-      if (gb >= 128) addStructured(strat, 'Storage', 'min_tb', gb / 1000);
-    }
-  }
-
-  // Apply GPU brand preference (also force required=true)
-  if (text.includes('nvidia') || text.includes('rtx') || text.includes('geforce')) {
-    intent.preferred_gpu_brand = 'nvidia';
-    if (strat['Graphics Card']) strat['Graphics Card'].required = true;
-  }
-  if (text.includes('radeon') || text.includes('rx ') || /\brx\s?\d{3,4}/i.test(text)) {
-    intent.preferred_gpu_brand = 'amd';
-    if (strat['Graphics Card']) strat['Graphics Card'].required = true;
-  }
-
-  // Handle "no GPU" request
-  if (text.includes('no gpu') || text.includes('without gpu') || text.includes('no graphics') || text.includes('apu build') || text.includes('integrated graphics only')) {
-    intent.no_gpu = true;
-    if (strat['Graphics Card']) {
-      strat['Graphics Card'].required = false;
-      strat['Graphics Card'].weight = 0;
-    }
-  }
-
-  // Prevent double peripherals (combo keyboard+mouse rejection)
-  if (!text.includes('combo')) {
-    addExclude(strat, 'Keyboard', 'combo');
-    addExclude(strat, 'Mouse', 'combo');
-  }
-};
 
 // ──── Initialize Modules with Dependency Injection ────
 console.log("[init] Initializing modular architecture...");
@@ -396,8 +206,11 @@ app.get('/health', async (req, res) => {
     }
   }
 
-  res.json({
-    status: 'ok',
+  // A configured database that fails its ping is a real outage: report 503 so monitors alert.
+  const healthy = !db || dbActive;
+
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     modules: {
       turso: dbActive,
@@ -438,7 +251,7 @@ const createDepsForKey = (keyConfig) => {
     partSelector,
     partRepository,
     specInference,
-    intentOverrideApplier: applyIntentOverrideApplier,
+    intentOverrideApplier: applyIntentOverrides,
   };
 };
 

@@ -5,6 +5,7 @@
  */
 
 import { PART_SELECTION } from '../config/thresholds.js';
+import { parseRamCapacityGb, parseStorageCapacityGb } from './capacity.js';
 
 const CATEGORY_MAPPING = {
   'Processor': 'cpu',
@@ -178,10 +179,11 @@ export const createPartRepository = ({ db, turso, supabase, specInference, cache
   const matchesStrategy = (part, strategy, category) => {
     if (!strategy) return true;
 
-    // Exclude keywords check
-    if (strategy.exclude_keywords && strategy.exclude_keywords.length > 0) {
+    // Exclude keywords check (the user's/LLM's, plus engine defaults for non-PC listings)
+    const excluded = [...(strategy.exclude_keywords || []), ...(strategy.default_excludes || [])];
+    if (excluded.length > 0) {
       const partName = part.name.toLowerCase();
-      for (const kw of strategy.exclude_keywords) {
+      for (const kw of excluded) {
         if (partName.includes(kw.toLowerCase())) return false;
       }
     }
@@ -210,20 +212,7 @@ export const createPartRepository = ({ db, turso, supabase, specInference, cache
       }
       
       if (category === 'RAM' && strategy.structured_reqs.min_gb) {
-        const gb = strategy.structured_reqs.min_gb;
-        const name = part.name.toLowerCase();
-        
-        let totalGb = 0;
-        const m = name.match(/(\d+)\s*(?:gb|g)\b/);
-        if (m) {
-          totalGb = parseInt(m[1]);
-          if (name.includes('2x') || name.includes('x2')) {
-            // If name is "2x8GB", total is already 16 in many cases, but let's be safe
-            if (totalGb <= gb / 2) totalGb *= 2;
-          }
-        }
-        
-        if (totalGb < gb) return false;
+        if (parseRamCapacityGb(part.name) < strategy.structured_reqs.min_gb) return false;
       }
       
       if (category === 'Storage' && strategy.structured_reqs.min_tb) {
@@ -244,17 +233,7 @@ export const createPartRepository = ({ db, turso, supabase, specInference, cache
   /**
    * Parse storage capacity in GB from product name
    */
-  const parseStorageCapacity = (name) => {
-    const n = name.toLowerCase();
-    const tbMatch = n.match(/(\d+(?:\.\d+)?)\s*tb/);
-    if (tbMatch) return parseFloat(tbMatch[1]) * 1000;
-    const gbMatch = n.match(/(\d+)\s*gb/);
-    if (gbMatch) {
-      const gb = parseInt(gbMatch[1]);
-      return gb >= 120 ? gb : 0;
-    }
-    return 0;
-  };
+  const parseStorageCapacity = parseStorageCapacityGb;
 
   /**
    * Parse monitor refresh rate in Hz

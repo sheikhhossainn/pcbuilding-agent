@@ -14,6 +14,25 @@ const EXPECTED_CATEGORIES = [
 
 const DEFAULT_STRATEGY = { weight: 1, required_keywords: [], exclude_keywords: [], structured_reqs: {}, required: false };
 
+// A PC cannot boot without these, whatever the model said.
+const ALWAYS_REQUIRED = ['Processor', 'Motherboard', 'RAM', 'PSU'];
+
+/**
+ * Parse the JSON object out of a model reply. Reasoning models sometimes wrap it in prose
+ * or code fences, so take the outermost {...} instead of trusting the whole string.
+ */
+export function parseIntentJson(text) {
+  const cleaned = String(text || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (firstError) {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start === -1 || end <= start) throw firstError;
+    return JSON.parse(cleaned.slice(start, end + 1));
+  }
+}
+
 /**
  * Validate and normalize intent JSON from LLM output.
  * Fills missing fields with safe defaults, coerces types, ensures all categories exist.
@@ -61,12 +80,17 @@ function validateAndNormalizeIntent(raw) {
       strat[cat] = { ...DEFAULT_STRATEGY };
     } else {
       const s = strat[cat];
-      s.weight = typeof s.weight === 'number' && Number.isFinite(s.weight) ? s.weight : 1;
+      s.weight = typeof s.weight === 'number' && Number.isFinite(s.weight) ? Math.min(10, Math.max(0, s.weight)) : 1;
       s.required = typeof s.required === 'boolean' ? s.required : false;
       s.required_keywords = Array.isArray(s.required_keywords) ? s.required_keywords.map(String) : [];
       s.exclude_keywords = Array.isArray(s.exclude_keywords) ? s.exclude_keywords.map(String) : [];
       s.structured_reqs = (s.structured_reqs && typeof s.structured_reqs === 'object') ? s.structured_reqs : {};
     }
+  }
+
+  for (const cat of ALWAYS_REQUIRED) {
+    strat[cat].required = true;
+    if (!strat[cat].weight) strat[cat].weight = 1;
   }
 
   // Normalize string fields
@@ -176,12 +200,7 @@ Rules:
         temperature: AI.TEMPERATURE_INTENT,
       }, { timeout: 30000 });
       
-      const intentText = response.choices[0].message.content
-        .replace(/```json/g, '')
-        .replace(/```/g, '')
-        .trim();
-      
-      const intent = validateAndNormalizeIntent(JSON.parse(intentText));
+      const intent = validateAndNormalizeIntent(parseIntentJson(response.choices[0].message.content));
       console.log(`[AI] ✓ Intent extracted via ${AI.MODEL_PRIMARY_INTENT}${isFollowUp ? ' (follow-up)' : ''}`);
       return intent;
     } catch (error) {
@@ -198,12 +217,7 @@ Rules:
         temperature: AI.TEMPERATURE_INTENT,
       }, { timeout: 30000 });
 
-      const intentText = fallbackResponse.choices[0].message.content
-        .replace(/```json/g, '')
-        .replace(/```/g, '')
-        .trim();
-
-      const intent = validateAndNormalizeIntent(JSON.parse(intentText));
+      const intent = validateAndNormalizeIntent(parseIntentJson(fallbackResponse.choices[0].message.content));
       console.log(`[AI] ✓ Intent extracted via ${AI.MODEL_FALLBACK_INTENT} (fallback${isFollowUp ? ', follow-up' : ''})`);
       return intent;
     } catch (fallbackError) {

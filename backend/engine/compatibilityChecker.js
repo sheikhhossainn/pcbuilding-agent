@@ -11,6 +11,19 @@ import { GPU_ADEQUACY, CPU_GPU_BALANCE } from '../config/thresholds.js';
  * @param {Object} deps.config - Configuration object (used for future customization)
  * @returns {Object} Compatibility checker interface
  */
+// Memory generations each socket can actually drive. LGA1700 boards ship in both DDR4 and DDR5
+// flavours, so the board (not the CPU) decides there.
+const SOCKET_RAM_TYPES = {
+  AM5: ['DDR5'],
+  AM4: ['DDR4'],
+  LGA1851: ['DDR5'],
+  LGA1700: ['DDR4', 'DDR5'],
+  LGA1200: ['DDR4'],
+  LGA1151: ['DDR4'],
+  LGA1155: ['DDR3'],
+  LGA1150: ['DDR3'],
+};
+
 export const createCompatibilityChecker = ({ config = {} } = {}) => {
   /**
    * Check if GPU is adequate for the specified use case
@@ -33,6 +46,13 @@ export const createCompatibilityChecker = ({ config = {} } = {}) => {
       if (/\bgt\s*\d/i.test(n) && !/gtx/i.test(n) && !/gts/i.test(n)) return false;
       // Reject Radeon HD 5000/6000 series (ancient)
       if (/\bhd\s*[56]\d{3}/i.test(n)) return false;
+      // Display-adapter class cards that are no better than a modern iGPU: RX 500-550, old
+      // R5/R7/R9, GTX 7xx, Arc A310, and workstation/pro lines (not tuned for games).
+      if (/\brx\s?5[0-5]0\b/i.test(n)) return false;
+      if (/\br[579]\s?[23]\d{2}\b/i.test(n)) return false;
+      if (/\bgtx\s?7\d{2}\b/i.test(n)) return false;
+      if (/\barc\s?a3[01]0\b/i.test(n)) return false;
+      if (/\b(?:workstation|quadro)\b|\barc\s+pro\b/i.test(n)) return false;
       // Require at least 4GB VRAM for editing
       if (useCase === 'editing') {
         const vramMatch = n.match(/(\d+)\s*gb/);
@@ -236,10 +256,31 @@ export const createCompatibilityChecker = ({ config = {} } = {}) => {
     if (mbRamType === 'UNKNOWN') mbRamType = null;
     if (ramType === 'UNKNOWN') ramType = null;
 
-    // If we can't determine types, allow it (fail-open)
-    if (!mbRamType || !ramType) return true;
-    
-    return mbRamType === ramType;
+    if (!ramType) return true; // can't tell what the kit is (fail-open)
+    if (mbRamType) return mbRamType === ramType;
+
+    // Board's memory type isn't in its name: fall back to what its socket can drive, so a
+    // DDR3 kit is never paired with a modern board just because the listing was terse.
+    const socket = motherboard?.specs?.socket && motherboard.specs.socket !== 'UNKNOWN'
+      ? motherboard.specs.socket
+      : inferSocketFromName(motherboard?.name || '');
+    const allowed = SOCKET_RAM_TYPES[socket];
+    return allowed ? allowed.includes(ramType) : true;
+  };
+
+  /**
+   * Can this CPU's socket run the given memory generation?
+   * @param {Object} cpu - CPU part
+   * @param {string} ramType - 'DDR3' | 'DDR4' | 'DDR5'
+   * @returns {boolean} True when supported or when the socket is unknown (fail-open)
+   */
+  const cpuSupportsRamType = (cpu, ramType) => {
+    if (!ramType) return true;
+    const socket = cpu?.specs?.socket && cpu.specs.socket !== 'UNKNOWN'
+      ? cpu.specs.socket
+      : inferSocketFromName(cpu?.name || '');
+    const allowed = SOCKET_RAM_TYPES[socket];
+    return allowed ? allowed.includes(ramType.toUpperCase()) : true;
   };
 
   /**
@@ -273,14 +314,14 @@ export const createCompatibilityChecker = ({ config = {} } = {}) => {
     // CPU-Motherboard socket
     if (build.Processor && build.Motherboard) {
       if (!isSocketCompatible(build.Processor, build.Motherboard)) {
-        issues.push(`Socket mismatch: CPU ${build.Processor.specs.socket} vs Motherboard ${build.Motherboard.specs.socket}`);
+        issues.push(`Socket mismatch: CPU ${build.Processor.specs?.socket} vs Motherboard ${build.Motherboard.specs?.socket}`);
       }
     }
 
     // RAM-Motherboard type
     if (build.RAM && build.Motherboard) {
-      if (!isRamTypeCompatible(build.RAM, build.Motherboard)) {
-        issues.push(`RAM type mismatch: ${build.RAM.specs.ram_type} vs Motherboard ${build.Motherboard.specs.ram_type}`);
+      if (!isRamTypeCompatible(build.Motherboard, build.RAM)) {
+        issues.push(`RAM type mismatch: ${build.RAM.specs?.ram_type} vs Motherboard ${build.Motherboard.specs?.ram_type}`);
       }
     }
 
@@ -312,6 +353,7 @@ export const createCompatibilityChecker = ({ config = {} } = {}) => {
     isCpuModern,
     isSocketCompatible,
     isRamTypeCompatible,
+    cpuSupportsRamType,
     validateBuild,
   };
 };
