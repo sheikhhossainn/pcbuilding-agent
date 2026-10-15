@@ -16,6 +16,10 @@ let depsFactory = null;
 
 // Purge completed/failed jobs after 10 min
 const JOB_TTL_MS = 10 * 60 * 1000;
+
+// More waiting builds than this means the workers are far behind; fail fast instead of
+// letting the queue (and every client's wait) grow without bound.
+export const MAX_PENDING_JOBS = 200;
 function purgeStaleJobs() {
   const now = Date.now();
   for (const [id, job] of jobs) {
@@ -32,6 +36,11 @@ setInterval(purgeStaleJobs, 2 * 60 * 1000).unref();
  * @returns {{ jobId: string, position: number, estimatedWait: number }}
  */
 export function createJob(payload) {
+  if (pending.length >= MAX_PENDING_JOBS) {
+    const error = new Error('The build queue is full. Please try again in a minute.');
+    error.code = 'QUEUE_FULL';
+    throw error;
+  }
   const jobId = randomUUID();
   jobs.set(jobId, {
     status: 'queued',
@@ -133,7 +142,8 @@ async function processNext(worker) {
   } catch (err) {
     console.error(`[queue] Worker ${worker.id} failed job ${jobId.slice(0, 8)}:`, err.message);
     job.status = 'failed';
-    job.error = err.userMessage || err.message || 'Build failed unexpectedly.';
+    // Only errors written for users reach the client; internals stay in the server log.
+    job.error = err.userMessage || 'Build failed unexpectedly. Please try again.';
   } finally {
     job.completedAt = Date.now();
     worker.busy = false;

@@ -5,18 +5,9 @@
  */
 
 import { CPU_TDP, GPU_TDP, SYSTEM_DRAW } from '../config/tdpHeuristics.js';
+import { parseRamCapacityGb, parseStorageCapacityGb } from '../utils/capacity.js';
 
-export function parseStorageCapacityGB(name) {
-  const n = name.toLowerCase();
-  const tbMatch = n.match(/(\d+(?:\.\d+)?)\s*tb/);
-  if (tbMatch) return parseFloat(tbMatch[1]) * 1000;
-  const gbMatch = n.match(/(\d+)\s*gb/);
-  if (gbMatch) {
-    const gb = parseInt(gbMatch[1]);
-    if (gb >= 120) return gb;
-  }
-  return 0;
-}
+export const parseStorageCapacityGB = parseStorageCapacityGb;
 
 /**
  * Collect post-build warnings for a selected build.
@@ -58,11 +49,7 @@ export function collectBuildWarnings({ build, intent }, deps) {
 
   const requestedGb = strategy['RAM']?.structured_reqs?.min_gb;
   if (requestedGb && build.RAM) {
-    const ramName = build.RAM.name.toLowerCase();
-    const half = requestedGb / 2;
-    const hasRequestedGB = ramName.includes(`${requestedGb}gb`) || ramName.includes(`${requestedGb} gb`)
-      || ramName.includes(`2x${half}gb`) || ramName.includes(`2x${half} gb`);
-    if (!hasRequestedGB) {
+    if (parseRamCapacityGb(build.RAM.name) < requestedGb) {
       warnings.push(`You requested ${requestedGb}GB RAM but the selected kit may differ. Check the product listing.`);
     }
   }
@@ -87,6 +74,10 @@ export function collectBuildWarnings({ build, intent }, deps) {
   if (build.RAM && build.Motherboard) {
     const moboRamType = build.Motherboard.specs?.ram_type;
     const selectedRamType = build.RAM.specs?.ram_type;
+
+    if (!moboRamType || moboRamType === 'UNKNOWN') {
+      warnings.push(`Couldn't confirm which memory type (DDR4 or DDR5) the motherboard uses. Check its product page before buying the RAM.`);
+    }
     if (moboRamType && moboRamType !== 'UNKNOWN' && selectedRamType && selectedRamType !== moboRamType) {
       warnings.push(`⚠ INCOMPATIBLE: RAM type (${selectedRamType}) does not match motherboard (${moboRamType}).`);
     }

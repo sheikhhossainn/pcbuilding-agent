@@ -24,6 +24,13 @@ export const createSpecInference = () => {
     if (!name) return specs;
     const n = name.toLowerCase();
 
+    // Board listings often abbreviate the memory type: "PRIME B760M-K D4", "B760M-PLUS D5".
+    const memoryToken = /(?:^|[\s\-_/])d([45])(?=$|[\s\-_/])/.exec(n);
+    const nameDdr = n.includes('ddr5') ? 'DDR5'
+      : n.includes('ddr4') ? 'DDR4'
+      : memoryToken ? `DDR${memoryToken[1]}`
+      : null;
+
     // ──── CPU SPECS ────
     if (category === 'Processor') {
       // Brand detection
@@ -118,7 +125,7 @@ export const createSpecInference = () => {
         specs.brand = 'intel';
       } else if (n.includes('lga1700') || n.includes('lga 1700') || n.includes('h610') || n.includes('b660') || n.includes('b760') || n.includes('h770') || n.includes('z690') || n.includes('z790')) {
         specs.socket = 'LGA1700';
-        specs.ram_type = (n.includes('ddr5')) ? 'DDR5' : (n.includes('ddr4') ? 'DDR4' : 'UNKNOWN');
+        specs.ram_type = nameDdr || 'UNKNOWN';
         specs.brand = 'intel';
       } else if (n.includes('lga1200') || n.includes('lga 1200') || n.includes('h410') || n.includes('b460') || n.includes('h510') || n.includes('b560') || n.includes('z490') || n.includes('z590')) {
         specs.socket = 'LGA1200';

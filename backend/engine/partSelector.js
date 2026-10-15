@@ -45,8 +45,13 @@ export const createPartSelector = ({ partRepository, compatChecker }) => {
    * @param {number} globalRemaining - Total budget remaining
    * @returns {Promise<Object|null>} Selected part with fallback
    */
-  const selectWithFallback = async (site, category, range, sortOrder, filterFn, globalRemaining) => {
-    let part = await selectPart(site, category, range, sortOrder, filterFn);
+  const selectWithFallback = async (site, category, range, sortOrder, filterFn, globalRemaining, { mandatory = false } = {}) => {
+    // Never pick a part the build can no longer afford: callers pass the money that is
+    // genuinely left (after reserving the floor price of parts still to come).
+    const hardCap = Number.isFinite(globalRemaining) ? Math.max(0, globalRemaining) : Infinity;
+    const cappedRange = range ? { ...range, max: Math.min(range.max, hardCap) } : range;
+
+    let part = await selectPart(site, category, cappedRange, sortOrder, filterFn);
 
     if (!part && range && range.max > 0) {
       // Calculate expansion factor (PSU can expand more than other parts)
@@ -54,27 +59,24 @@ export const createPartSelector = ({ partRepository, compatChecker }) => {
         ? PART_SELECTION.PRICE_EXPANSION_FACTOR_PSU
         : PART_SELECTION.PRICE_EXPANSION_FACTOR_DEFAULT;
 
-      const fallbackMax = Math.max(
-        range.max,
-        Math.min(Math.round(range.max * expansionFactor), globalRemaining || Infinity)
-      );
+      const fallbackMax = Math.min(Math.round(range.max * expansionFactor), hardCap);
 
       // Try: above allocated range
-      if (fallbackMax > range.max) {
-        const aboveRange = { min: range.max, max: fallbackMax };
+      if (fallbackMax > cappedRange.max) {
+        const aboveRange = { min: cappedRange.max, max: fallbackMax };
         part = await selectPart(site, category, aboveRange, 'price_asc', filterFn);
       }
 
       // Try: below allocated range if range had a positive minimum
       if (!part && range.min > 0) {
-        const belowRange = { min: 0, max: range.min };
+        const belowRange = { min: 0, max: Math.min(range.min, hardCap) };
         part = await selectPart(site, category, belowRange, 'price_desc', filterFn);
       }
 
-      // Try: survival range (any compatible part within entire expanded ceiling)
-      if (!part && fallbackMax > 0 && range.min > 0) {
-        const survivalRange = { min: 0, max: fallbackMax };
-        part = await selectPart(site, category, survivalRange, 'price_asc', filterFn);
+      // Last resort for parts a PC cannot boot without: the cheapest compatible part that the
+      // remaining budget can pay for, even if it is well above this category's planned share.
+      if (!part && mandatory && hardCap > 0) {
+        part = await selectPart(site, category, { min: 0, max: hardCap }, 'price_asc', filterFn);
       }
 
       // Don't fallback to different sites — respect user's site preference

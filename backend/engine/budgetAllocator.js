@@ -111,7 +111,10 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
    * @param {string} params.site - Retailer site
    * @returns {Promise<Object>} {minimums, totalFloor, error, updatedBlueprint}
    */
-  const MAX_EMERGENCY_DEPTH = 5;
+  // Optional extras the engine will drop (in this order) before refusing a budget outright.
+  // Never the parts a PC cannot boot without.
+  const OPTIONAL_DROP_ORDER = ['UPS', 'Monitor', 'Keyboard', 'Mouse'];
+  const MAX_EMERGENCY_DEPTH = 25;
 
   const calculateFloorPrices = async (params) => {
     const { budgetCeiling, site, _depth = 0 } = params;
@@ -164,13 +167,8 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
             if (!brandMatch) return false;
 
             const ramStrategy = blueprint.component_strategy['RAM'] || {};
-            const requestedRamType = (ramStrategy.required_keywords || []).find(k => k.toLowerCase() === 'ddr4' || k.toLowerCase() === 'ddr5');
-            if (requestedRamType) {
-              const reqType = requestedRamType.toUpperCase();
-              if (reqType === 'DDR5' && (p.specs?.socket === 'AM4' || p.specs?.socket === 'LGA1200' || p.specs?.socket === 'LGA1151')) return false;
-              if (reqType === 'DDR4' && p.specs?.socket === 'AM5') return false;
-              if (reqType === 'DDR3' && (p.specs?.socket === 'AM4' || p.specs?.socket === 'AM5' || p.specs?.socket === 'LGA1700')) return false;
-            }
+            const requestedRamType = (ramStrategy.required_keywords || []).find(k => /^ddr[345]$/i.test(k));
+            if (requestedRamType && !compatChecker.cpuSupportsRamType(p, requestedRamType)) return false;
             return true;
           }
           if (category === 'Motherboard') {
@@ -329,8 +327,42 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
       console.warn(`[Floor] Total floor (${totalFloor}) exceeds budget (${budgetCeiling}). Attempting emergency requirement reduction (depth ${_depth})...`);
       
       if (_depth >= MAX_EMERGENCY_DEPTH) {
-        error = `Minimum cost (${totalFloor} BDT) exceeds your budget (${budgetCeiling} BDT) even after reducing requirements. Please try increasing your budget or simplifying your request.`;
+        error = `The cheapest compatible build at this retailer costs about ${totalFloor.toLocaleString('en-BD')} BDT, above your budget of ${blueprint.budget_bdt?.toLocaleString('en-BD')} BDT. Try increasing your budget or simplifying your request.`;
       } else {
+        // Relax capacity the engine chose on the user's behalf (not something they asked for)
+        // before taking anything away from the build.
+        const defaults = blueprint._defaults || {};
+        const ramReq = blueprint.component_strategy.RAM?.structured_reqs;
+        if (defaults.RAM && ramReq?.min_gb > 4) {
+          ramReq.min_gb = ramReq.min_gb > 8 ? 8 : 4;
+          // Only the final size is worth telling the user about.
+          for (let i = degradations.length - 1; i >= 0; i--) {
+            if (/^Chose \d+GB of RAM/.test(degradations[i])) degradations.splice(i, 1);
+          }
+          degradations.push(`Chose ${ramReq.min_gb}GB of RAM to fit your budget. It can be upgraded later.`);
+          return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
+        }
+        const storageReq = blueprint.component_strategy.Storage?.structured_reqs;
+        if (defaults.Storage && storageReq?.min_tb) {
+          delete storageReq.min_tb;
+          defaults.Storage = false;
+          degradations.push('Chose the smallest sensible SSD to fit your budget.');
+          return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
+        }
+
+        // Cheapest relief first: drop optional extras (UPS, monitor, keyboard, mouse) rather
+        // than refusing a budget that comfortably covers the PC itself.
+        for (const cat of OPTIONAL_DROP_ORDER) {
+          const strat = blueprint.component_strategy[cat];
+          if (strat && strat.required && (minimums[cat] || 0) > 0) {
+            strat.required = false;
+            strat.weight = 0;
+            console.warn(`[Floor] Emergency: Dropping optional ${cat} to fit budget`);
+            degradations.push(`Left out the ${cat} to stay within your budget. You can add one back with a higher budget.`);
+            return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
+          }
+        }
+
         // Try to drop keywords from categories that have them, starting with most expensive
         const categoriesToReduce = categories.filter(c => minimums[c] !== undefined).sort((a, b) => minimums[b] - minimums[a]);
         
@@ -341,6 +373,14 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
           // 1. Try dropping required_keywords
           if (strat.required_keywords && strat.required_keywords.length > 0) {
             const dropped = strat.required_keywords.shift();
+            // The memory generation lives on both the board and the RAM: drop it from both,
+            // otherwise the build is left asking for a board/RAM pair that cannot exist.
+            if (/^ddr[345]$/i.test(dropped)) {
+              for (const other of ['Motherboard', 'RAM']) {
+                const o = blueprint.component_strategy[other];
+                if (o && o !== strat) o.required_keywords = (o.required_keywords || []).filter(k => k.toLowerCase() !== dropped.toLowerCase());
+              }
+            }
             console.warn(`[Floor] Emergency: Dropping required_keyword '${dropped}' from ${cat} to fit budget`);
             degradations.push(`Emergency: Dropped keyword "${dropped}" from ${cat} to fit budget ceiling.`);
             return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
@@ -348,12 +388,15 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
 
           // 2. Try dropping structured_reqs
           if (strat.structured_reqs && Object.keys(strat.structured_reqs).length > 0) {
-            const keys = Object.keys(strat.structured_reqs);
-            const dropped = keys[0];
-            delete strat.structured_reqs[dropped];
-            console.warn(`[Floor] Emergency: Dropping structured_req '${dropped}' from ${cat} to fit budget`);
-            degradations.push(`Emergency: Relaxed specification "${dropped}" on ${cat} to fit budget ceiling.`);
-            return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
+            // RAM never goes below 8GB: a "cheaper" 4GB kit is not a usable PC.
+            const keys = Object.keys(strat.structured_reqs).filter(k => !(cat === 'RAM' && k === 'min_gb' && strat.structured_reqs[k] <= 8));
+            if (keys.length > 0) {
+              const dropped = keys[0];
+              delete strat.structured_reqs[dropped];
+              console.warn(`[Floor] Emergency: Dropping structured_req '${dropped}' from ${cat} to fit budget`);
+              degradations.push(`Emergency: Relaxed specification "${dropped}" on ${cat} to fit budget ceiling.`);
+              return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
+            }
           }
 
           // 3. Try dropping exclude_keywords
@@ -365,7 +408,7 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
           }
         }
         
-        error = `Minimum cost (${totalFloor} BDT) exceeds your budget (${budgetCeiling} BDT). Please try increasing your budget or simplifying your request.`;
+        error = `The cheapest compatible build at this retailer costs about ${totalFloor.toLocaleString('en-BD')} BDT, above your budget of ${blueprint.budget_bdt?.toLocaleString('en-BD')} BDT. Try increasing your budget or simplifying your request.`;
       }
     }
 

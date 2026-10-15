@@ -21,6 +21,73 @@ class BuildError extends Error {
 }
 
 /**
+ * RAM is picked cheapest-first, so without a capacity floor the "cheapest compatible kit"
+ * can be a 4GB stick in a 70k build. Fill in a sane minimum when the request didn't set one.
+ */
+export function applyDefaultRamCapacity(intent) {
+  const ram = intent?.component_strategy?.RAM;
+  if (!ram || !ram.required) return;
+  ram.structured_reqs = ram.structured_reqs || {};
+  if (ram.structured_reqs.min_gb) return;
+  const budget = Number(intent.budget_bdt) || 0;
+  const gamingOrEditing = intent.use_case === 'gaming' || intent.use_case === 'editing';
+  const sixteen = gamingOrEditing ? budget >= 45000 : budget >= 70000;
+  // Under ~30k the whole PC is a compromise; 8GB would push it out of reach.
+  ram.structured_reqs.min_gb = sixteen ? 16 : budget >= 30000 ? 8 : 4;
+  intent._defaults = { ...(intent._defaults || {}), RAM: true };
+}
+
+/**
+ * Same idea for storage: below ~40k a 256GB drive is fair, above that 480-512GB is the floor.
+ */
+export function applyDefaultStorageCapacity(intent) {
+  const storage = intent?.component_strategy?.Storage;
+  if (!storage || !storage.required) return;
+  storage.structured_reqs = storage.structured_reqs || {};
+  if (storage.structured_reqs.min_tb) return;
+  const budget = Number(intent.budget_bdt) || 0;
+  if (budget >= 40000) {
+    storage.structured_reqs.min_tb = 0.5;
+    intent._defaults = { ...(intent._defaults || {}), Storage: true };
+  }
+}
+
+// Catalog listings that match a category but are not what a desk PC needs.
+const DEFAULT_EXCLUDES = {
+  Monitor: ['portable', 'monitor stand', 'monitor arm', 'desk mount', 'wall mount', 'single arm', 'dual arm', 'vesa', 'light bar'],
+  Keyboard: ['surface', 'cover', 'ipad', 'keycap', 'single hand', 'numpad', 'keypad'],
+  Mouse: ['mouse pad', 'mousepad', 'bungee', 'headset'],
+  RAM: [' ecc', 'rdimm', 'sodimm', 'so-dimm', 'laptop', 'notebook'],
+  Storage: ['portable', 'external', 'usb', 'enclosure'],
+  'Graphics Card': ['workstation', 'quadro'],
+  'CPU Cooler': ['upgrade kit', 'thermal paste', 'compound'],
+};
+
+export function applyDefaultExcludes(intent, message = '') {
+  const text = String(message).toLowerCase();
+  for (const [category, words] of Object.entries(DEFAULT_EXCLUDES)) {
+    const strat = intent?.component_strategy?.[category];
+    if (!strat) continue;
+    // Kept apart from exclude_keywords: those can be relaxed to find stock, these never are.
+    strat.default_excludes = words.filter((word) => !text.includes(word.trim())); // user asked for exactly that
+  }
+}
+
+// Leftover budget should not balloon a desk accessory: a 47k monitor in a 100k build is not
+// an upgrade the user wanted. Share of the stated budget (with a floor for small builds).
+const UPGRADE_CAPS = {
+  Monitor: { share: 0.2, floor: 12000 },
+  Keyboard: { share: 0.04, floor: 3500 },
+  Mouse: { share: 0.03, floor: 3000 },
+  UPS: { share: 0.08, floor: 6000 },
+};
+
+const upgradeCapFor = (category, budget) => {
+  const cap = UPGRADE_CAPS[category];
+  return cap ? Math.max(cap.floor, Math.round(budget * cap.share)) : Infinity;
+};
+
+/**
  * Execute a full PC build pipeline
  * @param {Object} payload - { message, site, customKeys }
  * @param {Object} deps - injected dependencies
@@ -60,7 +127,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
   // Extract intent from AI (pass previous context for follow-ups)
   let intent;
   try {
-    intent = await deps.intentExtractor.extract(message, prevIntent || null, prevBuild || null);
+    intent = payload._intent
+      ? JSON.parse(JSON.stringify(payload._intent))
+      : await deps.intentExtractor.extract(message, prevIntent || null, prevBuild || null);
   } catch (error) {
     console.error("[orchestrator] Intent extraction failed:", error);
     if (error.message.includes('Intent extraction failed')) {
@@ -85,12 +154,18 @@ export async function executeBuild(payload, deps, ctx = {}) {
     }
     if (category === 'Graphics Card') intent.no_gpu = true;
   }
+  applyDefaultRamCapacity(intent);
+  applyDefaultStorageCapacity(intent);
+  applyDefaultExcludes(intent, message);
   console.log("[orchestrator] Extracted intent:", JSON.stringify(intent, null, 2));
 
   // Validate budget
   if (!intent.budget_bdt || intent.budget_bdt < BUDGET.MIN_BUDGET_BDT) {
     throw new BuildError(400, `Budget too low. Minimum: ${BUDGET.MIN_BUDGET_BDT.toLocaleString('en-BD')} BDT.`, 'BUDGET_TOO_LOW');
   }
+
+  // Kept so a follow-up whose kept parts leave no room can be rebuilt without re-asking the LLM.
+  const intentSnapshot = JSON.parse(JSON.stringify(intent));
 
   // Determine site
   const VALID_SITES = API.VALID_SITES;
@@ -164,6 +239,15 @@ export async function executeBuild(payload, deps, ctx = {}) {
     }
   }
 
+  // Memory generation the user asked for (DDR3/4/5), from the RAM or motherboard keywords.
+  const requestedDdrOf = (strategyMap) => {
+    for (const cat of ['RAM', 'Motherboard']) {
+      const kw = (strategyMap?.[cat]?.required_keywords || []).find((k) => /^ddr[345]$/i.test(k));
+      if (kw) return kw.toUpperCase();
+    }
+    return null;
+  };
+
   // ─── Follow-up: Lock unchanged components from previous build ───
   const lockedCategories = new Set();
   if (prevBuild && prevIntent && prevIntent.component_strategy) {
@@ -201,6 +285,14 @@ export async function executeBuild(payload, deps, ctx = {}) {
       }
     }
 
+    // A new memory generation (e.g. "switch to DDR5") can't be served by a kept CPU whose
+    // socket only drives the old one, so the CPU has to be re-chosen with it.
+    const wantedDdr = requestedDdrOf(intent.component_strategy);
+    if (wantedDdr && initialLocks.has('Processor')
+      && !deps.compatibilityChecker.cpuSupportsRamType(prevBuild.Processor, wantedDdr)) {
+      initialLocks.delete('Processor');
+    }
+
     // Apply Compatibility Cascade
     if (!initialLocks.has('Processor')) {
       initialLocks.delete('Motherboard');
@@ -224,8 +316,27 @@ export async function executeBuild(payload, deps, ctx = {}) {
       }
     }
 
-    // Re-apply user overrides AFTER cascade stripping so explicit DDR requests survive
+    // PSU sizing follows the CPU and GPU: a kept PSU is only valid while both are kept.
+    if (!initialLocks.has('Processor') || (!initialLocks.has('Graphics Card') && !noGpu)) {
+      initialLocks.delete('PSU');
+    }
+
+    // Re-apply user overrides AFTER cascade stripping so explicit DDR requests survive.
+    // Spec requirements were already relaxed against real stock in the floor phase; keep
+    // those values so the override doesn't quietly re-raise them (e.g. a 32GB kit that
+    // doesn't exist for the kept platform).
+    const relaxedSpecs = Object.fromEntries(
+      Object.entries(intent.component_strategy || {}).map(([c, st]) => [c, { ...(st?.structured_reqs || {}) }])
+    );
     deps.intentOverrideApplier(intent, message);
+    for (const [c, specs] of Object.entries(relaxedSpecs)) {
+      if (!intent.component_strategy?.[c]) continue;
+      const current = intent.component_strategy[c].structured_reqs || {};
+      for (const [k, val] of Object.entries(specs)) {
+        if (typeof val === 'number' && typeof current[k] === 'number' && val < current[k]) current[k] = val;
+      }
+      intent.component_strategy[c].structured_reqs = current;
+    }
 
     // Verify inventory availability and apply final locks
     for (const category of initialLocks) {
@@ -274,8 +385,54 @@ export async function executeBuild(payload, deps, ctx = {}) {
   }
 
   const availableSockets = await deps.partRepository.getAvailableSockets(site);
+  const requestedDdr = requestedDdrOf(intent.component_strategy);
 
-  const createFilterFn = (category, strat, selectedParts) => {
+  // Cheapest memory per generation (that satisfies the RAM request) and, per socket, the
+  // cheapest board+memory pair. Used to keep CPU and board choices from making their
+  // matching RAM unaffordable (DDR5 kits cost roughly twice DDR4 here).
+  const ramFloorByType = {};
+  const platformFloorBySocket = {};
+  let platformKnown = false;
+
+  function ramFloorFor(board) {
+    const type = board.specs?.ram_type;
+    if (type && type !== 'UNKNOWN') return ramFloorByType[type];
+    // Board does not say: assume the cheapest generation its socket can drive.
+    const socketTypes = {
+      AM5: ['DDR5'], AM4: ['DDR4'], LGA1851: ['DDR5'], LGA1700: ['DDR4', 'DDR5'],
+      LGA1200: ['DDR4'], LGA1151: ['DDR4'], LGA1155: ['DDR3'], LGA1150: ['DDR3'],
+    }[board.specs?.socket] || [];
+    const prices = socketTypes.map((t) => ramFloorByType[t]).filter((p) => p !== undefined);
+    return prices.length ? Math.min(...prices) : undefined;
+  }
+
+  try {
+    const [boardList, ramList] = await Promise.all([
+      deps.partRepository.query(site, 'Motherboard', { min: 0, max: budgetCeiling }, 'price_asc'),
+      deps.partRepository.query(site, 'RAM', { min: 0, max: budgetCeiling }, 'price_asc'),
+    ]);
+    const ramStrategy = intent.component_strategy?.RAM;
+    const boardStrategy = intent.component_strategy?.Motherboard;
+    for (const ram of ramList || []) {
+      const t = ram.specs?.ram_type;
+      if (!t || t === 'UNKNOWN' || t in ramFloorByType) continue;
+      if (deps.partRepository.matchesStrategy(ram, ramStrategy, 'RAM')) ramFloorByType[t] = ram.price;
+    }
+    for (const board of boardList || []) {
+      const socket = board.specs?.socket;
+      if (!socket || socket === 'UNKNOWN' || socket === 'INTEGRATED') continue;
+      if (!deps.partRepository.matchesStrategy(board, boardStrategy, 'Motherboard')) continue;
+      const floor = ramFloorFor(board);
+      if (floor === undefined) continue;
+      const pair = board.price + floor;
+      if (!(socket in platformFloorBySocket) || pair < platformFloorBySocket[socket]) platformFloorBySocket[socket] = pair;
+    }
+    platformKnown = Object.keys(platformFloorBySocket).length > 0;
+  } catch (err) {
+    console.warn('[orchestrator] Platform floor lookup failed, skipping feasibility filter:', err.message);
+  }
+
+  const createFilterFn = (category, strat, selectedParts, { strict = false, feasible = false, platformCap = Infinity, shareCap = Infinity } = {}) => {
     return (part) => {
       if (!deps.partRepository.matchesStrategy(part, strat, category)) return false;
 
@@ -285,18 +442,24 @@ export async function executeBuild(payload, deps, ctx = {}) {
         if (intent.preferred_cpu_brand && part.specs?.brand !== intent.preferred_cpu_brand.toLowerCase()) return false;
         if (noGpu && !deps.compatibilityChecker.isCpuIntegratedGpuAdequate(part, intent.use_case)) return false;
         if (!deps.compatibilityChecker.isCpuModern(part, intent.budget_bdt)) return false;
-        const ramStrategy = intent.component_strategy?.['RAM'] || {};
-        const requestedRamType = (ramStrategy.required_keywords || []).find(k => k.toLowerCase() === 'ddr4' || k.toLowerCase() === 'ddr5');
-        if (requestedRamType) {
-          const reqType = requestedRamType.toUpperCase();
-          if (reqType === 'DDR5' && (part.specs?.socket === 'AM4' || part.specs?.socket === 'LGA1200' || part.specs?.socket === 'LGA1151')) return false;
-          if (reqType === 'DDR4' && part.specs?.socket === 'AM5') return false;
-          if (reqType === 'DDR3' && (part.specs?.socket === 'AM4' || part.specs?.socket === 'AM5' || part.specs?.socket === 'LGA1700')) return false;
+        if (requestedDdr && !deps.compatibilityChecker.cpuSupportsRamType(part, requestedDdr)) return false;
+        if (feasible && platformKnown) {
+          const platform = platformFloorBySocket[part.specs?.socket];
+          if (platform === undefined || part.price + platform > platformCap) return false;
+          if (platform > shareCap) return false;
         }
       }
 
       if (category === 'Motherboard') {
         if (part.specs?.socket === 'UNKNOWN' || part.specs?.socket === 'INTEGRATED') return false;
+        // First pass skips boards whose listing doesn't say DDR4 or DDR5: a wrong guess means
+        // a kit that physically doesn't fit. They're only used when nothing verified fits.
+        if (strict && (!part.specs?.ram_type || part.specs.ram_type === 'UNKNOWN')) return false;
+        if (feasible && platformKnown) {
+          const ramFloor = ramFloorFor(part);
+          if (ramFloor === undefined || part.price + ramFloor > platformCap) return false;
+          if (ramFloor > shareCap) return false;
+        }
         const targetBrand = intent.preferred_cpu_brand || selectedParts.Processor?.specs?.brand;
         if (targetBrand && part.specs?.brand && part.specs.brand !== 'unknown' && part.specs.brand !== targetBrand.toLowerCase()) {
           return false;
@@ -349,7 +512,20 @@ export async function executeBuild(payload, deps, ctx = {}) {
     'Storage', 'Casing', 'CPU Cooler', 'Monitor', 'Mouse', 'Keyboard', 'UPS'
   ];
 
-  for (const category of selectionOrder) {
+  // Money that must stay available for parts still to be picked: their cheapest-possible
+  // price from the floor phase. Without it an early part can spend what a later one needs.
+  const reserveAfter = (index, onlyMandatory) => {
+    let reserve = 0;
+    for (const later of selectionOrder.slice(index + 1)) {
+      if (lockedCategories.has(later) || selectedBuild[later]) continue;
+      if (onlyMandatory && !MANDATORY_CATEGORIES.has(later)) continue;
+      if (!onlyMandatory && !(intent.component_strategy?.[later]?.required)) continue;
+      reserve += floorResult.minimums?.[later] || 0;
+    }
+    return reserve;
+  };
+
+  for (const [index, category] of selectionOrder.entries()) {
     // Skip locked components from previous build (follow-up mode)
     if (lockedCategories.has(category)) continue;
 
@@ -357,19 +533,53 @@ export async function executeBuild(payload, deps, ctx = {}) {
     const strat = intent.component_strategy?.[category];
     let isRequired = strat && strat.required;
     let activeBudget = catBudget;
+    let forcedCooler = false;
 
     if (category === 'CPU Cooler' && !removed.has(category) && selectedBuild.Processor && (selectedBuild.Processor.specs?.tdp || 65) >= 105) {
       isRequired = true;
+      forcedCooler = true;
       if (activeBudget === 0) activeBudget = Math.min(5000, Math.max(0, budgetCeiling - totalCost));
     }
 
     if (!isRequired || activeBudget === 0) continue;
 
     const range = { min: 0, max: activeBudget };
+    // A hot CPU can't run without its cooler, so that one may dip into the extras' reserve too.
+    const mandatory = MANDATORY_CATEGORIES.has(category) || forcedCooler;
     try {
-      const filterFn = createFilterFn(category, strat, selectedBuild);
       const sortOrder = ['RAM', 'PSU'].includes(category) ? 'price_asc' : 'price_desc';
-      const part = await deps.partSelector.selectWithFallback(site, category, range, sortOrder, filterFn, globalRemaining);
+
+      // Tightest cap first (keep everything still to come affordable), then loosen. Only
+      // parts the PC cannot boot without may eat into the optional parts' reserve.
+      const caps = [globalRemaining - reserveAfter(index, false)];
+      if (mandatory) caps.push(globalRemaining - reserveAfter(index, true), globalRemaining);
+
+      // Passes, most careful first. CPU/board must leave their matching RAM and the rest of
+      // the build affordable; boards must say their memory type. Later passes relax that.
+      const ramIndex = selectionOrder.indexOf('RAM');
+      const platformCap = globalRemaining - reserveAfter(ramIndex, false);
+      // Keep the platform's memory in proportion: a board/CPU whose cheapest matching RAM is far
+      // over the RAM share (e.g. a DDR5 variant when DDR4 does the job) is tried last.
+      const ramShare = dynamicBudgets.RAM || 0;
+      const platformShare = ramShare + (dynamicBudgets.Motherboard || 0);
+      const memoryCap = ramShare > 0 ? ramShare * 1.3 : Infinity;
+      const pairCap = platformShare > 0 ? platformShare * 1.3 : Infinity;
+      const passes = category === 'Processor'
+        ? [{ feasible: true, shareCap: pairCap }, { feasible: true }, {}]
+        : category === 'Motherboard'
+          ? [{ strict: true, feasible: true, shareCap: memoryCap }, { strict: true, feasible: true }, { feasible: true }, {}]
+          : [{}];
+
+      let part = null;
+      for (const pass of passes) {
+        const filterFn = createFilterFn(category, strat, selectedBuild, { ...pass, platformCap });
+        for (const cap of caps) {
+          part = await deps.partSelector.selectWithFallback(site, category, range, sortOrder, filterFn, cap, { mandatory });
+          if (part) break;
+        }
+        if (part) break;
+      }
+
       if (part) {
         selectedBuild[category] = part;
         totalCost += part.price;
@@ -377,13 +587,31 @@ export async function executeBuild(payload, deps, ctx = {}) {
         console.log(`✓ ${category}: ${part.name} (${part.price} BDT)`);
       } else {
         console.warn(`⚠ ${category}: No component found within budget`);
-        // If it was explicitly requested in this follow-up/build, show a warning
-        if (intent.component_strategy?.[category]?.weight > 1 || (prevBuild && !lockedCategories.has(category))) {
-          buildWarnings.push(`Could not find a suitable **${category}** matching your request at ${site} within budget. It may be out of stock.`);
-        }
+        // Anything the build asked for and could not get is worth telling the user about.
+        buildWarnings.push(`Could not find a suitable **${category}** matching your request at ${site} within budget. It may be out of stock.`);
       }
     } catch (error) {
       console.error(`✗ ${category}: Selection error:`, error.message);
+    }
+  }
+
+  // Follow-up: parts kept from the previous build can leave too little money for the part
+  // the user actually changed (e.g. "2TB storage" with a locked 33k GPU). Rebuild fresh
+  // from the same intent rather than failing or silently dropping what they asked for.
+  if (lockedCategories.size > 0) {
+    const unmet = selectionOrder.filter((c) => !lockedCategories.has(c) && !selectedBuild[c]
+      && !removed.has(c) && intent.component_strategy?.[c]?.required && (dynamicBudgets[c] || 0) > 0);
+    if (unmet.length > 0) {
+      console.log(`[Follow-up] Kept parts leave no room for ${unmet.join(', ')}; rebuilding from scratch.`);
+      const rebuilt = await executeBuild(
+        { ...payload, previousBuild: null, previousIntent: null, _intent: intentSnapshot },
+        deps,
+        ctx
+      );
+      const note = `Your previous parts left too little room for ${unmet.join(', ')}, so this build was re-planned from scratch.`;
+      rebuilt.notes = [note, ...rebuilt.notes];
+      rebuilt.warnings = [note, ...rebuilt.warnings];
+      return rebuilt;
     }
   }
 
@@ -412,10 +640,16 @@ export async function executeBuild(payload, deps, ctx = {}) {
   const targetMinSpend = Math.max(0, budget - underspendTolerance);
   const maxRebalanceIterations = intent.budget_bdt >= 150000 ? 7 : 6;
   const failedUpgrades = new Set();
+  // Cheapest cooler on offer, so a CPU upgrade never strands the build without one.
+  const coolerFloor = floorResult.minimums?.['CPU Cooler']
+    || ((await deps.partRepository.query(site, 'CPU Cooler', { min: 0, max: budgetCeiling }, 'price_asc'))[0]?.price ?? 0);
 
   for (let i = 0; i < maxRebalanceIterations; i++) {
     if (totalCost >= targetMinSpend) break;
-    const remaining = budgetCeiling - totalCost;
+    // A hot CPU still waiting on its cooler: keep that money out of every upgrade.
+    const coolerOwed = !removed.has('CPU Cooler') && !selectedBuild['CPU Cooler'] && selectedBuild.Processor
+      && (selectedBuild.Processor.specs?.tdp || 65) >= 105 ? coolerFloor : 0;
+    const remaining = budgetCeiling - totalCost - coolerOwed;
     if (remaining < 300) break;
 
     const upgradeCandidates = ['Graphics Card', 'Monitor', 'Processor', 'Motherboard', 'RAM', 'Storage', 'PSU', 'CPU Cooler', 'Casing', 'Keyboard', 'Mouse', 'UPS'];
@@ -428,7 +662,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
       const strategy = intent.component_strategy[cat];
       if (!strategy || !strategy.required) return;
       const weight = strategy.weight || 1;
-      const expandedMax = Math.min(current.price + remaining, budgetCeiling);
+      const expandedMax = Math.min(current.price + remaining, budgetCeiling, upgradeCapFor(cat, budget));
       const gap = expandedMax - current.price;
       const score = gap * weight;
       if (gap > 200 && (!best || score > best.score)) {
@@ -461,14 +695,20 @@ export async function executeBuild(payload, deps, ctx = {}) {
         }
         if (best.category === 'Processor') {
           if (intent.preferred_cpu_brand && part.specs?.brand !== intent.preferred_cpu_brand.toLowerCase()) continue;
-          if (noGpu && !deps.compatibilityChecker.cpuHasIntegratedGraphics(part)) continue;
+          if (noGpu && !deps.compatibilityChecker.isCpuIntegratedGpuAdequate(part, intent.use_case)) continue;
+          if (!deps.compatibilityChecker.isCpuModern(part, intent.budget_bdt)) continue;
           if (selectedBuild.Motherboard && !deps.compatibilityChecker.isSocketCompatible(part, selectedBuild.Motherboard)) continue;
+          if (selectedBuild.RAM && !deps.compatibilityChecker.cpuSupportsRamType(part, selectedBuild.RAM.specs?.ram_type)) continue;
+          // A hot CPU needs a cooler: the upgrade must leave room to buy one.
+          if ((part.specs?.tdp || 65) >= 105 && !selectedBuild['CPU Cooler']
+            && part.price - currentPart.price + coolerFloor > remaining) continue;
           if (selectedBuild.PSU?.specs?.wattage) {
             const targetW = deps.budgetAllocator.computeTargetPsuWattage(part, selectedBuild["Graphics Card"], intent.use_case, intent.budget_bdt);
             if (selectedBuild.PSU.specs.wattage < targetW) continue;
           }
         }
         if (best.category === 'Motherboard') {
+          if (part.specs?.socket === 'UNKNOWN' || part.specs?.socket === 'INTEGRATED') continue;
           if (selectedBuild.Processor && !deps.compatibilityChecker.isSocketCompatible(selectedBuild.Processor, part)) continue;
           if (selectedBuild.RAM && !deps.compatibilityChecker.isRamTypeCompatible(part, selectedBuild.RAM)) continue;
         }
@@ -496,11 +736,32 @@ export async function executeBuild(payload, deps, ctx = {}) {
     }
   }
 
+  // A rebalance can swap in a hotter CPU after the cooler step already ran.
+  if (!removed.has('CPU Cooler') && !selectedBuild['CPU Cooler'] && selectedBuild.Processor
+    && (selectedBuild.Processor.specs?.tdp || 65) >= 105) {
+    const room = budgetCeiling - totalCost;
+    if (room > 0) {
+      const coolerStrategy = intent.component_strategy?.['CPU Cooler'];
+      const cooler = await deps.partSelector.selectWithFallback(
+        site, 'CPU Cooler', { min: 0, max: Math.min(5000, room) }, 'price_desc',
+        (p) => deps.partRepository.matchesStrategy(p, coolerStrategy, 'CPU Cooler'), room
+      );
+      if (cooler) {
+        selectedBuild['CPU Cooler'] = cooler;
+        totalCost += cooler.price;
+      }
+    }
+  }
+
   // ─── PHASE 5: Post-Build Validation ───
   console.log("\nPHASE 5: Post-Build Validation...");
-  
+
   if (totalCost > budgetCeiling) {
-    throw new Error(`This configuration costs ${totalCost.toLocaleString('en-BD')} BDT, which exceeds your budget ceiling of ${budgetCeiling.toLocaleString('en-BD')} BDT. Try adjusting your request, reducing requirements, or removing optional components like peripherals.`);
+    throw new BuildError(
+      400,
+      `This configuration costs ${totalCost.toLocaleString('en-BD')} BDT, which exceeds your budget ceiling of ${budgetCeiling.toLocaleString('en-BD')} BDT. Try adjusting your request, reducing requirements, or removing optional components like peripherals.`,
+      'BUDGET_EXCEEDED'
+    );
   }
 
   // Warnings produced while selecting parts (degradations, missing parts, retailer notes).
