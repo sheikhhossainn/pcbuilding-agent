@@ -16,7 +16,7 @@ AI-assisted PC configurator for the Bangladesh market: budget in BDT in, compati
 [![Node.js](https://img.shields.io/badge/Node.js-Express%205-339933?logo=nodedotjs&logoColor=white&style=flat-square)](https://expressjs.com)
 [![Turso](https://img.shields.io/badge/Turso-libSQL-4FF8D2?logo=turso&logoColor=black&style=flat-square)](https://turso.tech)
 [![Python](https://img.shields.io/badge/Scraper-Python-3776AB?logo=python&logoColor=white&style=flat-square)](https://www.python.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
 [Live demo](https://buildmypc-eight.vercel.app) ·
 [How it works](#how-it-works) ·
@@ -265,4 +265,4 @@ Issues and pull requests are welcome. Please run `npm test` and the stress harne
 
 ## License
 
-MIT. Created by [Sheikh Hossain](https://github.com/sheikhhossainn).
+MIT, see [LICENSE](LICENSE). Created by [Sheikh Hossain](https://github.com/sheikhhossainn).
