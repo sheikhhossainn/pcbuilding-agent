@@ -251,5 +251,5 @@ Phase 3 decisions taken (open questions from §9): swap endpoint included; share
 ## 9. Decisions needed from you
 1. **Light-first default** (recommended) vs keep dark default with light option.
 2. **Swap-part drawer** needs a new backend endpoint — include in this round, or ship UI with chat-only swap first?
-3. **Share link** — worth a DB table (Turso/Supabase), or hash-in-URL is enough for now?
+3. **Share link** — worth a DB table (Turso), or hash-in-URL is enough for now?
 4. **Bangla UI / ৳ Bangla numerals** — in scope?

@@ -27,7 +27,7 @@ export const CPU_GPU_BALANCE = {
 };
 
 export const PART_SELECTION = {
-  // Maximum parts to fetch per query from Supabase
+  // Maximum parts to fetch per query from the database
   QUERY_LIMIT: 5000,
 
   // Minimum storage capacity acceptable for user (GB)

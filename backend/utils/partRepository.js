@@ -25,13 +25,13 @@ const CATEGORY_MAPPING = {
 /**
  * Create part repository with dependency injection
  * @param {Object} deps - Dependencies
- * @param {Object} deps.supabase - Supabase client
+ * @param {Object} deps.db - libSQL (Turso) client
  * @param {Object} deps.specInference - Spec inference utilities
  * @param {Object} deps.cache - Cache manager
  * @returns {Object} Repository interface
  */
-export const createPartRepository = ({ db, turso, supabase, specInference, cache }) => {
-  const dbClient = db || turso;
+export const createPartRepository = ({ db, specInference, cache }) => {
+  const dbClient = db;
   /**
    * Query parts from database with filters
    * Uses cache to avoid redundant queries

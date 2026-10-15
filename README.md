@@ -1,292 +1,146 @@
-# BuildMyPC 🇧🇩
-### AI-Powered PC Configurator for the Bangladeshi Market
+<div align="center">
 
-BuildMyPC turns a plain-language prompt into a fully compatible, budget-optimised PC build using live inventory from Bangladesh's top retailers. No spreadsheets, no guesswork — just type what you need.
+<img src="frontend/public/icon-512.png" alt="BuildMyPC logo" width="112" height="112" />
 
-> *"Gaming PC, 80k budget, AMD, no GPU, include monitor"* → Full compatible build in seconds.
+# BuildMyPC
 
-**Live Demo**
-- Frontend (Vercel): `https://your-frontend-url.vercel.app`
-- Backend (Render): `https://your-backend-url.onrender.com`
+**Describe the PC you want. Get a compatible build with live Bangladeshi prices in seconds.**
 
----
+AI-assisted PC configurator for the Bangladesh market: budget in BDT in, compatibility-checked parts list out.
 
-## Table of Contents
+[![Live demo](https://img.shields.io/badge/live%20demo-buildmypc--eight.vercel.app-6366F1?style=for-the-badge)](https://buildmypc-eight.vercel.app)
 
-- [How It Works](#how-it-works)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Local Setup](#local-setup)
-- [Deployment](#deployment)
-- [Project Structure](#project-structure)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white&style=flat-square)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white&style=flat-square)](https://vite.dev)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white&style=flat-square)](https://tailwindcss.com)
+[![Node.js](https://img.shields.io/badge/Node.js-Express%205-339933?logo=nodedotjs&logoColor=white&style=flat-square)](https://expressjs.com)
+[![Turso](https://img.shields.io/badge/Turso-libSQL-4FF8D2?logo=turso&logoColor=black&style=flat-square)](https://turso.tech)
+[![Python](https://img.shields.io/badge/Scraper-Python-3776AB?logo=python&logoColor=white&style=flat-square)](https://www.python.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](#license)
 
----
+[Live demo](https://buildmypc-eight.vercel.app) ·
+[How it works](#how-it-works) ·
+[Quick start](#quick-start) ·
+[Configuration](#configuration) ·
+[Deployment](#deployment) ·
+[Testing](#testing)
 
-## How It Works
+<br />
 
-BuildMyPC uses a five-phase **Dynamic Blueprint Architecture** that replaces static budget ratios with AI-driven, per-build decision making.
+<img src="frontend/public/og-image.png" alt="BuildMyPC: AI PC builder for Bangladesh" width="760" />
 
-```
-User Prompt
-    │
-    ▼
-┌─────────────────────────────────────────┐
-│  Phase 0 — Intent Extraction            │
-│  Groq (GPT-OSS-120B / GPT-OSS-20B)      │
-│  Parses budget, use case, constraints   │
-│  Outputs a weighted component blueprint │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│  Phase 1 — Pre-Flight Floor Check       │
-│  Queries Supabase for the cheapest      │
-│  part that satisfies each constraint.   │
-│  Fails fast if budget is impossible.    │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│  Phase 2 — Weighted Budget Allocation   │
-│  Surplus above floor is distributed     │
-│  proportionally by AI-assigned weights. │
-│  (e.g. GPU gets more budget for gaming) │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│  Phase 3 — Component Selection          │
-│  Picks best part per category within    │
-│  each dynamic budget cap, enforcing:    │
-│  · CPU socket ↔ Motherboard match       │
-│  · DDR4 / DDR5 generation match         │
-│  · PSU wattage = (CPU+GPU TDP) × 1.4   │
-│  · iGPU enforcement for no-GPU builds   │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│  Phase 4 — Iterative Rebalancing        │
-│  Spends remaining surplus by upgrading  │
-│  components in AI weight order until    │
-│  budget is fully utilised.              │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-          Full Build + Warnings + Explanation
-```
-
-### System Architecture & Data Flow
-
-To support this dynamic build engine, the platform is divided into three key layers: **Data Ingestion (Scraping)**, **Intent & Planning (AI Engine)**, and **Build Orchestration**:
-
-```mermaid
-graph TD
-    %% Define Styles
-    classDef frontend fill:#3b82f6,stroke:#1d4ed8,stroke-width:2px,color:#fff,rx:10px,ry:10px;
-    classDef backend fill:#10b981,stroke:#047857,stroke-width:2px,color:#fff,rx:10px,ry:10px;
-    classDef database fill:#f59e0b,stroke:#b45309,stroke-width:2px,color:#fff,rx:10px,ry:10px;
-    classDef external fill:#8b5cf6,stroke:#6d28d9,stroke-width:2px,color:#fff,rx:10px,ry:10px;
-    classDef scraper fill:#ef4444,stroke:#b91c1c,stroke-width:2px,color:#fff,rx:10px,ry:10px;
-
-    %% Nodes
-    User(("👤 User (Browser)"))
-    
-    subgraph "Frontend Layer"
-        UI["React + Vite UI<br/>(Tailwind CSS)"]:::frontend
-    end
-    
-    subgraph "Backend Layer (Node.js)"
-        API["Express Server"]:::backend
-        Engine["Build Engine<br/>& Compatibility Logic"]:::backend
-    end
-    
-    subgraph "Data Layer"
-        DB[("Supabase<br/>(PostgreSQL)")]:::database
-    end
-    
-    subgraph "Scraping Layer (Python)"
-        Scraper["Sync Engine<br/>(DrissionPage)"]:::scraper
-        Sites["Retailers<br/>(StarTech, TechLand, etc.)"]:::external
-    end
-    
-    subgraph "AI Services"
-        Groq["Groq API<br/>(GPT-OSS Models)"]:::external
-    end
-
-    %% Connections
-    User -- "Natural Language Prompt" --> UI
-    UI -- "POST /api/build" --> API
-    
-    API -- "User Input" --> Engine
-    Engine -- "1. Extract Intent" --> Groq
-    Groq -. "JSON Requirements" .-> Engine
-    
-    Engine -- "2. Query Components" --> DB
-    DB -. "Available Inventory" .-> Engine
-    
-    Engine -- "3. Generate Explanation" --> Groq
-    Groq -. "Human Text" .-> Engine
-    
-    Engine -- "Final Build Output" --> API
-    API -- "JSON Response" --> UI
-    
-    Scraper -- "Fetch HTML (Bypass CF)" --> Sites
-    Scraper -- "Upsert Inventory" --> DB
-```
-
-#### 1. Data Ingestion (The Scraper Layer)
-*   **The Python Scraper** (`sync_db.py`) runs as a background process to harvest fresh component data.
-*   It crawls the inventory of major Bangladeshi retailers: **StarTech**, **TechLand**, and **ComputerMania**.
-*   Using **DrissionPage** (and native Chrome DevTools Protocol control), it easily bypasses strict anti-bot protections and Cloudflare JS challenges.
-*   Product technical specifications (socket types, DDR support, speeds, estimated TDP wattage) are programmatically inferred from titles and specs.
-*   The raw results are bulk-upserted directly to **Supabase (PostgreSQL)**, automatically refreshing stock levels and current prices.
-
-#### 2. User Intent & Planning (The AI Engine)
-*   When a user submits a search (e.g., *"I want a gaming setup for 75,000 taka, prefer AMD"*), the **React Frontend** POSTs the request to the **Node.js Express Backend**.
-*   The backend delegates the prompt to the primary **Groq API** (`openai/gpt-oss-120b`), which serves as our intent extractor.
-*   The LLM translates the query into a structured, typed JSON schema containing exact budget bounds, specific requested categories, and hard component requirements.
-
-#### 3. Build Orchestration & Response
-*   The backend's **Build Orchestrator** takes the structured JSON requirements and executes the planning and filtering cycles.
-*   It runs a series of strict **Compatibility Checkers** that query the Supabase database for real in-stock options:
-    *   *Socket matching*: CPU socket type strictly matched to motherboards.
-    *   *Generation matching*: DDR4 vs. DDR5 memory generation checked across CPU, board, and memory sticks.
-    *   *TDP constraints*: PSU wattage computed as CPU TDP + GPU TDP multiplied by safety headroom parameters.
-*   Once a fully verified build is constructed, a secondary Groq LLM (`openai/gpt-oss-20b`) generates a natural, simple, and neutral compatibility justification explaining exactly why these components are compatible and perfect for the user's budget.
-*   The payload (components, pricing, and justification text) is served back to the React UI for an interactive display.
+</div>
 
 ---
+
+## Why BuildMyPC
+
+Picking parts in Bangladesh means juggling retailer tabs, fluctuating prices and a spreadsheet of socket and memory rules. BuildMyPC takes a sentence like
+
+> *"Gaming PC under 80k, Intel CPU, Nvidia GPU, 144Hz monitor"*
+
+and returns a full build: every part is **in stock**, **compatible**, **priced from a real retailer catalog**, and linked to its product page. Ask a follow-up ("make it AMD", "add a UPS", "I already have a monitor") and only the affected parts change.
 
 ## Features
 
-**AI & Build Engine**
-- **Modular Dependency Injection Architecture** for clean, testable logic and rapid testing.
-- **Natural Language Prompts** in English or Bangla numerals (e.g., `৬৫ হাজার`, `65k BDT`).
-- **Conversational Follow-Up & Refinements**: Tweak builds iteratively (e.g., *"Upgrade RAM to 32GB"*) without starting over. The LLM compares previous vs. new intent, performing JSON diffing, and **locks unchanged categories** to preserve choices and save API resources.
-- **AI Resilience**: `RotatingGroqClient` automatically cycles through multiple API keys to prevent 429 rate limit downtime.
-- **Keyword Degradation Safety Net**: Relaxes constraints progressively if no exact match is found.
-- **Spec-Based Fallback**: Dynamically infers RAM type requirements based on motherboard socket (LGA1200/AM4) even when keywords are missing.
-- **CPU/GPU Bottleneck Prevention**: `isCpuBalanced` safety check.
-- **Integrated GPU Detection**: Handled automatically for builds without discrete graphics cards.
+| | |
+|---|---|
+| **Natural-language input** | English, Banglish and mixed messages: `65k`, `1.5 lakh`, `৳70,000`, `70 hajar taka`. |
+| **Compatibility by construction** | CPU socket ↔ motherboard, DDR4/DDR5 across CPU, board and RAM, PSU headroom from real TDP, cooler required for hot CPUs, integrated-graphics checks for no-GPU builds. |
+| **Budget-aware allocation** | AI-assigned weights split the budget per use case (a gaming build leans on the GPU, an editing build on cores and RAM). Leftover budget is spent by upgrading the highest-impact parts. |
+| **Honest refusals** | If no compatible build exists at a price, it says what the cheapest viable build costs instead of returning a broken one. |
+| **Iterative refinement** | Follow-ups lock unchanged categories, so one tweak never reshuffles the whole build. |
+| **Swap and validate** | Swap any part for alternatives, remove parts you own, and re-validate the whole build on every change. |
+| **Shareable builds** | A build encodes into the URL hash; nothing is stored server-side. |
+| **Live inventory** | Python scraper keeps StarTech, TechLand and ComputerMania prices and stock fresh in Turso. |
+| **Resilient backend** | Async job queue with position and ETA, per-IP rate limits, bounded queue, response caching with stampede protection. |
+| **SEO-ready** | Prerendered budget landing pages, structured data and a generated sitemap. |
 
-**Hardware Compatibility**
-- **Socket Chain validation**: CPU ↔ Motherboard ↔ RAM ↔ PSU.
-- **DDR4/DDR5 Generations**: Enforced across CPU, Motherboard, and RAM simultaneously.
-- **Ambiguity Rejection**: LGA1700 boards with ambiguous DDR type are rejected when a generation is specified.
-- **PSU Power Floor**: Scales dynamically with actual CPU and GPU TDP estimates (`(CPU_TDP + GPU_TDP) * 1.4 + overhead`).
+## How it works
 
-**Inventory & Data**
-- **Multi-Retailer ETL Scraper**: Fetches live parts from StarTech, TechLand, and ComputerMania.
-- **Bypassing Cloudflare**: Bypasses strict anti-bot protections on ComputerMania using `DrissionPage` (controls real browser via Chrome DevTools Protocol off-screen).
-- **Intelligent Caching**: 30-minute in-memory cache with active TTL eviction and stampede protection (deduplicates concurrent identical queries).
+```mermaid
+flowchart LR
+    U([User prompt]) --> UI[React + Vite UI]
+    UI -- POST /api/build --> API[Express API + job queue]
+    API --> I[1. Intent extraction<br/>LLM + deterministic overrides]
+    I --> F[2. Floor prices<br/>and feasibility]
+    F --> A[3. Weighted budget<br/>allocation]
+    A --> S[4. Compatible part<br/>selection]
+    S --> R[5. Rebalance<br/>spend the surplus]
+    R --> V[6. Validation<br/>and explanation]
+    V --> UI
+    DB[(Turso / libSQL<br/>components)] <--> F
+    DB <--> S
+    SC[Python scraper<br/>StarTech · TechLand · ComputerMania] --> DB
+```
 
-**Security, Reliability & Scale**
-- **High-Concurrency Queue System**: Supports 50-100+ concurrent builds on free tiers. Converts requests into async jobs instantly, polling every 3 seconds while showing queue position and estimated wait times.
-- **Traffic Safety Valve**: High-traffic warning banner active when queue > 3 prompts users to input their own Groq key, dynamically bypassing shared rate limits.
-- **Self-Healing Keep-Alive**: Active external cron (cron-job.org) pings `/health` every 10 min, keeping backend container active and pre-warming the Supabase PostgreSQL connection pool.
-- **Request Cancellation**: Aborting a build on the UI instantly stops the AI and database search process to conserve hosting resources.
-- **Rate limiting & Sanitisation**: 10 builds per 15 mins per IP, 2,000-character prompts, and API key length validation.
-- **Post-Build Validation**: Restored 6 warning types (storage capacity, PSU wattage, GPU adequacy, DDR sync, motherboard socket) displayed directly to the user.
+1. **Intent extraction**: an LLM turns the message into a typed blueprint (budget, use case, brand and DDR preferences, per-category weights). Deterministic overrides then re-parse the hard facts (budget, "no GPU", retailer) so a model slip cannot change your numbers.
+2. **Floor prices**: the cheapest compatible part per category sets the minimum viable cost. Impossible budgets fail fast with a clear message; tight ones shed optional extras (UPS, monitor, peripherals) before touching core parts.
+3. **Weighted allocation**: surplus above the floor is distributed by the blueprint's weights.
+4. **Selection**: parts are chosen in dependency order (CPU, motherboard, RAM, GPU, PSU, storage, case, cooler, peripherals), each constrained by what is already picked.
+5. **Rebalance**: remaining budget upgrades the parts that matter most for the use case, within caps.
+6. **Validation and explanation**: the finished build is re-checked end to end, and a short plain-language rationale is generated.
 
----
-
-## Tech Stack
+## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19, Vite 6, Tailwind CSS 4 |
-| Backend | Node.js, Express 4 |
-| Database | Supabase (PostgreSQL) |
-| AI — Primary | Groq (GPT-OSS-120B) |
-| AI — Fallback | Groq (GPT-OSS-20B) |
-| Scraper | Python, DrissionPage, BeautifulSoup4, Requests |
-| Frontend Hosting | Vercel |
-| Backend Hosting | Render (Singapore) |
+| Frontend | React 19, Vite, Tailwind CSS 4, Framer Motion |
+| Backend | Node.js, Express 5, `express-rate-limit` |
+| Database | [Turso](https://turso.tech) (libSQL / SQLite) |
+| AI | Any OpenAI-compatible endpoint: Ollama Cloud by default, Groq supported |
+| Scraper | Python, DrissionPage, Scrapling, FastAPI dashboard |
+| Hosting | Vercel (frontend), Render (backend) |
 
----
-
-## Local Setup
+## Quick start
 
 ### Prerequisites
 
-- Node.js 18+
-- Python 3.10+ (for the scraper)
-- A [Supabase](https://supabase.com) project with the `components` table created
-- A [Groq](https://console.groq.com) API key
+- Node.js 20+
+- Python 3.10+ (only to run the scraper)
+- A [Turso](https://turso.tech) database
+- An [Ollama Cloud](https://ollama.com/settings/keys) or [Groq](https://console.groq.com/keys) API key
 
----
-
-### 1. Clone & Install
+### 1. Install
 
 ```bash
 git clone https://github.com/sheikhhossainn/pcbuilding-agent.git
 cd pcbuilding-agent
 
-# Install backend dependencies
 npm install
-
-# Install frontend dependencies
-cd frontend && npm install && cd ..
+npm --prefix backend install
+npm --prefix frontend install
 ```
 
----
+### 2. Configure
 
-### 2. Configure Environment
-
-Create `backend/.env`:
+Create `backend/.env` (see [Configuration](#configuration)):
 
 ```env
-# AI Providers (At least one Groq key required for GPT-OSS-120B)
-GROQ_API_KEY=your_primary_groq_key
-GROQ_API_KEY_2=your_fallback_groq_key  # Optional: For automatic 429 rate-limit rotation
+TURSO_DATABASE_URL=libsql://your-database.turso.io
+TURSO_AUTH_TOKEN=your_turso_token
 
-# Supabase
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-# Optional
-PORT=3001
+AI_PROVIDER=ollama
+OLLAMA_API_KEY=your_ollama_key
 ```
 
-Create `scraper/.env` (same Supabase credentials):
-
-```env
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-```
-
----
-
-### 3. Populate the Database
-
-The app needs product data before it can build anything. Run the scraper once to seed Supabase:
+### 3. Create the schema and load parts
 
 ```bash
+# create the components table and indexes in Turso
+node scripts/apply_schema.js
+
+# scrape retailers into the database (first run takes a while)
 cd scraper
-
-# Create and activate virtual environment
 python -m venv venv
-
-# Windows
-./venv/Scripts/activate
-# macOS / Linux
-source venv/bin/activate
-
-# Install dependencies
+./venv/Scripts/activate        # macOS / Linux: source venv/bin/activate
 pip install -r requirements.txt
-
-# Run the ETL sync (scrapes StarTech → TechLand → ComputerMania)
 python sync_db.py
 ```
 
-The scraper is fault-tolerant — it checkpoints after each category and resumes from the exact failure point on restart. A full sync takes roughly 15–30 minutes depending on inventory size.
+The scraper checkpoints after every category and resumes from the exact point of failure.
 
----
-
-### 4. Run Locally
-
-From the project root:
+### 4. Run
 
 ```bash
 npm run start:all
@@ -297,98 +151,118 @@ npm run start:all
 | Frontend | http://localhost:5173 |
 | Backend API | http://localhost:3001 |
 
----
+## Configuration
+
+### Backend (`backend/.env`)
+
+| Variable | Required | Description |
+|---|:---:|---|
+| `TURSO_DATABASE_URL` | yes | libSQL URL of your Turso database |
+| `TURSO_AUTH_TOKEN` | yes | Turso auth token |
+| `AI_PROVIDER` | no | `ollama` (default) or `groq` |
+| `OLLAMA_API_KEY` | with `ollama` | Ollama Cloud API key |
+| `GROQ_API_KEY`, `GROQ_API_KEY_2` | with `groq` | Groq keys; the second is used for rate-limit rotation |
+| `AI_BASE_URL` | no | Override the OpenAI-compatible base URL (default `https://ollama.com/v1`) |
+| `AI_PRIMARY_MODEL` | no | Model for intent extraction (default `gpt-oss:120b`) |
+| `AI_FALLBACK_MODEL` | no | Used if the primary call fails |
+| `AI_EXPLANATION_MODEL` | no | Model for the build rationale |
+| `PORT` | no | HTTP port (default `3001`) |
+
+### Frontend (`frontend/.env`)
+
+| Variable | Description |
+|---|---|
+| `VITE_API_BASE_URL` | Backend origin, e.g. `https://your-api.onrender.com`. Empty in dev (Vite proxies `/api`). |
+
+### Choosing a model
+
+Intent extraction is the only model-sensitive step. `backend/tests/eval/intentEval.mjs` scores a model on 38 realistic messages (budget, use case, brands, DDR, RAM, storage, follow-ups):
+
+```bash
+cd backend
+AI_PRIMARY_MODEL=gemma4:31b AI_FALLBACK_MODEL=gemma4:31b \
+  node tests/eval/intentEval.mjs --out results/gemma4.json
+```
+
+In our runs `gemma4:31b` matched `gpt-oss:120b` at 100% accuracy with roughly half the latency.
+
+## API
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/build` | Submit a prompt; returns a `jobId` |
+| `GET` | `/api/build/:jobId` | Poll status, queue position and the finished build |
+| `POST` | `/api/build/validate` | Re-validate an edited build (no AI call) |
+| `POST` | `/api/parts/alternatives` | Compatible swaps for one category |
+| `GET` | `/health` | Liveness + database check (`503` if the database is down) |
 
 ## Deployment
 
-### Backend → Render
-
-1. Create a **New Web Service** and connect your GitHub repository.
-2. Set the following:
+### Backend on Render
 
 | Field | Value |
 |---|---|
-| Root Directory | *(leave blank)* |
+| Root Directory | `backend` |
 | Build Command | `npm install` |
-| Start Command | `npm run start:backend` |
-| Region | Singapore (closest to BD) |
+| Start Command | `npm start` |
 
-3. Add all keys from `backend/.env` under **Environment Variables**.
-4. Render automatically injects `PORT` — no need to set it manually.
+Add the variables from [Configuration](#configuration). Render injects `PORT`. Point an uptime monitor at `/health` (every 5 to 10 minutes) to keep a free instance warm.
 
----
-
-### Frontend → Vercel
-
-1. Create a **New Project** and connect your GitHub repository.
-2. Set the following:
+### Frontend on Vercel
 
 | Field | Value |
 |---|---|
 | Root Directory | `frontend` |
 | Framework Preset | Vite |
-| Build Command | `npm run build` |
+| Build Command | `npm run build` (runs `vite build` then the prerender step) |
+| Env var | `VITE_API_BASE_URL` = your Render URL |
 
-3. Add this environment variable:
+The build writes one static HTML file per landing page plus `sitemap.xml`. After deploying, submit the sitemap in Google Search Console.
 
-| Key | Value |
-|---|---|
-| `VITE_BACKEND_URL` | Your Render service URL, e.g. `https://buildmypc-api.onrender.com` |
+## Testing
 
----
-
-## Project Structure
-
+```bash
+npm test                              # backend + frontend unit tests
+npm --prefix backend run stress       # randomized engine stress harness
+npm --prefix backend run stress -- --quick
 ```
-pcbuilding-agent/
-├── frontend/
-│   └── src/
-│       ├── components/
-│       │   └── Builder.jsx        # Main UI — prompt input, build results
-│       ├── App.jsx
-│       └── vite.config.js         # Proxies /api/* → :3001 in dev
-│
+
+The stress harness drives the real engine against a catalog snapshot and asserts invariants: socket and DDR compatibility, PSU headroom, cooler for hot CPUs, brand and DDR preferences honoured, total within the budget ceiling, and no crashes. See [`backend/tests/stress/README.md`](backend/tests/stress/README.md).
+
+## Project structure
+
+```text
+.
+├── frontend/                 React + Vite app
+│   ├── src/components/       Builder, Hero, part rows, swap drawer, settings, SEO content
+│   ├── src/seo/              Landing page copy, FAQ and structured data
+│   ├── scripts/prerender.mjs Static HTML + sitemap generation
+│   └── public/               Icons, social card, robots.txt
 ├── backend/
-│   ├── ai/                        # LLM Intent Extraction & Explanation (Rotating API keys)
-│   ├── engine/                    # Budget Allocation, Part Selection, Compatibility, & buildOrchestrator.js
-│   ├── config/                    # Global constraints, tdp heuristics, & budgets
-│   ├── utils/                     # Supabase Repos, cacheManager.js, queueManager.js & specInference.js
-│   ├── routes/                    # API route handlers (POST submit, GET status poll)
-│   ├── server.js                  # Express setup and dependency injection bootstrap
-│   └── .env                       # API keys (not committed)
-│
-├── scraper/
-│   ├── sync_db.py                 # ETL daemon — scrapes and upserts to Supabase
-│   ├── sync_state.json            # Checkpoint file for fault recovery
-│   └── scrapers/
-│       ├── startech.py
-│       ├── techland.py
-│       ├── computermania.py
-│       └── generic.py
-│
-└── package.json                   # Root — runs frontend + backend concurrently
+│   ├── ai/                   Intent prompt, extractor, explanation generator
+│   ├── engine/               Orchestrator, budget allocator, part selector, validators
+│   ├── routes/               Build, status, validate and alternatives handlers
+│   ├── utils/                Part repository, cache, queue, spec inference, capacity parsing
+│   └── tests/                Unit, property, stress and LLM eval suites
+├── scraper/                  Python ETL for StarTech, TechLand and ComputerMania
+├── scripts/apply_schema.js   Create the Turso schema
+└── turso_schema.sql
 ```
 
----
+## Supported retailers
 
-## Supported Retailers & Categories
+| Retailer | Status |
+|---|---|
+| StarTech BD | Supported |
+| TechLand BD | Supported |
+| ComputerMania BD | Supported |
 
-| Category | StarTech | TechLand | ComputerMania |
-|---|:---:|:---:|:---:|
-| CPU | ✅ | ✅ | ✅ |
-| Motherboard | ✅ | ✅ | ✅ |
-| RAM | ✅ | ✅ | ✅ |
-| Storage (SSD) | ✅ | ✅ | ✅ |
-| GPU | ✅ | ✅ | ✅ |
-| PSU | ✅ | ✅ | ✅ |
-| Casing | ✅ | ✅ | ✅ |
-| CPU Cooler | ✅ | ✅ | ✅ |
-| Monitor | ✅ | ✅ | ✅ |
-| Mouse | ✅ | ✅ | ✅ |
-| Keyboard | ✅ | ✅ | ✅ |
+All eleven categories are covered: CPU, motherboard, RAM, storage, GPU, PSU, casing, CPU cooler, monitor, mouse and keyboard, plus UPS.
 
----
+## Contributing
+
+Issues and pull requests are welcome. Please run `npm test` and the stress harness before opening a PR, and keep changes to the recommendation engine covered by a test or a stress scenario.
 
 ## License
 
-MIT License — Created by [Sheikh Hossain](https://github.com/sheikhhossainn)
+MIT. Created by [Sheikh Hossain](https://github.com/sheikhhossainn).
