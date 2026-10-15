@@ -44,7 +44,8 @@ export const createSpecInference = () => {
         if (intelGenMatch) {
           specs.gen = parseInt(intelGenMatch[1]);
         } else if (n.includes('ryzen')) {
-          const ryzenGenMatch = n.match(/ryzen\s*\d+\s*(\d)\d{3}/);
+          // Allow the PRO tier between series and model: "Ryzen 5 PRO 5650GE"
+          const ryzenGenMatch = n.match(/ryzen\s*\d+\s*(?:pro\s*)?(\d)\d{3}/);
           if (ryzenGenMatch) specs.gen = parseInt(ryzenGenMatch[1]) * 1000;
         } else if (n.match(/(?:pentium|celeron)/)) {
           // Pentium/Celeron G-series socket mapping by model number
@@ -61,7 +62,7 @@ export const createSpecInference = () => {
       }
 
       // Socket detection
-      if (n.includes('am5') || n.includes('b650') || n.includes('x670') || n.includes('a620') || n.includes('x870') || (specs.gen >= 7000 && n.includes('ryzen'))) {
+      if (n.includes('am5') || n.includes('b650') || n.includes('x670') || n.includes('a620') || n.includes('x870') || n.includes('b840') || n.includes('b850') || (specs.gen >= 7000 && n.includes('ryzen'))) {
         specs.socket = 'AM5';
         specs.ram_type = 'DDR5';
       } else if (n.includes('am4') || n.includes('b450') || n.includes('b550') || n.includes('x570') || n.includes('a320') || n.includes('a520') || (specs.gen >= 1000 && specs.gen < 7000 && n.includes('ryzen'))) {
@@ -103,7 +104,7 @@ export const createSpecInference = () => {
     // ──── MOTHERBOARD SPECS ────
     if (category === 'Motherboard') {
       // Socket and Brand detection
-      if (n.includes('am5') || n.includes('b650') || n.includes('x670') || n.includes('a620') || n.includes('x870') || n.includes('b850')) {
+      if (n.includes('am5') || n.includes('b650') || n.includes('x670') || n.includes('a620') || n.includes('x870') || n.includes('b840') || n.includes('b850')) {
         specs.socket = 'AM5';
         specs.ram_type = 'DDR5';
         specs.brand = 'amd';
@@ -115,7 +116,7 @@ export const createSpecInference = () => {
         specs.socket = 'LGA1851';
         specs.ram_type = 'DDR5';
         specs.brand = 'intel';
-      } else if (n.includes('lga1700') || n.includes('lga 1700') || n.includes('h610') || n.includes('b660') || n.includes('b760') || n.includes('z690') || n.includes('z790')) {
+      } else if (n.includes('lga1700') || n.includes('lga 1700') || n.includes('h610') || n.includes('b660') || n.includes('b760') || n.includes('h770') || n.includes('z690') || n.includes('z790')) {
         specs.socket = 'LGA1700';
         specs.ram_type = (n.includes('ddr5')) ? 'DDR5' : (n.includes('ddr4') ? 'DDR4' : 'UNKNOWN');
         specs.brand = 'intel';
@@ -138,6 +139,21 @@ export const createSpecInference = () => {
       } else if (n.includes('lga2011') || n.includes('x79') || n.includes('x99')) {
         specs.socket = 'LGA2011';
         specs.brand = 'intel';
+      } else if (n.includes('lga2066') || n.includes('lga 2066') || n.includes('x299')) {
+        specs.socket = 'LGA2066';
+        specs.brand = 'intel';
+      } else if (n.includes('lga775') || n.includes('lga 775') || n.includes('g41')) {
+        specs.socket = 'LGA775';
+        specs.ram_type = 'DDR3';
+        specs.brand = 'intel';
+      } else if (n.includes('str5') || n.includes('trx50') || n.includes('wrx90')) {
+        // AMD Threadripper workstation boards: recognised so they are not "unknown",
+        // but no mainstream CPU in the catalog shares these sockets.
+        specs.socket = 'sTR5';
+        specs.brand = 'amd';
+      } else if (n.includes('strx4') || n.includes('trx40')) {
+        specs.socket = 'sTRX4';
+        specs.brand = 'amd';
       } else if (n.includes('n100') || n.includes('j4105') || n.includes('j4125') || n.includes('n5105')) {
         specs.socket = 'INTEGRATED';
         specs.brand = 'intel';
@@ -152,16 +168,29 @@ export const createSpecInference = () => {
       if (n.includes('ddr5')) specs.ram_type = 'DDR5';
       else if (n.includes('ddr4')) specs.ram_type = 'DDR4';
       else if (n.includes('ddr3')) specs.ram_type = 'DDR3';
-      else specs.ram_type = 'UNKNOWN';
+      else {
+        // Many listings omit "DDR4". Fall back to what the part number or speed implies:
+        // G.Skill codes (F4-/F5-), and speed bands (DDR3 tops out at 2133, DDR5 starts at 4800).
+        const codeMatch = n.match(/\bf([45])-\d{4}/);
+        const speedMatch = n.match(/(\d{4})\s*mhz/);
+        const speed = speedMatch ? parseInt(speedMatch[1], 10) : null;
+
+        if (codeMatch) specs.ram_type = codeMatch[1] === '5' ? 'DDR5' : 'DDR4';
+        else if (speed !== null && speed >= 4800) specs.ram_type = 'DDR5';
+        else if (speed !== null && speed > 2133) specs.ram_type = 'DDR4';
+        else specs.ram_type = 'UNKNOWN';
+      }
     }
 
     // ──── GPU SPECS ────
     if (category === 'Graphics Card') {
       // Brand detection
-      if (n.includes('nvidia') || n.includes('geforce') || n.includes('rtx') || n.includes('gtx')) {
+      if (n.includes('nvidia') || n.includes('geforce') || n.includes('rtx') || n.includes('gtx') || /\bgt\s?\d{3,4}\b/.test(n)) {
         specs.gpu_brand = 'nvidia';
       } else if (n.includes('radeon') || n.includes('rx ') || /\brx\s?\d{3,4}/i.test(n)) {
         specs.gpu_brand = 'amd';
+      } else if (/\barc\b/.test(n) && (n.includes('intel') || /\b[ab]\d{3}\b/.test(n))) {
+        specs.gpu_brand = 'intel';
       } else {
         specs.gpu_brand = 'unknown';
       }

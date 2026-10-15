@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createValidateHandler, createAlternativesHandler, sanitizeBuild, sanitizeIntent,
 } from '../routes/parts.js';
+import { sanitizeRemovedCategories } from '../routes/build.js';
 import { specInference, compatibilityChecker, budgetAllocator, fakeRes, part } from './helpers.js';
 
 const handlerDeps = { specInference, compatibilityChecker, budgetAllocator };
@@ -27,6 +28,15 @@ test('sanitizeBuild replaces client-supplied specs with server inference', () =>
 
   assert.equal(build.Processor.specs.socket, 'AM4');
   assert.notEqual(build.Processor.specs.tdp, 1);
+});
+
+test('sanitizeRemovedCategories keeps only known, unique category names', () => {
+  assert.deepEqual(
+    sanitizeRemovedCategories(['Monitor', 'Monitor', 'Toaster', 42, null, 'Graphics Card']),
+    ['Monitor', 'Graphics Card']
+  );
+  assert.deepEqual(sanitizeRemovedCategories('Monitor'), []);
+  assert.deepEqual(sanitizeRemovedCategories(undefined), []);
 });
 
 test('sanitizeIntent keeps only known fields and falls back to safe defaults', () => {

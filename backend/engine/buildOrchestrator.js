@@ -8,6 +8,9 @@ import { BUDGET } from '../config/budget.js';
 import { API } from '../config/thresholds.js';
 import { collectBuildWarnings, estimatePower } from './buildValidator.js';
 
+// A build cannot be assembled without these, so "remove" never applies to them.
+const MANDATORY_CATEGORIES = new Set(['Processor', 'Motherboard', 'RAM', 'PSU']);
+
 class BuildError extends Error {
   constructor(status, message, code) {
     super(message);
@@ -26,7 +29,21 @@ class BuildError extends Error {
  * @returns {Object} { build, total, budget, explanation, intent, warnings, notes, power }
  */
 export async function executeBuild(payload, deps, ctx = {}) {
-  const { message, site: bodySite, previousIntent: prevIntent, previousBuild: prevBuild } = payload;
+  const {
+    message, site: bodySite, previousIntent: prevIntent, previousBuild: prevBuild,
+    removedCategories = [],
+  } = payload;
+
+  // Parts that arrive without specs (a shared link, or a session saved before specs were
+  // returned) still need them: locked parts take part in compatibility checks below.
+  if (prevBuild && deps.specInference) {
+    for (const [category, part] of Object.entries(prevBuild)) {
+      if (part && part.name && !part.specs) {
+        part.specs = deps.specInference.inferSpecs(category, part.name);
+      }
+    }
+  }
+
   const setStage = (stage) => {
     try { ctx.onStage?.(stage); } catch { /* progress reporting must never break a build */ }
   };
@@ -54,6 +71,20 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
   // Apply manual overrides
   deps.intentOverrideApplier(intent, message);
+
+  // Honor parts the user removed by hand: don't quietly put them back on a refine.
+  // The four parts a PC cannot boot without are never dropped.
+  const removed = new Set(
+    (Array.isArray(removedCategories) ? removedCategories : []).filter((c) => !MANDATORY_CATEGORIES.has(c))
+  );
+  for (const category of removed) {
+    const strat = intent.component_strategy?.[category];
+    if (strat) {
+      strat.required = false;
+      strat.weight = 0;
+    }
+    if (category === 'Graphics Card') intent.no_gpu = true;
+  }
   console.log("[orchestrator] Extracted intent:", JSON.stringify(intent, null, 2));
 
   // Validate budget
@@ -327,7 +358,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
     let isRequired = strat && strat.required;
     let activeBudget = catBudget;
 
-    if (category === 'CPU Cooler' && selectedBuild.Processor && (selectedBuild.Processor.specs?.tdp || 65) >= 105) {
+    if (category === 'CPU Cooler' && !removed.has(category) && selectedBuild.Processor && (selectedBuild.Processor.specs?.tdp || 65) >= 105) {
       isRequired = true;
       if (activeBudget === 0) activeBudget = Math.min(5000, Math.max(0, budgetCeiling - totalCost));
     }

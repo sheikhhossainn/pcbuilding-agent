@@ -30,6 +30,20 @@ test('share payload round-trips parts, budget, site and notes (including non-ASC
   assert.deepEqual(decoded.notes, ['Storage was downgraded to 512GB.']);
 });
 
+test('a decoded link carries a full blueprint so a follow-up refine stays coherent', () => {
+  const { intent } = decodeShare(encodeShare(session));
+  const strategy = intent.component_strategy;
+
+  assert.equal(Object.keys(strategy).length, 12);
+  assert.equal(strategy.Processor.required, true);
+  assert.equal(strategy.Motherboard.required, true);
+  assert.equal(strategy.RAM.required, false);
+  assert.equal(strategy['Graphics Card'].required, false);
+  assert.equal(intent.no_gpu, true);
+  assert.equal(strategy.Processor.weight, 1);
+  assert.deepEqual(strategy.Processor.required_keywords, []);
+});
+
 test('decodeShare rejects garbage, wrong versions, and empty builds', () => {
   assert.equal(decodeShare('not base64 !!!'), null);
   assert.equal(decodeShare(''), null);

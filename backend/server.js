@@ -437,6 +437,7 @@ const createDepsForKey = (keyConfig) => {
     budgetAllocator,
     partSelector,
     partRepository,
+    specInference,
     intentOverrideApplier: applyIntentOverrideApplier,
   };
 };

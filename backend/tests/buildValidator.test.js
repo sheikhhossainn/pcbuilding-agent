@@ -27,8 +27,8 @@ test('CPU/motherboard socket mismatch is flagged INCOMPATIBLE', () => {
 
 test('an unrecognised CPU socket is an unverified note, never a false INCOMPATIBLE', () => {
   const build = am4Build();
-  // "Pro ...GE" APU names are not matched by spec inference -> socket UNKNOWN
-  build.Processor = part('Processor', 'AMD Ryzen 5 Pro 2400GE Desktop Processor with Radeon RX Vega 11 Graphics', 6200);
+  // A name spec inference cannot place on any socket
+  build.Processor = part('Processor', 'Contoso Quantum Processor QX-9', 6200);
   assert.equal(build.Processor.specs.socket, 'UNKNOWN');
 
   const warnings = collectBuildWarnings({ build, intent: gamingIntent }, deps);
