@@ -37,6 +37,7 @@ export default function Header({
           {!hideStore && (
             <StoreSelect
               id="store-select-desktop"
+              showLabel={false}
               value={site}
               onChange={onSiteChange}
               customUrl={customSiteUrl}
@@ -96,6 +97,7 @@ export default function Header({
             <StoreSelect
               id="store-select-mobile"
               label="Retailer"
+              showLabel={false}
               value={site}
               onChange={onSiteChange}
               customUrl={customSiteUrl}

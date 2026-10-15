@@ -168,6 +168,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   }, [signature, build, notes, previousIntent, isBusy, apiBaseUrl, showToast]);
 
   const clear = useCallback(() => {
+    const hadContent = Object.values(build).some(Boolean) || Boolean(explanation) || Boolean(errorMsg) || isBusy;
     cancelInFlight();
     setBuild(INITIAL_BUILD);
     setExplanation("");
@@ -183,8 +184,8 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setPreviousBuild(null);
     setRemovedCategories([]);
     validatedSignatureRef.current = '';
-    showToast("Build cleared");
-  }, [cancelInFlight, showToast]);
+    if (hadContent) showToast("Build cleared");
+  }, [build, explanation, errorMsg, isBusy, cancelInFlight, showToast]);
 
   const stop = useCallback(() => {
     cancelInFlight();
