@@ -76,6 +76,8 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
       ?? (savedSession?.buildWarnings || []).filter((w) => !String(w).includes('INCOMPATIBLE'))
   );
   const [power, setPower] = useState(savedSession?.power || null);
+  // Parts the user removed by hand. Sent with the next refine so the engine doesn't re-add them.
+  const [removedCategories, setRemovedCategories] = useState(savedSession?.removedCategories || []);
   const [previousIntent, setPreviousIntent] = useState(savedSession?.previousIntent || null);
   const [previousBuild, setPreviousBuild] = useState(savedSession?.previousBuild || null);
 
@@ -89,8 +91,11 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   const abortControllerRef = useRef(null);
   const requestIdRef = useRef(0);
   const validateRequestRef = useRef(0);
-  // Signature of the build the server last validated. A shared link starts unvalidated (null).
-  const validatedSignatureRef = useRef(initialSession ? null : buildSignature(build));
+  // Signature of the build the server last validated. A shared link, or a session saved
+  // before the API returned `power`, starts unvalidated (null) and is checked once on load.
+  const validatedSignatureRef = useRef(
+    initialSession || !savedSession?.power ? null : buildSignature(build)
+  );
 
   const total = useMemo(() => sumBuild(build), [build]);
   const signature = useMemo(() => buildSignature(build), [build]);
@@ -126,12 +131,13 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
         return;
       }
       localStorage.setItem(SESSION_KEY, JSON.stringify({
-        build, explanation, buildWarnings: warnings, notes, power, previousIntent, previousBuild,
+        build, explanation, buildWarnings: warnings, notes, power,
+        previousIntent, previousBuild, removedCategories,
       }));
     } catch {
       // storage unavailable (private mode / quota) — session just won't persist
     }
-  }, [build, explanation, warnings, notes, power, previousIntent, previousBuild]);
+  }, [build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories]);
 
   // After the user removes/swaps/undoes a part, re-run compatibility + power checks
   // on the server so the warnings and power card never describe a build that no longer exists.
@@ -175,6 +181,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setShowTrafficWarning(false);
     setPreviousIntent(null);
     setPreviousBuild(null);
+    setRemovedCategories([]);
     validatedSignatureRef.current = '';
     showToast("Build cleared");
   }, [cancelInFlight, showToast]);
@@ -193,10 +200,16 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     const removed = build[category];
     if (!removed) return;
     setBuild((prev) => ({ ...prev, [category]: null }));
+    // Tell the next refine this part is intentionally gone, and don't lock the old one back in.
+    setRemovedCategories((prev) => (prev.includes(category) ? prev : [...prev, category]));
+    setPreviousBuild((prev) => (prev ? { ...prev, [category]: null } : prev));
+
     showToast(`Removed ${category}`, {
       label: 'Undo',
       onClick: () => {
         setBuild((prev) => (prev[category] ? prev : { ...prev, [category]: removed }));
+        setRemovedCategories((prev) => prev.filter((c) => c !== category));
+        setPreviousBuild((prev) => (prev ? { ...prev, [category]: removed } : prev));
         dismissToast();
       },
     });
@@ -207,6 +220,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setBuild((prev) => ({ ...prev, [category]: part }));
     // Keep follow-up "refine" requests in sync so the engine locks the part the user chose.
     setPreviousBuild((prev) => (prev ? { ...prev, [category]: part } : prev));
+    setRemovedCategories((prev) => prev.filter((c) => c !== category));
 
     showToast(`Swapped ${category}`, before ? {
       label: 'Undo',
@@ -246,6 +260,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
         customKeys,
         ...(previousIntent && { previousIntent }),
         ...(previousBuild && { previousBuild }),
+        ...(previousIntent && removedCategories.length > 0 && { removedCategories }),
       };
 
       const submitRes = await axios.post(`${apiBaseUrl}/api/build`, payload, { signal: controller.signal });
@@ -296,6 +311,8 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
             setPower(result.power || null);
             setPreviousIntent(result.intent || null);
             setPreviousBuild(result.build || null);
+            // The engine honored the removals; its intent now records them as not required.
+            setRemovedCategories([]);
             setLoadingState("success");
             setStage(null);
             setQueuePosition(0);
@@ -329,7 +346,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
       setLoadingState("error");
     }
   }, [
-    apiBaseUrl, site, customKeys, previousIntent, previousBuild, isBusy,
+    apiBaseUrl, site, customKeys, previousIntent, previousBuild, removedCategories, isBusy,
     cancelInFlight, stopPolling, showToast,
   ]);
 

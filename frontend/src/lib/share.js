@@ -97,12 +97,26 @@ export function decodeShare(encoded) {
 
     const budget = Number(data.b);
 
+    // The link carries parts, not the engine's original blueprint. Rebuild a faithful one:
+    // every part that is present is required, everything else is not. That keeps a
+    // follow-up "refine" coherent and lets the engine lock the parts the link contains.
+    const component_strategy = Object.fromEntries(
+      Object.keys(INITIAL_BUILD).map((category) => [category, {
+        weight: 1,
+        required: Boolean(build[category]),
+        required_keywords: [],
+        exclude_keywords: [],
+        structured_reqs: {},
+      }])
+    );
+
     return {
       build,
       intent: {
         budget_bdt: Number.isFinite(budget) && budget > 0 ? budget : 0,
         use_case: USE_CASES.has(data.u) ? data.u : 'general',
-        component_strategy: {},
+        component_strategy,
+        no_gpu: !build['Graphics Card'],
         _applied_site: SITES.has(data.s) ? data.s : undefined,
       },
       notes: Array.isArray(data.n) ? data.n.slice(0, MAX_WARNINGS).map((n) => text(n, 500)).filter(Boolean) : [],

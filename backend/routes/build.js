@@ -7,6 +7,13 @@
 import { createJob, getJobStatus } from '../utils/queueManager.js';
 import { sendError, ERROR_INVALID_MESSAGE, ERROR_INVALID_SITE, ERROR_INVALID_KEYS } from '../utils/errors.js';
 import { API } from '../config/thresholds.js';
+import { SWAPPABLE_CATEGORIES } from '../engine/alternatives.js';
+
+/** Keep only known category names the user removed by hand. */
+export function sanitizeRemovedCategories(raw) {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((c) => typeof c === 'string' && SWAPPABLE_CATEGORIES.includes(c)))];
+}
 
 /**
  * Create the POST /api/build handler (submit a build job)
@@ -15,7 +22,9 @@ import { API } from '../config/thresholds.js';
 export const createSubmitHandler = () => {
   return (req, res) => {
     try {
-      const { message, site: bodySite, customKeys = {}, previousIntent, previousBuild } = req.body;
+      const {
+        message, site: bodySite, customKeys = {}, previousIntent, previousBuild, removedCategories,
+      } = req.body;
 
       // Validate input (fast — no async)
       if (!message || message.length > API.MAX_MESSAGE_LENGTH) {
@@ -35,6 +44,7 @@ export const createSubmitHandler = () => {
         customKeys,
         previousIntent: previousIntent || null,
         previousBuild: previousBuild || null,
+        removedCategories: sanitizeRemovedCategories(removedCategories),
       });
 
       console.log(`[build] Job ${jobId.slice(0, 8)} queued at position ${position}`);

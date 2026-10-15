@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test": "npm --prefix backend test && npm --prefix frontend test",
     "start:frontend": "npm --prefix frontend run dev",
     "start:backend": "npx nodemon --watch backend backend/server.js",
     "start:scraper": "powershell -Command \"cd scraper; .\\venv\\Scripts\\python sync_db.py\"",

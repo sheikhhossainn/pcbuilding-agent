@@ -12,6 +12,7 @@ export default function Header({
   site, onSiteChange, customSiteUrl, onCustomSiteUrlChange, siteDisabled,
   theme, onToggleTheme,
   onCopy, onShare, onExport, onClear, onOpenSettings, settingsHighlighted,
+  hideStore = false,
   children,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -35,15 +36,18 @@ export default function Header({
 
         {/* Desktop controls */}
         <div className="hidden lg:flex items-center gap-2">
-          <StoreSelect
-            id="store-select-desktop"
-            value={site}
-            onChange={onSiteChange}
-            customUrl={customSiteUrl}
-            onCustomUrlChange={onCustomSiteUrlChange}
-            disabled={siteDisabled}
-            className="mr-1"
-          />
+          {/* The start screen already has a retailer picker; don't show two. */}
+          {!hideStore && (
+            <StoreSelect
+              id="store-select-desktop"
+              value={site}
+              onChange={onSiteChange}
+              customUrl={customSiteUrl}
+              onCustomUrlChange={onCustomSiteUrlChange}
+              disabled={siteDisabled}
+              className="mr-1"
+            />
+          )}
           <button type="button" onClick={onShare} className="btn" title="Copy a link to this build">
             <Link2 size={14} strokeWidth={1.75} aria-hidden="true" />
             <span>Share</span>

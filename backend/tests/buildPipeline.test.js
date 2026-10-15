@@ -2,14 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { executeBuild } from '../engine/buildOrchestrator.js';
 import { createJob, getJobStatus, initWorkers } from '../utils/queueManager.js';
-import { compatibilityChecker, budgetAllocator, part } from './helpers.js';
+import { compatibilityChecker, budgetAllocator, specInference, part } from './helpers.js';
 
 const CATEGORIES = [
   'Processor', 'Motherboard', 'RAM', 'Storage', 'Graphics Card', 'PSU',
   'CPU Cooler', 'Casing', 'Monitor', 'Mouse', 'Keyboard', 'UPS',
 ];
 
-const makeIntent = () => ({
+const CORE = ['Processor', 'Motherboard', 'RAM', 'PSU'];
+
+const makeIntent = (required = CORE) => ({
   budget_bdt: 60000,
   use_case: 'gaming',
   no_gpu: false,
@@ -18,7 +20,7 @@ const makeIntent = () => ({
   preferred_gpu_brand: null,
   component_strategy: Object.fromEntries(
     CATEGORIES.map((c) => [c, {
-      weight: 1, required: ['Processor', 'Motherboard', 'RAM', 'PSU'].includes(c),
+      weight: 1, required: required.includes(c),
       required_keywords: [], exclude_keywords: [], structured_reqs: {},
     }])
   ),
@@ -29,12 +31,14 @@ const CATALOG = {
   Motherboard: part('Motherboard', 'Gigabyte B450M DS3H AM4 DDR4 Motherboard', 8000),
   RAM: part('RAM', 'Corsair Vengeance 16GB DDR4 3200MHz', 5200),
   PSU: part('PSU', 'Corsair CV650 650W', 7000),
+  Monitor: part('Monitor', 'Gigasonic 21.5" FHD LED Monitor', 6400),
 };
 
-function makeDeps({ motherboard = CATALOG.Motherboard } = {}) {
+function makeDeps({ motherboard = CATALOG.Motherboard, required = CORE, selectCalls = [] } = {}) {
   const parts = { ...CATALOG, Motherboard: motherboard };
   return {
-    intentExtractor: { extract: async () => makeIntent() },
+    specInference,
+    intentExtractor: { extract: async () => makeIntent(required) },
     intentOverrideApplier: () => {},
     explanationGenerator: { generate: async () => 'Test explanation.' },
     compatibilityChecker,
@@ -47,9 +51,13 @@ function makeDeps({ motherboard = CATALOG.Motherboard } = {}) {
       getAvailableSockets: async () => new Set(['AM4', 'AM5']),
       matchesStrategy: () => true,
       query: async () => [],
+      checkAvailability: async () => ({ in_stock: true, price: null }),
     },
     partSelector: {
-      selectWithFallback: async (_site, category) => parts[category] || null,
+      selectWithFallback: async (_site, category) => {
+        selectCalls.push(category);
+        return parts[category] || null;
+      },
     },
   };
 }
@@ -82,6 +90,37 @@ test('validator warnings are appended after selection notes, and notes exclude t
 
   assert.ok(result.warnings.some((w) => w.includes('INCOMPATIBLE')));
   assert.ok(result.notes.every((w) => !w.includes('INCOMPATIBLE')));
+});
+
+test('parts the user removed stay out of a refine, but mandatory parts are never dropped', async () => {
+  const required = [...CORE, 'Monitor'];
+
+  const baseline = await executeBuild({ message: 'gaming pc 60k', site: 'startech' }, makeDeps({ required }));
+  assert.ok(baseline.build.Monitor, 'monitor is selected when nothing was removed');
+
+  const result = await executeBuild(
+    { message: 'gaming pc 60k', site: 'startech', removedCategories: ['Monitor', 'Processor'] },
+    makeDeps({ required })
+  );
+
+  assert.equal(result.build.Monitor, null);
+  assert.ok(result.build.Processor, 'a PC cannot be built without a CPU, so removal is ignored');
+});
+
+test('a locked part that arrived without specs (shared link) gets specs inferred', async () => {
+  const selectCalls = [];
+  const prevIntent = { ...makeIntent(), _applied_site: 'startech' };
+  const prevBuild = {
+    Processor: { name: 'AMD Ryzen 5 5600 Processor AM4', price: 14200, url: 'https://shop.test/cpu' },
+  };
+
+  const result = await executeBuild(
+    { message: 'make it a bit cheaper', site: 'startech', previousIntent: prevIntent, previousBuild: prevBuild },
+    makeDeps({ selectCalls })
+  );
+
+  assert.equal(result.build.Processor.specs.socket, 'AM4');
+  assert.ok(!selectCalls.includes('Processor'), 'the unchanged CPU is locked, not re-selected');
 });
 
 test('a throwing onStage hook never breaks a build', async () => {

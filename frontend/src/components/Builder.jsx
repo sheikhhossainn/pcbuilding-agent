@@ -47,7 +47,8 @@ function Builder() {
     notes: sharedBuild.notes,
     power: null,
     previousIntent: sharedBuild.intent,
-    previousBuild: null,
+    // Lets a follow-up refine lock the parts the link contains (specs are re-inferred server-side).
+    previousBuild: sharedBuild.build,
   } : null), [sharedBuild]);
 
   const [site, setSite] = useState(sharedBuild?.site || "startech");
@@ -198,6 +199,7 @@ function Builder() {
         onClear={buildSession.clear}
         onOpenSettings={openSettings}
         settingsHighlighted={showTrafficWarning}
+        hideStore={showHero}
       >
         <MobileSummaryBar
           total={total}

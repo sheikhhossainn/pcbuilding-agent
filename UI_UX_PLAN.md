@@ -236,6 +236,16 @@ Move API key + provider into one `Settings` dialog behind a gear icon (not prima
 | 2 Hero, dense rows, dock | Shipped (PR #3) |
 | 3 Backend + swap + share | This branch. Stage progress, `power`/`budget`/`notes` in payload, `POST /api/build/validate`, `POST /api/parts/alternatives`, swap drawer, hash share link, per-part freshness |
 
+Follow-ups found while verifying Phase 3 (branch `fix/phase3-followups`):
+
+| Finding | Fix |
+|---------|-----|
+| Spec inference returned `UNKNOWN` for 42 live listings (7 CPUs, 11 boards, 5 RAM kits, 19 GPUs): Ryzen PRO APUs, B840/H770/X299/TRX/LGA775 boards, RAM without a "DDR4" keyword, Intel Arc and GT cards | Data-driven rules + regression tests using the real names. Catalog survey is now 0 unknown in every category |
+| Removing a part by hand then refining re-added it | `removedCategories` is sent with the refine; the engine marks them not required (CPU, board, RAM, PSU are never dropped) |
+| A refine on a shared link had an empty blueprint and parts with no specs | Link decode rebuilds a full strategy; the engine infers missing specs before locking |
+| Sessions saved before Phase 3 kept a stale false INCOMPATIBLE | Re-validated once on load when `power` is missing |
+| Two retailer pickers on the start screen | Header picker hidden while the hero is shown |
+
 Phase 3 decisions taken (open questions from §9): swap endpoint included; share link uses the URL hash (no new DB table); Bangla UI out of scope.
 
 ## 9. Decisions needed from you
