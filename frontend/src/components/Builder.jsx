@@ -19,6 +19,7 @@ import RationaleCard from './RationaleCard';
 import SummaryRail from './SummaryRail';
 import Composer from './Composer';
 import Hero from './Hero';
+import SeoContent from './SeoContent';
 import SettingsDialog from './SettingsDialog';
 import SwapDrawer from './SwapDrawer';
 import Toast from './Toast';
@@ -33,7 +34,7 @@ const STAGE_MESSAGES = {
   explaining: "Writing the explanation...",
 };
 
-function Builder() {
+function Builder({ page = null }) {
   const { toast, showToast, dismissToast } = useToast();
   const settings = useSettings();
   const isNarrow = useMediaQuery('(max-width: 639px)');
@@ -53,7 +54,7 @@ function Builder() {
 
   const [site, setSite] = useState(sharedBuild?.site || "startech");
   const [customSiteUrl, setCustomSiteUrl] = useState("");
-  const [chatInput, setChatInput] = useState("");
+  const [chatInput, setChatInput] = useState(page?.prompt || "");
   const [hideEmpty, setHideEmpty] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [swapCategory, setSwapCategory] = useState(null);
@@ -153,6 +154,28 @@ function Builder() {
     inputRef.current?.focus();
   };
 
+  // Smooth-scroll to the prompt box, then focus it without a second (instant) jump.
+  const scrollToComposer = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+    // Focusing mid-scroll cancels a smooth scroll, so focus once it has settled.
+    let focused = false;
+    const focusInput = () => {
+      if (focused) return;
+      focused = true;
+      window.removeEventListener('scrollend', focusInput);
+      el.focus({ preventScroll: true });
+    };
+    if (reduceMotion) {
+      focusInput();
+    } else {
+      window.addEventListener('scrollend', focusInput, { once: true });
+      setTimeout(focusInput, 900);
+    }
+  };
+
   const handleCopySpecSheet = () => {
     const items = Object.entries(build).filter(([, item]) => Boolean(item));
     if (items.length === 0) {
@@ -247,16 +270,18 @@ function Builder() {
             onSiteChange={setSite}
             customSiteUrl={customSiteUrl}
             onCustomSiteUrlChange={setCustomSiteUrl}
+            heading={page?.h1}
+            lead={page?.lead}
           />
         ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
           <div className="lg:col-span-8 space-y-6">
             <div className="flex items-center justify-between gap-2 sm:gap-4">
               <div>
-                <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-fg flex flex-wrap items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-fg flex flex-wrap items-center gap-2">
                   <span>Your build</span>
                   <span className="chip num hidden sm:inline-flex">{telemetry.configuredCount} of {TOTAL_PARTS} parts</span>
-                </h2>
+                </h1>
                 <p className="text-sm text-fg-3 mt-1 hidden sm:block">Prices from live Bangladeshi retailers</p>
               </div>
 
@@ -298,6 +323,7 @@ function Builder() {
           />
         </div>
         )}
+        {showHero && <SeoContent page={page} onStart={scrollToComposer} />}
       </main>
 
       {!showHero && <Composer variant="dock" {...composerProps} />}

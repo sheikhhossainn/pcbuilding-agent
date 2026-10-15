@@ -80,15 +80,27 @@ export default function SettingsDialog({
                   </div>
                   <input
                     id="ollama-key"
-                    type="password"
+                    type="text"
+                    name="ai-api-key"
                     autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    data-lpignore="true"
+                    data-1p-ignore
+                    data-form-type="other"
                     placeholder="Paste your Ollama API key"
                     value={ollamaKey}
                     onChange={(e) => onOllamaKeyChange(e.target.value)}
-                    className="w-full min-h-11 bg-surface border border-line focus:border-accent rounded-lg px-4 text-fg placeholder:text-fg-3 font-mono text-sm"
+                    className="secret-input w-full min-h-11 bg-surface border border-line focus:border-accent rounded-lg px-4 text-fg placeholder:text-fg-3 font-mono text-sm"
                   />
+                  {ollamaKey && (
+                    <button type="button" onClick={() => onOllamaKeyChange('')} className="text-sm text-fg-3 hover:text-fg underline">
+                      Clear saved key
+                    </button>
+                  )}
                   <p className="text-sm text-fg-2 leading-relaxed">
-                    Connected to <strong className="text-fg">gpt-oss:120b</strong> on Ollama Cloud with free API quota.
+                    Uses Ollama Cloud with free API quota. Add your own key to skip the public queue.
                   </p>
                 </div>
               ) : (
@@ -101,13 +113,25 @@ export default function SettingsDialog({
                   </div>
                   <input
                     id="groq-key"
-                    type="password"
+                    type="text"
+                    name="ai-api-key"
                     autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    data-lpignore="true"
+                    data-1p-ignore
+                    data-form-type="other"
                     placeholder="gsk_..."
                     value={groqKey}
                     onChange={(e) => onGroqKeyChange(e.target.value)}
-                    className="w-full min-h-11 bg-surface border border-line focus:border-accent rounded-lg px-4 text-fg placeholder:text-fg-3 font-mono text-sm"
+                    className="secret-input w-full min-h-11 bg-surface border border-line focus:border-accent rounded-lg px-4 text-fg placeholder:text-fg-3 font-mono text-sm"
                   />
+                  {groqKey && (
+                    <button type="button" onClick={() => onGroqKeyChange('')} className="text-sm text-fg-3 hover:text-fg underline">
+                      Clear saved key
+                    </button>
+                  )}
                   <p className="text-sm text-fg-2 leading-relaxed">
                     High-speed inference with your own key skips the public queue limits.
                   </p>
