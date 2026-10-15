@@ -101,6 +101,8 @@ export const createPartRepository = ({ db, turso, supabase, specInference, cache
           image: p.image,
           url: p.url,
           in_stock: Boolean(p.in_stock),
+          // When the scraper last confirmed this listing (shown as "updated 2h ago")
+          updatedAt: p.last_updated || null,
           category: category,
           specs: {
             ...specsObj,

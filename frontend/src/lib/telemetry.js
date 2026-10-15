@@ -1,6 +1,11 @@
-// Client-side spec inference for display and rough power estimates.
-// NOTE: duplicates backend/utils/specInference.js heuristics. Phase 3 moves this
-// to the API payload so there is a single source of truth.
+// Display specs and a fallback power estimate.
+//
+// Parts that come from the API carry `item.specs` inferred on the server
+// (socket, ram_type, tdp, wattage). Those win. The name-based parsing below only
+// fills in gaps (VRAM, capacity, chipset) and covers sessions saved before the
+// API returned specs.
+const known = (value) => value && value !== 'UNKNOWN' && value !== 'INTEGRATED';
+
 export function parseComponentTelemetry(category, name) {
   if (!name) return {};
   const upper = name.toUpperCase();
@@ -56,9 +61,31 @@ export function parseComponentTelemetry(category, name) {
   return specs;
 }
 
+/** Name-derived specs, overridden by server-inferred `item.specs` when present. */
+export function getPartSpecs(category, item) {
+  if (!item) return {};
+  const specs = parseComponentTelemetry(category, item.name);
+  const server = item.specs;
+  if (!server) return specs;
+
+  if (category === "Processor") {
+    if (known(server.socket)) specs.socket = server.socket;
+    if (Number.isFinite(server.tdp)) specs.tdp = server.tdp;
+  }
+  if (category === "Motherboard") {
+    if (known(server.ram_type)) specs.gen = server.ram_type;
+    if (known(server.socket) && !specs.chipset) specs.socket = server.socket;
+  }
+  if (category === "RAM" && known(server.ram_type)) specs.gen = server.ram_type;
+  if (category === "Graphics Card" && Number.isFinite(server.tdp)) specs.tdp = server.tdp;
+  if (category === "PSU" && Number.isFinite(server.wattage)) specs.wattage = server.wattage;
+
+  return specs;
+}
+
 // Ordered, display-ready chips for a part. Capped so rows stay calm.
-export function getSpecChips(category, name, limit = 3) {
-  const s = parseComponentTelemetry(category, name);
+export function getSpecChips(category, item, limit = 3) {
+  const s = getPartSpecs(category, item);
   const chips = [];
   if (s.socket) chips.push(`Socket ${s.socket}`);
   if (s.chipset) chips.push(s.chipset);
@@ -71,22 +98,37 @@ export function getSpecChips(category, name, limit = 3) {
   return chips.slice(0, limit);
 }
 
-export function computeTelemetry({ build, total, warnings }) {
+function estimateLocally(build) {
   const cpuItem = build["Processor"];
   const gpuItem = build["Graphics Card"];
   const psuItem = build["PSU"];
   const moboItem = build["Motherboard"];
 
-  const cpuSpecs = parseComponentTelemetry("Processor", cpuItem?.name);
-  const gpuSpecs = parseComponentTelemetry("Graphics Card", gpuItem?.name);
-  const psuSpecs = parseComponentTelemetry("PSU", psuItem?.name);
-
-  const cpuTdp = cpuSpecs.tdp || 65;
-  const gpuTdp = gpuSpecs.tdp || (gpuItem ? 160 : 25);
+  const cpuTdp = getPartSpecs("Processor", cpuItem).tdp || 65;
+  const gpuTdp = getPartSpecs("Graphics Card", gpuItem).tdp || (gpuItem ? 160 : 25);
   const baseSystemTdp = 45; // motherboard, fans, storage, RAM
-  const estimatedDraw = (cpuItem ? cpuTdp : 0) + (gpuItem ? gpuTdp : 25) + (moboItem ? baseSystemTdp : 0);
-  const recommendedPsu = Math.round(estimatedDraw * 1.45);
-  const installedPsu = psuSpecs.wattage || 0;
+  const draw = (cpuItem ? cpuTdp : 0) + (gpuItem ? gpuTdp : 25) + (moboItem ? baseSystemTdp : 0);
+
+  return {
+    draw,
+    recommended: Math.round(draw * 1.45),
+    psuWattage: getPartSpecs("PSU", psuItem).wattage || 0,
+  };
+}
+
+/**
+ * @param {Object} params
+ * @param {Object} params.build
+ * @param {number} params.total
+ * @param {string[]} params.warnings
+ * @param {{draw:number, recommended:number, psuWattage:number}|null} [params.power] - from the API; preferred
+ */
+export function computeTelemetry({ build, total, warnings, power = null }) {
+  const source = power && Number.isFinite(power.draw) ? power : estimateLocally(build);
+
+  const estimatedDraw = source.draw;
+  const recommendedPsu = source.recommended;
+  const installedPsu = source.psuWattage || 0;
 
   let psuStatus = "idle";
   let psuRatio = 0;
@@ -104,8 +146,8 @@ export function computeTelemetry({ build, total, warnings }) {
   const noteCount = warnings.length - incompatibleCount;
 
   const configuredCount = Object.values(build).filter(Boolean).length;
-  const gpuPct = total > 0 ? Math.round(((gpuItem?.price || 0) / total) * 100) : 0;
-  const cpuPct = total > 0 ? Math.round(((cpuItem?.price || 0) / total) * 100) : 0;
+  const gpuPct = total > 0 ? Math.round(((build["Graphics Card"]?.price || 0) / total) * 100) : 0;
+  const cpuPct = total > 0 ? Math.round(((build["Processor"]?.price || 0) / total) * 100) : 0;
   const otherPct = total > 0 ? Math.max(0, 100 - gpuPct - cpuPct) : 0;
 
   return {

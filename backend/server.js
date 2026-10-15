@@ -35,6 +35,7 @@ import { createCacheManager } from './utils/cacheManager.js';
 import { createSpecInference } from './utils/specInference.js';
 import { createPartRepository } from './utils/partRepository.js';
 import { createSubmitHandler, createStatusHandler } from './routes/build.js';
+import { createAlternativesHandler, createValidateHandler } from './routes/parts.js';
 import { sendError, ERROR_INTERNAL } from './utils/errors.js';
 import { initWorkers } from './utils/queueManager.js';
 import { executeBuild } from './engine/buildOrchestrator.js';
@@ -77,6 +78,15 @@ const apiLimiter = rateLimit({
     // Skip for custom API keys
     return Boolean(req.body && req.body.customKeys && (req.body.customKeys.groq || req.body.customKeys.ollama));
   }
+});
+
+// Swap/validate calls are cheap (no AI), so they get a much higher ceiling than /api/build.
+const partsLimiter = rateLimit({
+  windowMs: RATE_LIMITING.WINDOW_MS,
+  max: 120,
+  message: { error: 'Too many requests. Please wait a moment and try again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // ──── Initialize Database (Turso LibSQL) ────
@@ -343,6 +353,9 @@ const budgetAllocator = partRepository
   ? createBudgetAllocator({ partRepository, compatChecker: compatibilityChecker })
   : null;
 
+// Power sizing only needs the allocator's pure math, so it works even without a database.
+const powerAllocator = createBudgetAllocator({ partRepository: null, compatChecker: compatibilityChecker });
+
 // Part selector (with fallback logic)
 const partSelector = partRepository
   ? createPartSelector({ partRepository, compatChecker: compatibilityChecker })
@@ -362,7 +375,9 @@ app.get('/', (req, res) => {
     endpoints: {
       health: 'GET /health',
       submitBuild: 'POST /api/build',
-      buildStatus: 'GET /api/build/:jobId'
+      buildStatus: 'GET /api/build/:jobId',
+      validateBuild: 'POST /api/build/validate',
+      partAlternatives: 'POST /api/parts/alternatives'
     }
   });
 });
@@ -396,6 +411,11 @@ app.get('/health', async (req, res) => {
 // Build routes (queue-based)
 app.post('/api/build', apiLimiter, createSubmitHandler());
 app.get('/api/build/:jobId', createStatusHandler());
+
+// Edit-time helpers: re-check an edited build, and list compatible swap candidates
+const partsRouteDeps = { specInference, compatibilityChecker, budgetAllocator: powerAllocator };
+app.post('/api/build/validate', partsLimiter, createValidateHandler(partsRouteDeps));
+app.post('/api/parts/alternatives', partsLimiter, createAlternativesHandler({ ...partsRouteDeps, partRepository }));
 
 // ──── Error Handling ────
 app.use((err, req, res, next) => {
