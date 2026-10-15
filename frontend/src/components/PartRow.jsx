@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
-import { Box, ExternalLink, Trash2 } from 'lucide-react';
+import { Box, ExternalLink, Trash2, ArrowLeftRight } from 'lucide-react';
 import { CATEGORY_ICONS } from '../lib/constants';
 import { formatPrice } from '../lib/format';
 import { getSpecChips } from '../lib/telemetry';
+import { describeFreshness } from '../lib/time';
 import RowMenu from './RowMenu';
 
 export function SkeletonRow() {
@@ -30,7 +31,9 @@ const rowMotion = (index) => ({
  * One line per part (two on phones). Empty optional rows are dashed and quiet;
  * empty required rows say so.
  */
-export default function PartRow({ category, item, isRequired, dependency, isCore, index = 0, onRemove }) {
+export default function PartRow({
+  category, item, isRequired, dependency, isCore, index = 0, onRemove, onSwap,
+}) {
   const Icon = CATEGORY_ICONS[category] || Box;
 
   if (!item) {
@@ -56,7 +59,8 @@ export default function PartRow({ category, item, isRequired, dependency, isCore
     );
   }
 
-  const chips = getSpecChips(category, item.name);
+  const chips = getSpecChips(category, item);
+  const freshness = describeFreshness(item.updatedAt);
 
   return (
     <motion.div
@@ -104,11 +108,30 @@ export default function PartRow({ category, item, isRequired, dependency, isCore
         )}
       </div>
 
-      <div className="hidden sm:block num font-semibold text-lg text-fg whitespace-nowrap text-right min-w-24">
-        {formatPrice(item.price)}
+      <div className="hidden sm:block text-right min-w-24">
+        <div className="num font-semibold text-lg text-fg whitespace-nowrap">{formatPrice(item.price)}</div>
+        {freshness && (
+          <div
+            className={`text-xs whitespace-nowrap ${freshness.stale ? 'text-warn' : 'text-fg-3'}`}
+            title={freshness.stale ? 'This listing has not been refreshed recently; the price may have changed.' : undefined}
+          >
+            {freshness.label}
+          </div>
+        )}
       </div>
 
       <div className="hidden sm:flex items-center gap-1.5">
+        {onSwap && (
+          <button
+            type="button"
+            onClick={() => onSwap(category)}
+            className="btn btn-icon-sm"
+            title="Swap for a compatible alternative"
+            aria-label={`Swap ${category}`}
+          >
+            <ArrowLeftRight size={16} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        )}
         {item.url && (
           <a
             href={item.url}
@@ -132,7 +155,7 @@ export default function PartRow({ category, item, isRequired, dependency, isCore
         </button>
       </div>
 
-      <RowMenu category={category} url={item.url} onRemove={onRemove} />
+      <RowMenu category={category} url={item.url} onRemove={onRemove} onSwap={onSwap} />
     </motion.div>
   );
 }

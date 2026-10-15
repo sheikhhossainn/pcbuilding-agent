@@ -32,7 +32,7 @@ export default function CompatCard({ configuredCount, incompatibleCount, noteCou
     content = (
       <div className="flex items-start gap-2 text-sm text-fg">
         <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-ok" aria-hidden="true" />
-        <span>No compatibility issues found when this build was generated.</span>
+        <span>No compatibility issues found.</span>
       </div>
     );
   }

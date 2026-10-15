@@ -38,6 +38,7 @@ export function createJob(payload) {
     payload,
     result: null,
     error: null,
+    stage: null,
     createdAt: Date.now(),
     startedAt: null,
     completedAt: null,
@@ -67,6 +68,8 @@ export function getJobStatus(jobId) {
   if (job.status === 'processing') {
     response.position = 0;
     response.estimatedWait = 0;
+    // Which pipeline step the worker is on: intent | planning | selecting | optimizing | checking | explaining
+    response.stage = job.stage;
   }
   if (job.status === 'completed') response.result = job.result;
   if (job.status === 'failed') response.error = job.error;
@@ -82,7 +85,7 @@ export function getQueueDepth() {
 /**
  * Initialize the worker pool
  * @param {Object} opts
- * @param {Function} opts.buildFn - async (payload, deps) => result
+ * @param {Function} opts.buildFn - async (payload, deps, { onStage }) => result
  * @param {Function} opts.depsFactory - (groqApiKey) => deps object
  * @param {string[]} opts.groqKeys - Array of Groq API keys
  */
@@ -122,7 +125,9 @@ async function processNext(worker) {
     const provider = job.payload.customKeys?.ollama ? 'ollama' : (job.payload.customKeys?.provider || process.env.AI_PROVIDER || 'ollama');
     const apiKey = customKey || worker.groqKey;
     const deps = depsFactory({ key: apiKey, provider });
-    const result = await buildFn(job.payload, deps);
+    const result = await buildFn(job.payload, deps, {
+      onStage: (stage) => { job.stage = stage; },
+    });
     job.status = 'completed';
     job.result = result;
   } catch (err) {

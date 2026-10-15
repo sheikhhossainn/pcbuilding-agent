@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useBuild } from '../hooks/useBuild';
 import { useSettings } from '../hooks/useSettings';
@@ -8,6 +8,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 import { computeTelemetry } from '../lib/telemetry';
 import { formatPrice } from '../lib/format';
 import { TOTAL_PARTS } from '../lib/constants';
+import { buildShareUrl, readShareFromLocation, clearShareFromLocation } from '../lib/share';
 import Header from './Header';
 import MobileSummaryBar from './MobileSummaryBar';
 import Notice from './Notice';
@@ -18,12 +19,17 @@ import SummaryRail from './SummaryRail';
 import Composer from './Composer';
 import Hero from './Hero';
 import SettingsDialog from './SettingsDialog';
+import SwapDrawer from './SwapDrawer';
 import Toast from './Toast';
 
+// Pipeline steps reported by the API while a job is processing.
 const STAGE_MESSAGES = {
-  analyzing: "Reading your requirements...",
+  intent: "Reading your requirements...",
+  planning: "Planning your budget...",
   selecting: "Finding parts in stock...",
+  optimizing: "Using up the rest of your budget...",
   checking: "Checking compatibility...",
+  explaining: "Writing the explanation...",
 };
 
 function Builder() {
@@ -32,11 +38,32 @@ function Builder() {
   const { theme, toggleTheme } = useTheme();
   const isNarrow = useMediaQuery('(max-width: 639px)');
 
-  const [site, setSite] = useState("startech");
+  // A share link (#b=...) opens as the working build; it is validated server-side after load.
+  const [sharedBuild] = useState(readShareFromLocation);
+  const initialSession = useMemo(() => (sharedBuild ? {
+    build: sharedBuild.build,
+    explanation: sharedBuild.explanation,
+    buildWarnings: sharedBuild.notes,
+    notes: sharedBuild.notes,
+    power: null,
+    previousIntent: sharedBuild.intent,
+    previousBuild: null,
+  } : null), [sharedBuild]);
+
+  const [site, setSite] = useState(sharedBuild?.site || "startech");
   const [customSiteUrl, setCustomSiteUrl] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [hideEmpty, setHideEmpty] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [swapCategory, setSwapCategory] = useState(null);
+
+  useEffect(() => {
+    if (!sharedBuild) return;
+    clearShareFromLocation();
+    showToast("Opened a shared build");
+    // Runs once on load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const customKeys = useMemo(() => ({
     groq: settings.groqKey,
@@ -46,26 +73,51 @@ function Builder() {
 
   const effectiveSite = site === 'custom' ? customSiteUrl : site;
 
-  const buildSession = useBuild({ site: effectiveSite, customKeys, showToast, dismissToast });
+  const buildSession = useBuild({
+    site: effectiveSite, customKeys, showToast, dismissToast, initialSession,
+  });
   const {
-    build, total, explanation, warnings, previousIntent,
-    loadingState, isBusy, errorMsg, queuePosition, showTrafficWarning,
+    build, total, explanation, warnings, notes, power, previousIntent,
+    stage, isBusy, errorMsg, queuePosition, showTrafficWarning,
   } = buildSession;
 
   const telemetry = useMemo(
-    () => computeTelemetry({ build, total, warnings }),
-    [build, total, warnings]
+    () => computeTelemetry({ build, total, warnings, power }),
+    [build, total, warnings, power]
   );
 
   // Budget the user asked for, as parsed by the engine.
   const budget = Number(previousIntent?.budget_bdt) || 0;
 
+  // Retailer the engine actually used (it can differ from the dropdown); swap needs a real one.
+  const swapSite = previousIntent?._applied_site || (site !== 'custom' ? site : null);
+
   const closeSettings = useCallback(() => setShowSettings(false), []);
   const openSettings = useCallback(() => setShowSettings(true), []);
+  const closeSwap = useCallback(() => setSwapCategory(null), []);
 
   const loadingMessage = queuePosition > 0
     ? `Queue position #${queuePosition} — estimated ~${queuePosition * 12}s`
-    : STAGE_MESSAGES[loadingState] || "Building your PC...";
+    : STAGE_MESSAGES[stage] || "Building your PC...";
+
+  const handlePickAlternative = (part) => {
+    buildSession.swapPart(swapCategory, part);
+    setSwapCategory(null);
+  };
+
+  const handleShare = () => {
+    if (telemetry.configuredCount === 0) {
+      showToast("Build a PC first, then share it");
+      return;
+    }
+    const url = buildShareUrl({
+      build, intent: previousIntent, notes, explanation, site: swapSite,
+    });
+    navigator.clipboard.writeText(url).then(
+      () => showToast("Link copied"),
+      () => showToast("Couldn't copy the link")
+    );
+  };
 
   const scrollToSummary = () => {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -141,6 +193,7 @@ function Builder() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onCopy={handleCopySpecSheet}
+        onShare={handleShare}
         onExport={handleExport}
         onClear={buildSession.clear}
         onOpenSettings={openSettings}
@@ -223,6 +276,7 @@ function Builder() {
               hideEmpty={hideEmpty}
               isBusy={isBusy}
               onRemove={buildSession.removePart}
+              onSwap={swapSite ? setSwapCategory : undefined}
             />
 
             <RationaleCard explanation={explanation} />
@@ -233,6 +287,7 @@ function Builder() {
             total={total}
             budget={budget}
             onCopy={handleCopySpecSheet}
+            onShare={handleShare}
             onExport={handleExport}
           />
         </div>
@@ -240,6 +295,17 @@ function Builder() {
       </main>
 
       {!showHero && <Composer variant="dock" {...composerProps} />}
+
+      <SwapDrawer
+        category={swapCategory}
+        current={swapCategory ? build[swapCategory] : null}
+        site={swapSite}
+        build={build}
+        intent={previousIntent}
+        isNarrow={isNarrow}
+        onClose={closeSwap}
+        onPick={handlePickAlternative}
+      />
 
       <SettingsDialog
         open={showSettings}

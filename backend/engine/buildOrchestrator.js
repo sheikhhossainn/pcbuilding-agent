@@ -6,18 +6,7 @@
 
 import { BUDGET } from '../config/budget.js';
 import { API } from '../config/thresholds.js';
-
-function parseStorageCapacityGB(name) {
-  const n = name.toLowerCase();
-  const tbMatch = n.match(/(\d+(?:\.\d+)?)\s*tb/);
-  if (tbMatch) return parseFloat(tbMatch[1]) * 1000;
-  const gbMatch = n.match(/(\d+)\s*gb/);
-  if (gbMatch) {
-    const gb = parseInt(gbMatch[1]);
-    if (gb >= 120) return gb;
-  }
-  return 0;
-}
+import { collectBuildWarnings, estimatePower } from './buildValidator.js';
 
 class BuildError extends Error {
   constructor(status, message, code) {
@@ -32,10 +21,16 @@ class BuildError extends Error {
  * Execute a full PC build pipeline
  * @param {Object} payload - { message, site, customKeys }
  * @param {Object} deps - injected dependencies
- * @returns {Object} { build, total, explanation, intent, warnings }
+ * @param {Object} [ctx]
+ * @param {(stage: string) => void} [ctx.onStage] - progress hook: intent | planning | selecting | optimizing | checking | explaining
+ * @returns {Object} { build, total, budget, explanation, intent, warnings, notes, power }
  */
-export async function executeBuild(payload, deps) {
+export async function executeBuild(payload, deps, ctx = {}) {
   const { message, site: bodySite, previousIntent: prevIntent, previousBuild: prevBuild } = payload;
+  const setStage = (stage) => {
+    try { ctx.onStage?.(stage); } catch { /* progress reporting must never break a build */ }
+  };
+  setStage('intent');
 
   // Validate input
   if (!message || message.length > API.MAX_MESSAGE_LENGTH) {
@@ -79,6 +74,7 @@ export async function executeBuild(payload, deps) {
   const noGpu = intent.no_gpu || (intent.component_strategy?.['Graphics Card'] && !intent.component_strategy['Graphics Card'].required) || false;
 
   // ─── PHASE 1 & 2: Floor price validation & budget allocation ───
+  setStage('planning');
   console.log("PHASE 1 & 2: Dynamic Blueprint Reality Check & Weighted Budget Allocation");
 
   const floorResult = await deps.budgetAllocator.calculateFloorPrices({
@@ -111,6 +107,7 @@ export async function executeBuild(payload, deps) {
   console.log("=".repeat(60));
 
   // ─── PHASE 3: Select components ───
+  setStage('selecting');
   console.log("\nPHASE 3: Selecting components using Dynamic Budgets...");
 
   const selectedBuild = {
@@ -378,6 +375,7 @@ export async function executeBuild(payload, deps) {
   }
 
   // ─── PHASE 4: Rebalancing ───
+  setStage('optimizing');
   console.log("\nPHASE 4: Rebalancing underspent budget...");
   const underspendTolerance = Math.min(budget * 0.005, 1500);
   const targetMinSpend = Math.max(0, budget - underspendTolerance);
@@ -474,53 +472,13 @@ export async function executeBuild(payload, deps) {
     throw new Error(`This configuration costs ${totalCost.toLocaleString('en-BD')} BDT, which exceeds your budget ceiling of ${budgetCeiling.toLocaleString('en-BD')} BDT. Try adjusting your request, reducing requirements, or removing optional components like peripherals.`);
   }
 
-  const requestedTb = intent.component_strategy?.['Storage']?.structured_reqs?.min_tb;
-  if (requestedTb && selectedBuild.Storage) {
-    const actualCapGB = parseStorageCapacityGB(selectedBuild.Storage.name);
-    const requestedGB = requestedTb * 1000;
-    if (actualCapGB < requestedGB * 0.9) {
-      buildWarnings.push(`You requested ${requestedTb}TB storage but the selected drive is ${actualCapGB >= 1000 ? (actualCapGB / 1000).toFixed(1) + 'TB' : actualCapGB + 'GB'}. No ${requestedTb}TB drive was available within budget.`);
-    }
-  }
+  // Warnings produced while selecting parts (degradations, missing parts, retailer notes).
+  // Kept separate so the UI can re-run only the validator after the user edits the build.
+  const notes = [...buildWarnings];
 
-  if (selectedBuild["Graphics Card"]) {
-    if (!deps.compatibilityChecker.isGpuAdequateForUseCase(selectedBuild["Graphics Card"], intent.use_case)) {
-      buildWarnings.push(`The selected GPU may not be powerful enough for ${intent.use_case}. Consider increasing your budget.`);
-    }
-  }
-
-  if (selectedBuild.PSU && selectedBuild.Processor) {
-    const requiredW = deps.budgetAllocator.computeTargetPsuWattage(selectedBuild.Processor, selectedBuild["Graphics Card"], intent.use_case, intent.budget_bdt);
-    const actualW = selectedBuild.PSU.specs?.wattage || 0;
-    if (actualW < requiredW * 0.85) {
-      buildWarnings.push(`PSU (${actualW}W) may be insufficient. Recommended: ${Math.round(requiredW)}W.`);
-    }
-  }
-
-  const requestedGb = intent.component_strategy?.['RAM']?.structured_reqs?.min_gb;
-  if (requestedGb && selectedBuild.RAM) {
-    const ramName = selectedBuild.RAM.name.toLowerCase();
-    const half = requestedGb / 2;
-    const hasRequestedGB = ramName.includes(`${requestedGb}gb`) || ramName.includes(`${requestedGb} gb`)
-      || ramName.includes(`2x${half}gb`) || ramName.includes(`2x${half} gb`);
-    if (!hasRequestedGB) {
-      buildWarnings.push(`You requested ${requestedGb}GB RAM but the selected kit may differ. Check the product listing.`);
-    }
-  }
-
-  if (selectedBuild.Processor && selectedBuild.Motherboard) {
-    if (selectedBuild.Processor.specs?.socket !== selectedBuild.Motherboard.specs?.socket) {
-      buildWarnings.push(`⚠ INCOMPATIBLE: CPU socket (${selectedBuild.Processor.specs?.socket}) does not match motherboard (${selectedBuild.Motherboard.specs?.socket}).`);
-    }
-  }
-
-  if (selectedBuild.RAM && selectedBuild.Motherboard) {
-    const moboRamType = selectedBuild.Motherboard.specs?.ram_type;
-    const selectedRamType = selectedBuild.RAM.specs?.ram_type;
-    if (moboRamType && moboRamType !== 'UNKNOWN' && selectedRamType && selectedRamType !== moboRamType) {
-      buildWarnings.push(`⚠ INCOMPATIBLE: RAM type (${selectedRamType}) does not match motherboard (${moboRamType}).`);
-    }
-  }
+  setStage('checking');
+  const validationWarnings = collectBuildWarnings({ build: selectedBuild, intent }, deps);
+  buildWarnings.push(...validationWarnings);
 
   if (buildWarnings.length > 0) {
     console.log('\nBuild Warnings:');
@@ -528,6 +486,7 @@ export async function executeBuild(payload, deps) {
   }
 
   // ─── PHASE 6: Generate explanation ───
+  setStage('explaining');
   const explanation = await deps.explanationGenerator.generate({
     selectedBuild, totalCost, intent, sitePreference: site, buildWarnings,
     lockedCategories: Array.from(lockedCategories),
@@ -538,8 +497,11 @@ export async function executeBuild(payload, deps) {
   return {
     build: selectedBuild,
     total: totalCost,
+    budget,
     explanation,
     intent,
     warnings: buildWarnings,
+    notes,
+    power: estimatePower(selectedBuild, intent, deps),
   };
 }

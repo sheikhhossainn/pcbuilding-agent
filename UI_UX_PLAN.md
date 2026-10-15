@@ -227,6 +227,17 @@ Move API key + provider into one `Settings` dialog behind a gear icon (not prima
 
 ---
 
+## 8b. Status
+
+| Phase | State |
+|-------|-------|
+| 0 Quick wins | Shipped (PR #3) |
+| 1 Design system + split | Shipped (PR #3) |
+| 2 Hero, dense rows, dock | Shipped (PR #3) |
+| 3 Backend + swap + share | This branch. Stage progress, `power`/`budget`/`notes` in payload, `POST /api/build/validate`, `POST /api/parts/alternatives`, swap drawer, hash share link, per-part freshness |
+
+Phase 3 decisions taken (open questions from §9): swap endpoint included; share link uses the URL hash (no new DB table); Bangla UI out of scope.
+
 ## 9. Decisions needed from you
 1. **Light-first default** (recommended) vs keep dark default with light option.
 2. **Swap-part drawer** needs a new backend endpoint — include in this round, or ship UI with chat-only swap first?

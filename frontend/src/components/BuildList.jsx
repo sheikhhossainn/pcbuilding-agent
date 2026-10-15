@@ -13,7 +13,7 @@ const SECTIONS = [
   { key: 'peripherals', title: 'Peripherals', hint: 'Monitor, mouse, keyboard, UPS', icon: Monitor, categories: PERIPHERAL_CATEGORIES, optional: true },
 ];
 
-export default function BuildList({ build, hideEmpty, isBusy, onRemove }) {
+export default function BuildList({ build, hideEmpty, isBusy, onRemove, onSwap }) {
   // Optional group: collapsed until something in it is chosen, unless the user toggles it.
   const [optionalOpen, setOptionalOpen] = useState(null);
 
@@ -75,6 +75,7 @@ export default function BuildList({ build, hideEmpty, isBusy, onRemove }) {
                         isCore={key === 'core'}
                         index={index}
                         onRemove={onRemove}
+                        onSwap={onSwap}
                       />
                     );
                   })}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Copy, Key, FileDown, Trash2, Menu, X } from 'lucide-react';
+import { Sparkles, Copy, Key, FileDown, Trash2, Menu, X, Link2 } from 'lucide-react';
 import StoreSelect from './StoreSelect';
 import ThemeToggle from './ThemeToggle';
 
@@ -11,7 +11,7 @@ import ThemeToggle from './ThemeToggle';
 export default function Header({
   site, onSiteChange, customSiteUrl, onCustomSiteUrlChange, siteDisabled,
   theme, onToggleTheme,
-  onCopy, onExport, onClear, onOpenSettings, settingsHighlighted,
+  onCopy, onShare, onExport, onClear, onOpenSettings, settingsHighlighted,
   children,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -44,6 +44,10 @@ export default function Header({
             disabled={siteDisabled}
             className="mr-1"
           />
+          <button type="button" onClick={onShare} className="btn" title="Copy a link to this build">
+            <Link2 size={14} strokeWidth={1.75} aria-hidden="true" />
+            <span>Share</span>
+          </button>
           <button type="button" onClick={onCopy} className="btn" title="Copy formatted spec sheet">
             <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
             <span>Copy spec</span>
@@ -99,6 +103,10 @@ export default function Header({
               disabled={siteDisabled}
             />
             <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={closeThen(onShare)} className="btn btn-touch">
+                <Link2 size={16} aria-hidden="true" />
+                <span>Share link</span>
+              </button>
               <button type="button" onClick={closeThen(onCopy)} className="btn btn-touch">
                 <Copy size={16} aria-hidden="true" />
                 <span>Copy spec</span>

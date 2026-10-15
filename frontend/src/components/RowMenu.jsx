@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { MoreHorizontal, ExternalLink, Trash2 } from 'lucide-react';
+import { MoreHorizontal, ExternalLink, Trash2, ArrowLeftRight } from 'lucide-react';
 import { useDismiss } from '../hooks/useDismiss';
 
 // Phone-only overflow menu for a part row (desktop shows inline icon buttons).
-export default function RowMenu({ category, url, onRemove }) {
+export default function RowMenu({ category, url, onRemove, onSwap }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useDismiss(ref, open, () => setOpen(false));
@@ -23,6 +23,17 @@ export default function RowMenu({ category, url, onRemove }) {
 
       {open && (
         <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-52 card surface-float p-1">
+          {onSwap && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onSwap(category); }}
+              className="w-full flex items-center gap-2.5 min-h-11 px-3 rounded-lg text-sm text-fg hover:bg-surface-2"
+            >
+              <ArrowLeftRight size={16} aria-hidden="true" />
+              Swap {category}
+            </button>
+          )}
           {url && (
             <a
               role="menuitem"

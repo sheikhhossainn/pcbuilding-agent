@@ -69,6 +69,15 @@ export const GPU_MODEL_TDP_MAP = {
   '7600': 160,
 };
 
+// Baseline draw used when estimating a build's real-world power consumption.
+export const SYSTEM_DRAW = {
+  // Motherboard, fans, storage, RAM
+  BASE: 45,
+
+  // Integrated graphics draw when no discrete GPU is selected
+  INTEGRATED_GPU: 25,
+};
+
 export const PSU_WATTAGE = {
   // Default PSU wattage when power rating unclear
   DEFAULT: 500,

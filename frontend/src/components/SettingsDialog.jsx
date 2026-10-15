@@ -1,13 +1,11 @@
-import { useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Key, X } from 'lucide-react';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 const PROVIDERS = [
   { value: 'ollama', label: 'Ollama Cloud' },
   { value: 'groq', label: 'Groq Cloud' },
 ];
-
-const FOCUSABLE = 'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export default function SettingsDialog({
   open, onClose, onSaved,
@@ -15,47 +13,7 @@ export default function SettingsDialog({
   groqKey, onGroqKeyChange,
   ollamaKey, onOllamaKeyChange,
 }) {
-  const dialogRef = useRef(null);
-  const onCloseRef = useRef(onClose);
-
-  // Keep the latest onClose without re-running the focus effect on every keystroke.
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  // Esc closes, Tab stays inside, focus returns to whatever opened the dialog.
-  useEffect(() => {
-    if (!open) return undefined;
-    const opener = document.activeElement;
-    const dialog = dialogRef.current;
-    dialog?.focus();
-
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (e.key !== 'Tab' || !dialog) return;
-      const focusable = dialog.querySelectorAll(FOCUSABLE);
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      if (opener && typeof opener.focus === 'function') opener.focus();
-    };
-  }, [open]);
+  const dialogRef = useDialogFocus(open, onClose);
 
   const isOllama = provider === 'ollama';
 
