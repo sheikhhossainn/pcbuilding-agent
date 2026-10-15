@@ -59,6 +59,18 @@
     }
     </script>
 
+    <!-- The prerendered copy is for crawlers and no-JS visitors. It stays in the DOM but is
+         visually hidden, so JS users never see it flash before React mounts and replaces it. -->
+    <style>
+      .prerender { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+    </style>
+    <noscript>
+      <style>
+        .prerender { position: static; width: auto; height: auto; margin: 0 auto; overflow: visible; clip: auto; clip-path: none; white-space: normal; max-width: 42rem; padding: 2rem 1rem; line-height: 1.6; }
+        .prerender a { color: #818cf8; }
+      </style>
+    </noscript>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
