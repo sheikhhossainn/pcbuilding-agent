@@ -1,20 +1,24 @@
 import { useRef, useEffect } from 'react';
 import { Send, Loader2, RefreshCw } from 'lucide-react';
-import { PRESET_WORKLOADS, PROMPT_MODIFIERS } from '../lib/constants';
+import ModifiersMenu from './ModifiersMenu';
 
 const MAX_HEIGHT_NARROW = 120;
-const MAX_HEIGHT_WIDE = 180;
+const MAX_HEIGHT_WIDE = 200;
 
 /**
- * Fixed bottom prompt bar. Handles first prompts (with presets) and
- * follow-up refinements (with a "refining" strip).
+ * Prompt input in two forms:
+ * - "hero": large, in-flow, used on the empty state
+ * - "dock": floating pill pinned to the bottom once a build exists
  */
 export default function Composer({
-  value, onChange, onSubmit, onStop,
+  variant = 'dock',
+  value, onChange, onSubmit, onStop, inputRef,
   isBusy, loadingMessage,
-  isRefining, showPresets, isNarrow, onReset,
+  isRefining, isNarrow, onReset,
 }) {
-  const textareaRef = useRef(null);
+  const fallbackRef = useRef(null);
+  const textareaRef = inputRef || fallbackRef;
+  const isHero = variant === 'hero';
 
   // Grow with content (also when a preset or modifier fills the box), capped.
   useEffect(() => {
@@ -22,15 +26,23 @@ export default function Composer({
     if (!el) return;
     el.style.height = 'auto';
     if (value !== '') {
-      el.style.height = `${Math.min(el.scrollHeight, isNarrow ? MAX_HEIGHT_NARROW : MAX_HEIGHT_WIDE)}px`;
+      const max = isNarrow ? MAX_HEIGHT_NARROW : MAX_HEIGHT_WIDE;
+      el.style.height = `${Math.min(el.scrollHeight, max)}px`;
     }
-  }, [value, isNarrow]);
+  }, [value, isNarrow, textareaRef]);
 
-  const placeholder = isNarrow
-    ? (isRefining ? 'e.g. Upgrade GPU to RTX 4060' : 'e.g. Gaming PC under 75,000 BDT')
-    : (isRefining
-        ? 'Tweak your build, e.g. "Upgrade GPU to RTX 4060" or "Change RAM to 32GB"'
-        : 'Describe your PC, e.g. "Gaming build under 75,000 BDT with Ryzen 5"');
+  let placeholder;
+  if (isHero) {
+    placeholder = isNarrow
+      ? 'e.g. Gaming PC under 75,000 BDT'
+      : 'e.g. Gaming build under 75,000 BDT with Ryzen 5 and 16GB RAM';
+  } else if (isRefining) {
+    placeholder = isNarrow
+      ? 'Refine, e.g. cheaper GPU'
+      : 'Refine your build, e.g. "Upgrade GPU to RTX 4060"';
+  } else {
+    placeholder = 'Describe your PC...';
+  }
 
   const canSubmit = value.trim() !== '' && !isBusy;
 
@@ -39,11 +51,68 @@ export default function Composer({
     if (canSubmit) onSubmit();
   };
 
+  const addModifier = (append) => {
+    const base = value.trim();
+    // Modifiers are written as ", more detail"; drop the comma when there is nothing to follow.
+    onChange(base ? base + append : append.replace(/^,\s*/, ''));
+    textareaRef.current?.focus();
+  };
+
+  const textarea = (
+    <textarea
+      ref={textareaRef}
+      className={`flex-1 min-w-0 bg-transparent border-0 resize-none overflow-y-auto block text-fg placeholder:text-fg-3 text-base leading-6 ${
+        isHero ? 'w-full px-2 py-2 min-h-24' : 'px-1 py-3 min-h-12'
+      }`}
+      placeholder={placeholder}
+      aria-label="Describe the PC you want"
+      value={value}
+      rows={isHero ? 3 : 1}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (canSubmit) onSubmit();
+        }
+      }}
+      disabled={isBusy}
+    />
+  );
+
+  const sendOrStop = isBusy ? (
+    <button
+      type="button"
+      onClick={onStop}
+      className="btn btn-danger btn-icon shrink-0"
+      title="Stop"
+      aria-label="Stop building"
+    >
+      <span className="w-3.5 h-3.5 bg-current rounded-[3px]" aria-hidden="true" />
+    </button>
+  ) : null;
+
+  if (isHero) {
+    return (
+      <form onSubmit={handleSubmit} className="card surface-float p-2 sm:p-3">
+        {textarea}
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <ModifiersMenu onPick={addModifier} disabled={isBusy} />
+          {sendOrStop || (
+            <button type="submit" disabled={!canSubmit} className="btn btn-primary btn-touch px-5 gap-2">
+              <span>Build my PC</span>
+              <Send size={16} strokeWidth={2.2} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </form>
+    );
+  }
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-bg/90 backdrop-blur-xl border-t border-line p-3 sm:p-4 z-40 print:hidden">
-      <div className="max-w-4xl mx-auto relative">
+    <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-8 pointer-events-none bg-gradient-to-t from-bg via-bg/85 to-transparent print:hidden">
+      <div className="max-w-2xl mx-auto relative pointer-events-auto">
         {isBusy && (
-          <div className="absolute left-1/2 -top-14 -translate-x-1/2 z-50 pointer-events-none">
+          <div className="absolute left-1/2 -top-12 -translate-x-1/2 z-50 pointer-events-none">
             <div
               role="status"
               className="surface-float bg-surface border border-line text-fg px-5 py-2 rounded-full flex items-center gap-3 text-sm whitespace-nowrap"
@@ -55,103 +124,35 @@ export default function Composer({
         )}
 
         {isRefining && !isBusy && (
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="chip bg-accent-soft border-accent-line text-accent shrink-0">
-                <RefreshCw size={12} aria-hidden="true" />
-                Refining your build
-              </span>
-              <span className="text-xs text-fg-3 hidden sm:inline truncate">
-                Ask to swap parts, raise the budget, or change cooling
-              </span>
-            </div>
+          <div className="hidden sm:flex mb-2 items-center justify-between gap-2 px-1">
+            <span className="chip bg-accent-soft border-accent-line text-accent">
+              <RefreshCw size={12} aria-hidden="true" />
+              Refining your build
+            </span>
             <button
               type="button"
               onClick={onReset}
-              className="text-xs text-fg-2 hover:text-bad px-3 min-h-11 shrink-0"
+              className="text-xs text-fg-2 hover:text-bad px-2 min-h-9"
             >
               Start over
             </button>
           </div>
         )}
 
-        {showPresets && (
-          <div className="mb-2 flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 mask-fade-edges">
-            {PRESET_WORKLOADS.map((preset) => {
-              const PresetIcon = preset.icon;
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => { onChange(preset.prompt); textareaRef.current?.focus(); }}
-                  className="btn min-h-11 rounded-full shrink-0 gap-2 text-xs"
-                >
-                  <PresetIcon size={14} className="text-accent" aria-hidden="true" />
-                  <span>{preset.label}</span>
-                  <span className="text-fg-3">{preset.tag}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {value !== '' && !isBusy && (
-          <div className="mb-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-            <span className="text-xs text-fg-3 shrink-0">Add:</span>
-            {PROMPT_MODIFIERS.map((mod) => (
-              <button
-                key={mod.label}
-                type="button"
-                onClick={() => onChange(value.trim() + mod.append)}
-                className="btn min-h-11 text-xs shrink-0"
-              >
-                {mod.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="flex gap-2.5 sm:gap-3 items-end">
-          <textarea
-            ref={textareaRef}
-            className="flex-1 min-w-0 bg-surface border border-line focus:border-accent rounded-xl px-4 sm:px-5 py-3 text-fg placeholder:text-fg-3 transition-colors text-sm sm:text-base leading-6 resize-none overflow-y-auto min-h-12 sm:min-h-[52px] block"
-            placeholder={placeholder}
-            aria-label="Describe the PC you want"
-            value={value}
-            rows={1}
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (canSubmit) onSubmit();
-              }
-            }}
-            disabled={isBusy}
-          />
-
-          <div className="shrink-0 mb-0.5">
-            {isBusy ? (
-              <button
-                type="button"
-                onClick={onStop}
-                className="btn btn-danger btn-icon sm:w-12 sm:min-h-12"
-                title="Stop"
-                aria-label="Stop building"
-              >
-                <span className="w-3.5 h-3.5 bg-current rounded-[3px]" aria-hidden="true" />
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="btn btn-primary btn-icon sm:w-12 sm:min-h-12"
-                disabled={!canSubmit}
-                title="Build"
-                aria-label="Build"
-              >
-                <Send size={18} strokeWidth={2.2} className="ml-0.5" aria-hidden="true" />
-              </button>
-            )}
-          </div>
+        <form onSubmit={handleSubmit} className="card surface-float rounded-2xl p-1.5 flex items-end gap-1">
+          <ModifiersMenu onPick={addModifier} disabled={isBusy} />
+          {textarea}
+          {sendOrStop || (
+            <button
+              type="submit"
+              className="btn btn-primary btn-icon shrink-0"
+              disabled={!canSubmit}
+              title="Build"
+              aria-label="Build"
+            >
+              <Send size={18} strokeWidth={2.2} className="ml-0.5" aria-hidden="true" />
+            </button>
+          )}
         </form>
       </div>
     </div>

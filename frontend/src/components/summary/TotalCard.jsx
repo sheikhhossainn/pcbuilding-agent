@@ -1,6 +1,7 @@
 import { ShieldCheck } from 'lucide-react';
 import { formatPrice } from '../../lib/format';
 import { TOTAL_PARTS } from '../../lib/constants';
+import AnimatedPrice from '../AnimatedPrice';
 
 export default function TotalCard({ total, configuredCount, budget }) {
   const hasBudget = budget > 0;
@@ -15,7 +16,9 @@ export default function TotalCard({ total, configuredCount, budget }) {
           <ShieldCheck size={14} className="text-ok" aria-hidden="true" /> Live prices
         </span>
       </div>
-      <div className="num font-bold text-3xl sm:text-4xl text-fg tracking-tight">{formatPrice(total)}</div>
+      <div className="num font-bold text-3xl sm:text-4xl text-fg tracking-tight">
+        <AnimatedPrice value={total} />
+      </div>
 
       {hasBudget && (
         <div className="mt-3">

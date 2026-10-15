@@ -173,6 +173,15 @@ body {
     min-height: 2.75rem;
     padding: 0;
   }
+  .btn-icon-sm {
+    width: 2.25rem;
+    padding: 0;
+  }
+  /* Touch screens: every button meets the 44px target */
+  @media (pointer: coarse) {
+    .btn { min-height: 2.75rem; }
+    .btn-icon-sm { width: 2.75rem; }
+  }
   .btn-primary {
     background: var(--accent);
     border-color: var(--accent);

@@ -2,6 +2,7 @@ import { ShieldAlert, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { formatPrice } from '../lib/format';
 import { TOTAL_PARTS } from '../lib/constants';
 import StatusChip from './StatusChip';
+import AnimatedPrice from './AnimatedPrice';
 
 // Phone-only. Keeps total, budget and compatibility in view while scrolling.
 export default function MobileSummaryBar({
@@ -27,7 +28,9 @@ export default function MobileSummaryBar({
       className="lg:hidden tactile-btn w-full mt-2 card px-4 py-2 min-h-14 flex items-center justify-between gap-3 text-left"
     >
       <span className="min-w-0">
-        <span className="block num font-bold text-lg text-fg leading-tight">{formatPrice(total)}</span>
+        <span className="block num font-bold text-lg text-fg leading-tight">
+          <AnimatedPrice value={total} />
+        </span>
         <span className={`block text-xs truncate ${isOver ? 'text-bad' : 'text-fg-3'}`}>{subtitle}</span>
       </span>
       {incompatibleCount > 0 ? (

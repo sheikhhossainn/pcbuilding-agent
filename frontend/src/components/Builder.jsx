@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useBuild } from '../hooks/useBuild';
 import { useSettings } from '../hooks/useSettings';
@@ -16,6 +16,7 @@ import BuildList from './BuildList';
 import RationaleCard from './RationaleCard';
 import SummaryRail from './SummaryRail';
 import Composer from './Composer';
+import Hero from './Hero';
 import SettingsDialog from './SettingsDialog';
 import Toast from './Toast';
 
@@ -75,6 +76,29 @@ function Builder() {
   };
 
   const handleSubmit = () => buildSession.submit(chatInput, () => setChatInput(""));
+
+  const inputRef = useRef(null);
+
+  // No parts and nothing in flight: show the focused start screen instead of 12 empty rows.
+  const showHero = telemetry.configuredCount === 0 && !isBusy && !previousIntent;
+
+  const composerProps = {
+    value: chatInput,
+    onChange: setChatInput,
+    onSubmit: handleSubmit,
+    onStop: buildSession.stop,
+    inputRef,
+    isBusy,
+    loadingMessage,
+    isRefining: Boolean(previousIntent),
+    isNarrow,
+    onReset: buildSession.clear,
+  };
+
+  const pickPreset = (prompt) => {
+    setChatInput(prompt);
+    inputRef.current?.focus();
+  };
 
   const handleCopySpecSheet = () => {
     const items = Object.entries(build).filter(([, item]) => Boolean(item));
@@ -160,15 +184,25 @@ function Builder() {
           </Notice>
         )}
 
+        {showHero ? (
+          <Hero
+            composerProps={composerProps}
+            onPickPreset={pickPreset}
+            site={site}
+            onSiteChange={setSite}
+            customSiteUrl={customSiteUrl}
+            onCustomSiteUrlChange={setCustomSiteUrl}
+          />
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
           <div className="lg:col-span-8 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+            <div className="flex items-center justify-between gap-2 sm:gap-4">
               <div>
                 <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-fg flex flex-wrap items-center gap-2">
                   <span>Your build</span>
-                  <span className="chip num">{telemetry.configuredCount} of {TOTAL_PARTS} parts</span>
+                  <span className="chip num hidden sm:inline-flex">{telemetry.configuredCount} of {TOTAL_PARTS} parts</span>
                 </h2>
-                <p className="text-sm text-fg-3 mt-1">Prices from live Bangladeshi retailers</p>
+                <p className="text-sm text-fg-3 mt-1 hidden sm:block">Prices from live Bangladeshi retailers</p>
               </div>
 
               <label className="flex items-center gap-2 min-h-11 cursor-pointer text-fg-2 text-sm font-medium hover:text-fg transition-colors">
@@ -202,20 +236,10 @@ function Builder() {
             onExport={handleExport}
           />
         </div>
+        )}
       </main>
 
-      <Composer
-        value={chatInput}
-        onChange={setChatInput}
-        onSubmit={handleSubmit}
-        onStop={buildSession.stop}
-        isBusy={isBusy}
-        loadingMessage={loadingMessage}
-        isRefining={Boolean(previousIntent)}
-        showPresets={chatInput === "" && !previousIntent && total === 0 && loadingState === 'idle'}
-        isNarrow={isNarrow}
-        onReset={buildSession.clear}
-      />
+      {!showHero && <Composer variant="dock" {...composerProps} />}
 
       <SettingsDialog
         open={showSettings}
