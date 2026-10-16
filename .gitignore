@@ -49,3 +49,5 @@ backend/parts.json
 !.vscode/extensions.json
 
 !frontend/vercel.json
+!graphify-out/*.json
+graphify-out/cache/
