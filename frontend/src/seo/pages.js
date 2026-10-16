@@ -5,7 +5,9 @@
 
 export const SITE_URL = 'https://buildmypc-eight.vercel.app';
 export const SITE_NAME = 'BuildMyPC';
-export const LAST_MODIFIED = '2026-10-15';
+export const LAST_MODIFIED =
+  globalThis.process?.env?.BUILD_DATE ||
+  new Date().toISOString().split('T')[0];
 
 export const HOME = {
   path: '/',

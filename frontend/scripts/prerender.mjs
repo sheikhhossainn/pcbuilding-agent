@@ -12,6 +12,7 @@ import {
   SITE_URL, SITE_NAME, LAST_MODIFIED, HOME, HOW_IT_WORKS, FAQ, LANDING_PAGES,
   absoluteUrl, faqJsonLd,
 } from '../src/seo/pages.js';
+import { generateSitemapXml } from '../src/seo/sitemap.js';
 
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const template = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
@@ -127,20 +128,10 @@ for (const page of pages) {
   fs.writeFileSync(out, render(page));
 }
 
-const sitemap = [
-  '<?xml version="1.0" encoding="UTF-8"?>',
-  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-  ...pages.map((p) => [
-    '  <url>',
-    `    <loc>${absoluteUrl(p.path)}</loc>`,
-    `    <lastmod>${LAST_MODIFIED}</lastmod>`,
-    `    <changefreq>${p.path === '/' ? 'weekly' : 'monthly'}</changefreq>`,
-    `    <priority>${p.path === '/' ? '1.0' : '0.8'}</priority>`,
-    '  </url>',
-  ].join('\n')),
-  '</urlset>',
-  '',
-].join('\n');
-fs.writeFileSync(path.join(dist, 'sitemap.xml'), sitemap);
+const sitemap = generateSitemapXml(pages, LAST_MODIFIED);
+fs.writeFileSync(path.join(dist, 'sitemap.xml'), sitemap, 'utf8');
 
-console.log(`prerendered ${pages.length} pages + sitemap.xml`);
+const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+fs.writeFileSync(path.join(publicDir, 'sitemap.xml'), sitemap, 'utf8');
+
+console.log(`prerendered ${pages.length} pages + sitemap.xml (dist/ and public/)`);

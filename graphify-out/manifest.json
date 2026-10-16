@@ -195,14 +195,14 @@
     "semantic_hash": "fa91453358b56681481f75f81d1bfccd"
   },
   "frontend/package.json": {
-    "mtime": 1792084852.3936503,
-    "ast_hash": "f228d3faf521405a4589bc34b2b3041f",
-    "semantic_hash": "f228d3faf521405a4589bc34b2b3041f"
+    "mtime": 1792154088.6777663,
+    "ast_hash": "37d0e802df1aab4f5cd89d654cbdebf0",
+    "semantic_hash": ""
   },
   "frontend/scripts/prerender.mjs": {
-    "mtime": 1792084852.4048312,
-    "ast_hash": "1c3b2c7f701fb7f0b60c0ebb574dbbfc",
-    "semantic_hash": "1c3b2c7f701fb7f0b60c0ebb574dbbfc"
+    "mtime": 1792154058.5302534,
+    "ast_hash": "baa4e487c5b1c83e83f7c9656e866190",
+    "semantic_hash": ""
   },
   "frontend/src/App.jsx": {
     "mtime": 1792084852.4058821,
@@ -410,14 +410,14 @@
     "semantic_hash": "51fd21c378330142b61bf8d1ef3795ef"
   },
   "frontend/src/seo/pages.js": {
-    "mtime": 1792084852.431218,
-    "ast_hash": "6ee076c2edb6f8da10ff4d6dbc2513ff",
-    "semantic_hash": "6ee076c2edb6f8da10ff4d6dbc2513ff"
+    "mtime": 1792154147.239878,
+    "ast_hash": "719cba25f551bad1602c6d5b7771701b",
+    "semantic_hash": ""
   },
   "frontend/src/seo/pages.test.js": {
-    "mtime": 1792084852.4322133,
-    "ast_hash": "be7aa7b87d3beb46f75b33f5bcc756a7",
-    "semantic_hash": "be7aa7b87d3beb46f75b33f5bcc756a7"
+    "mtime": 1792154114.9405863,
+    "ast_hash": "889853dc33904c8b94cf731fffdb765e",
+    "semantic_hash": ""
   },
   "frontend/vercel.json": {
     "mtime": 1792084852.4332192,
@@ -473,5 +473,100 @@
     "mtime": 1792052124.7082324,
     "ast_hash": "810cd03a7faea37895485a1215267edb",
     "semantic_hash": "810cd03a7faea37895485a1215267edb"
+  },
+  "frontend/scripts/generate-sitemap.mjs": {
+    "mtime": 1792154002.289245,
+    "ast_hash": "8c2e003fbcf3208359680a4a0ad52572",
+    "semantic_hash": ""
+  },
+  "frontend/src/seo/sitemap.js": {
+    "mtime": 1792153991.660236,
+    "ast_hash": "d45234990fcf2f11e1e9edbbc103acd9",
+    "semantic_hash": ""
+  },
+  ".agents/rules/graphify.md": {
+    "mtime": 1792128505.499819,
+    "ast_hash": "a0e4d192b9e2e17256124dbfc8e24e6a",
+    "semantic_hash": ""
+  },
+  ".agents/workflows/graphify.md": {
+    "mtime": 1792128505.5009418,
+    "ast_hash": "637776aa6f7496d069afe7520c845c8a",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1792084852.3703916,
+    "ast_hash": "5e90529904bdd71970f08781f3fd91cc",
+    "semantic_hash": ""
+  },
+  "backend/tests/stress/README.md": {
+    "mtime": 1792084852.38639,
+    "ast_hash": "adc555c493d62e69ddb93c0f245f376d",
+    "semantic_hash": ""
+  },
+  "context.md": {
+    "mtime": 1792084852.390646,
+    "ast_hash": "ac056e8f69acd33de9988b0a4f40fc84",
+    "semantic_hash": ""
+  },
+  "frontend/index.html": {
+    "mtime": 1792084852.3926535,
+    "ast_hash": "f42cde52d1c68714700b37be57284bbe",
+    "semantic_hash": ""
+  },
+  "frontend/public/googled8ccce3d32b5bf4e.html": {
+    "mtime": 1792084852.3986502,
+    "ast_hash": "ba09565e126d298a0a950d392eff005c",
+    "semantic_hash": ""
+  },
+  "frontend/public/robots.txt": {
+    "mtime": 1792084852.4027784,
+    "ast_hash": "e7c47b310e59b1023697a907866dfe9a",
+    "semantic_hash": ""
+  },
+  "scraper/requirements.txt": {
+    "mtime": 1781709721.5482836,
+    "ast_hash": "b64b8e0bad9777780b28b5e22651d352",
+    "semantic_hash": ""
+  },
+  "scraper/templates/dashboard.html": {
+    "mtime": 1781711788.5577636,
+    "ast_hash": "48ecc1bf8dcfe6f8bbe5af74790fadf9",
+    "semantic_hash": ""
+  },
+  "frontend/public/apple-touch-icon.png": {
+    "mtime": 1792084852.3946493,
+    "ast_hash": "72a2d976e928e5291537bd6465d43a29",
+    "semantic_hash": ""
+  },
+  "frontend/public/favicon-48.png": {
+    "mtime": 1792084852.3966503,
+    "ast_hash": "383dcbe731deed9cb8d05d3bb5bec2b8",
+    "semantic_hash": ""
+  },
+  "frontend/public/favicon.svg": {
+    "mtime": 1792084852.3976495,
+    "ast_hash": "febe5effc4ed2e933f52934f5a4cf646",
+    "semantic_hash": ""
+  },
+  "frontend/public/icon-192.png": {
+    "mtime": 1792084852.3996506,
+    "ast_hash": "81f550861cfc6faeed3aca6b9079d947",
+    "semantic_hash": ""
+  },
+  "frontend/public/icon-512.png": {
+    "mtime": 1792084852.4007764,
+    "ast_hash": "899bca55bfb425e71a8efb9d87d1d2e3",
+    "semantic_hash": ""
+  },
+  "frontend/public/icons.svg": {
+    "mtime": 1778440788.8115077,
+    "ast_hash": "21c7473c592c67dc87223d49892c8f0a",
+    "semantic_hash": ""
+  },
+  "frontend/public/og-image.png": {
+    "mtime": 1792084852.4017756,
+    "ast_hash": "6351d6e5fd146afb9cd7c78ac35b0144",
+    "semantic_hash": ""
   }
 }
