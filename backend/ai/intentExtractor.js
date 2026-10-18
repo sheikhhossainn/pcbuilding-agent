@@ -6,6 +6,7 @@
  */
 
 import { AI } from '../config/thresholds.js';
+import { normalizePatch, PATCH_CATEGORIES } from '../engine/followUpPatch.js';
 
 const EXPECTED_CATEGORIES = [
   'Processor', 'Motherboard', 'RAM', 'Storage', 'Graphics Card',
@@ -227,9 +228,106 @@ Rules:
     }
   };
 
+  /**
+   * Read a refine message as a patch against the build on screen, instead of re-emitting the
+   * whole intent. Only the named parts change; the engine applies the patch itself.
+   *
+   * @returns {Promise<Object>} Normalized patch (see followUpPatch.normalizePatch)
+   * @throws {Error} If both models fail or return something that is not a patch
+   */
+  const extractPatch = async (userMessage, previousIntent, previousBuild = null) => {
+    const messages = [
+      { role: 'system', content: buildPatchPrompt(previousIntent, previousBuild) },
+      { role: 'user', content: userMessage },
+    ];
+
+    let lastError = null;
+    for (const model of [AI.MODEL_PRIMARY_INTENT, AI.MODEL_FALLBACK_INTENT]) {
+      try {
+        const response = await groqClient.chat.completions.create({
+          model, messages, temperature: AI.TEMPERATURE_INTENT,
+        }, { timeout: 30000 });
+        const patch = normalizePatch(parseIntentJson(response.choices[0].message.content));
+        if (!patch) throw new Error('Patch reply was not an object.');
+        console.log(`[AI] ✓ Follow-up patch via ${model}: ${patch.ops.map((o) => `${o.action} ${o.category}`).join(', ') || 'no part ops'}`);
+        return patch;
+      } catch (error) {
+        lastError = error;
+        console.warn(`[AI] ${model} patch failed:`, error.message);
+      }
+    }
+    throw new Error(`Follow-up extraction failed: ${lastError.message}`);
+  };
+
   return {
     extract,
+    extractPatch,
   };
 };
+
+/**
+ * Prompt for the patch reader. The model sees the current parts and the few settings that
+ * matter, and answers with small operations. Part names come from the browser: one line each.
+ */
+export function buildPatchPrompt(previousIntent, previousBuild) {
+  const oneLine = (text, max) => String(text).replace(/\s+/g, ' ').slice(0, max);
+  const lines = previousBuild && typeof previousBuild === 'object'
+    ? Object.entries(previousBuild)
+      .filter(([cat, v]) => PATCH_CATEGORIES.includes(cat) && v && v.name)
+      .map(([cat, v]) => `  - ${cat}: ${oneLine(v.name, 200)} (${Number(v.price) || 0} BDT)`)
+    : [];
+
+  return `You edit an existing PC build. Read the user's message and answer with a JSON patch that lists ONLY what they asked to change. Parts they did not mention must not appear.
+
+Current build (total budget ${Number(previousIntent?.budget_bdt) || 0} BDT, use case ${previousIntent?.use_case || 'general'}):
+${lines.join('\n') || '  (no parts)'}
+
+Part names: ${PATCH_CATEGORIES.join(', ')}.
+
+Reply with ONLY this JSON, no prose:
+{
+  "ops": [
+    {
+      "category": "<part name>",
+      "action": "change" | "add" | "remove",
+      "direction": "up" | "down" | null,
+      "price_target": <BDT number the user named for THIS part> | null,
+      "tolerance": <0.05-0.5, default 0.15, "around"/"about" = 0.15, "exactly" = 0.05>,
+      "absorb_savings": <true if the user wants the money freed by other changes spent on this part>,
+      "required_keywords": [<words the part name must contain>],
+      "exclude_keywords": [<words it must not contain>],
+      "drop_keywords": [<earlier keywords to forget>],
+      "structured_reqs": { "min_gb": n, "min_tb": n, "min_hz": n, "min_wattage": n }
+    }
+  ],
+  "budget_bdt": <new TOTAL budget for the whole PC> | null,
+  "use_case": "gaming" | "editing" | "office" | "general" | null,
+  "preferred_cpu_brand": "amd" | "intel" | "any" | null,
+  "preferred_gpu_brand": "nvidia" | "amd" | "any" | null,
+  "no_gpu": true | false | null,
+  "restart": <true only if the user says start over / new build>,
+  "clarify": <one short question if you cannot tell what to change> | null
+}
+
+Rules:
+- A price next to a part name is that part's "price_target". It is NEVER "budget_bdt". Set "budget_bdt" only when the user states a new total for the whole PC ("budget 120k", "make it 1.5 lakh total").
+- "more powerful", "stronger", "better" with no figure: "direction": "up". "cheaper", "lower end": "direction": "down".
+- "use the money saved from X for Y" / "put the rest into Y": Y gets "absorb_savings": true. X is changed (a lower price_target or direction "down") if the user said how; otherwise ask via "clarify".
+- "remove X" / "no X" / "I have my own X": action "remove". Do not remove Processor, Motherboard, RAM or PSU.
+- 'lakh' = 100000, 'k' = 1000.
+- Use keywords only for words the user said (a brand, a size, a model). Do not invent requirements.
+- If the message is not about changing this build, return {"ops": [], "clarify": "<question>"}.
+- "clarify" is only for a message with no change you can apply. A brand, a size or a use case is a change, not a question.
+- "use_case", "preferred_cpu_brand", "preferred_gpu_brand" and "no_gpu" are null unless the user's words change them. Never copy them from the current parts above.
+- "drop_keywords" is only for words the user takes back ("no longer need ips"). Never list words from the part names above.
+- Never include a part the user did not mention.
+
+Examples:
+"radeon cards only" -> {"ops":[],"preferred_gpu_brand":"amd"}
+"go with ryzen" -> {"ops":[],"preferred_cpu_brand":"amd"}
+"this is for video editing now" -> {"ops":[],"use_case":"editing"}
+"1tb nvme" -> {"ops":[{"category":"Storage","required_keywords":["nvme"],"structured_reqs":{"min_tb":1}}]}
+"keyboard around 5k, spend what is left on the cooler" -> {"ops":[{"category":"Keyboard","price_target":5000},{"category":"CPU Cooler","direction":"up","absorb_savings":true}]}`;
+}
 
 export default createIntentExtractor;

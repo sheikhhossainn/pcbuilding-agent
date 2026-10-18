@@ -7,6 +7,7 @@
 import { BUDGET } from '../config/budget.js';
 import { API } from '../config/thresholds.js';
 import { collectBuildWarnings, estimatePower } from './buildValidator.js';
+import { applyPatch, isEmptyPatch } from './followUpPatch.js';
 
 // A build cannot be assembled without these, so "remove" never applies to them.
 const MANDATORY_CATEGORIES = new Set(['Processor', 'Motherboard', 'RAM', 'PSU']);
@@ -82,6 +83,17 @@ const UPGRADE_CAPS = {
   UPS: { share: 0.08, floor: 6000 },
 };
 
+// When the user hands freed-up money to one part, it still should not turn into the priciest one
+// on the shelf. Only applied to a part named as the absorber.
+const ABSORB_CAPS = {
+  PSU: { share: 0.12, floor: 9000 },
+};
+
+const absorbCapFor = (category, budget) => {
+  const cap = ABSORB_CAPS[category];
+  return cap ? Math.max(cap.floor, Math.round(budget * cap.share)) : Infinity;
+};
+
 const upgradeCapFor = (category, budget) => {
   const cap = UPGRADE_CAPS[category];
   return cap ? Math.max(cap.floor, Math.round(budget * cap.share)) : Infinity;
@@ -126,11 +138,38 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
   // Extract intent from AI (pass previous context for follow-ups)
   let intent;
+  // Set when the refine message was read as a patch: which parts to search again, and what the
+  // user said about price and where freed-up money should go.
+  let followUp = null;
+  let restarting = false;
   try {
-    intent = payload._intent
-      ? JSON.parse(JSON.stringify(payload._intent))
-      : await deps.intentExtractor.extract(message, prevIntent || null, prevBuild || null);
+    if (payload._intent) {
+      intent = JSON.parse(JSON.stringify(payload._intent));
+    } else {
+      let patch = null;
+      if (prevIntent && prevBuild && deps.intentExtractor.extractPatch) {
+        try {
+          patch = await deps.intentExtractor.extractPatch(message, prevIntent, prevBuild);
+        } catch (error) {
+          // Fall back to the full-intent reader below rather than failing the refine.
+          console.warn('[orchestrator] Patch extraction failed, using full intent:', error.message);
+        }
+      }
+      if (patch && isEmptyPatch(patch) && patch.clarify) {
+        throw new BuildError(422, patch.clarify, 'NEEDS_CLARIFICATION');
+      }
+      if (patch && !patch.restart && !isEmptyPatch(patch)) {
+        const plan = applyPatch(prevIntent, patch, prevBuild, message);
+        intent = plan.intent;
+        followUp = plan;
+        console.log(`[orchestrator] Follow-up patch: re-search ${[...plan.changing].join(', ') || 'nothing'}`);
+      } else {
+        restarting = Boolean(patch?.restart);
+        intent = await deps.intentExtractor.extract(message, restarting ? null : prevIntent || null, restarting ? null : prevBuild || null);
+      }
+    }
   } catch (error) {
+    if (error instanceof BuildError) throw error;
     console.error("[orchestrator] Intent extraction failed:", error);
     if (error.message.includes('Intent extraction failed')) {
       throw new BuildError(500, 'The AI service is currently unavailable. Please try again later.', 'GROQ_UNAVAILABLE');
@@ -141,8 +180,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
   // Apply manual overrides. In a follow-up, "monitor around 20k" prices the monitor; it must not
   // become the new total budget (the recursive re-plan below passes `_intent` instead of a prevIntent).
   const overrideOpts = {
-    followUp: Boolean(prevIntent || payload._intent),
-    previousBudget: Number(prevIntent?.budget_bdt) || null,
+    followUp: Boolean((prevIntent && !restarting) || payload._intent),
+    previousBudget: restarting ? null : Number(prevIntent?.budget_bdt) || null,
   };
   deps.intentOverrideApplier(intent, message, overrideOpts);
 
@@ -255,7 +294,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
   // ─── Follow-up: Lock unchanged components from previous build ───
   const lockedCategories = new Set();
-  if (prevBuild && prevIntent && prevIntent.component_strategy) {
+  const targetFloors = {}; // lowest price accepted for a part the user priced ("around 20k")
+  if (prevBuild && prevIntent && prevIntent.component_strategy && !restarting) {
     const oldStrats = prevIntent.component_strategy;
     const newStrats = intent.component_strategy || {};
 
@@ -285,7 +325,11 @@ export async function executeBuild(payload, deps, ctx = {}) {
       const isGpuAffected = category === 'Graphics Card' && (gpuBrandChanged || budgetChanged);
       const isBudgetSensitive = budgetChanged && ['Processor', 'Graphics Card', 'Monitor'].includes(category);
 
-      if (!stratChanged && !isCpuAffected && !isGpuAffected && !isBudgetSensitive && !useCaseChanged && !siteChanged) {
+      // A patch already says which parts the request touches; without one, infer it from what changed.
+      const untouched = followUp
+        ? !followUp.changing.has(category) && !siteChanged
+        : !isCpuAffected && !isGpuAffected && !isBudgetSensitive && !useCaseChanged && !siteChanged;
+      if (!stratChanged && untouched) {
         initialLocks.add(category);
       }
     }
@@ -386,6 +430,13 @@ export async function executeBuild(payload, deps, ctx = {}) {
         dynamicBudgets[cat] = 0;
       }
       console.log(`[Follow-up] Recalculated dynamic budgets for unlocked categories:`, dynamicBudgets);
+    }
+
+    // A price the user named for a part replaces the share the allocator would have given it.
+    for (const [cat, { target, tolerance }] of Object.entries(followUp?.targets || {})) {
+      if (lockedCategories.has(cat)) continue;
+      dynamicBudgets[cat] = Math.round(target * (1 + tolerance));
+      targetFloors[cat] = Math.round(target * (1 - tolerance));
     }
   }
 
@@ -548,7 +599,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
     if (!isRequired || activeBudget === 0) continue;
 
-    const range = { min: 0, max: activeBudget };
+    const range = { min: targetFloors[category] || 0, max: activeBudget };
     // A hot CPU can't run without its cooler, so that one may dip into the extras' reserve too.
     const mandatory = MANDATORY_CATEGORIES.has(category) || forcedCooler;
     try {
@@ -645,6 +696,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
   const targetMinSpend = Math.max(0, budget - underspendTolerance);
   const maxRebalanceIterations = intent.budget_bdt >= 150000 ? 7 : 6;
   const failedUpgrades = new Set();
+  const absorbers = new Set(followUp?.absorbers || []);
   // Cheapest cooler on offer, so a CPU upgrade never strands the build without one.
   const coolerFloor = floorResult.minimums?.['CPU Cooler']
     || ((await deps.partRepository.query(site, 'CPU Cooler', { min: 0, max: budgetCeiling }, 'price_asc'))[0]?.price ?? 0);
@@ -664,12 +716,15 @@ export async function executeBuild(payload, deps, ctx = {}) {
       if (failedUpgrades.has(cat)) return;
       // A kept part stays as it was; leftover money is reported, not spent on it.
       if (lockedCategories.has(cat)) return;
+      // "Use the saved money for X": only X takes it, so a part the user priced stays at that price.
+      if (absorbers.size > 0 && !absorbers.has(cat)) return;
       const current = selectedBuild[cat];
       if (!current) return;
       const strategy = intent.component_strategy[cat];
       if (!strategy || !strategy.required) return;
       const weight = strategy.weight || 1;
-      const expandedMax = Math.min(current.price + remaining, budgetCeiling, upgradeCapFor(cat, budget));
+      const absorbCap = absorbers.has(cat) ? absorbCapFor(cat, budget) : Infinity;
+      const expandedMax = Math.min(current.price + remaining, budgetCeiling, upgradeCapFor(cat, budget), absorbCap);
       const gap = expandedMax - current.price;
       const score = gap * weight;
       if (gap > 200 && (!best || score > best.score)) {
@@ -808,5 +863,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
     warnings: buildWarnings,
     notes,
     power: estimatePower(selectedBuild, intent, deps),
+    scope: prevBuild && !restarting ? {
+      locked: Array.from(lockedCategories),
+      changing: Object.keys(selectedBuild).filter((c) => !lockedCategories.has(c) && (selectedBuild[c] || prevBuild[c])),
+    } : null,
   };
 }

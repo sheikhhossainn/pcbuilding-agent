@@ -13,6 +13,7 @@ import { createPartRepository } from '../utils/partRepository.js';
 import { createSpecInference } from '../utils/specInference.js';
 import { createCacheManager } from '../utils/cacheManager.js';
 import { applyIntentOverrides } from '../engine/intentOverrides.js';
+import { normalizePatch } from '../engine/followUpPatch.js';
 import { BUDGET } from '../config/budget.js';
 
 const CATEGORIES = [
@@ -89,10 +90,16 @@ function makeIntent({ budget, use = 'gaming', noGpu = false, cpuBrand = null, gp
   };
 }
 
-async function build(spec, { site = 'startech', message = 'build me a pc', extra = {}, eng = engine } = {}) {
+async function build(spec, { site = 'startech', message = 'build me a pc', extra = {}, eng = engine, patch = null, patchError = null } = {}) {
   const intent = makeIntent(spec);
   const deps = {
-    intentExtractor: { extract: async () => JSON.parse(JSON.stringify(intent)) },
+    intentExtractor: {
+      extract: async () => JSON.parse(JSON.stringify(intent)),
+      // A follow-up is read as a patch; without one the full-intent path above is used.
+      ...((patch || patchError) && {
+        extractPatch: async () => { if (patchError) throw patchError; return normalizePatch(patch); },
+      }),
+    },
     explanationGenerator: { generate: async () => 'ok' },
     compatibilityChecker: eng.compatibilityChecker,
     budgetAllocator: eng.budgetAllocator,
@@ -291,6 +298,109 @@ test('follow-up: kept parts are not upgraded with leftover money, and the leftov
   assert.ok(100000 - second.total > 2000, 'scenario should leave money unspent');
   assert.ok(second.warnings.some((w) => /unspent/.test(w)), 'leftover budget was not reported');
   assert.ok(second.notes.some((w) => /unspent/.test(w)));
+});
+
+const refine = (first, message, patch, spec = { budget: 100000, use: 'gaming' }) => build(spec, {
+  message,
+  patch,
+  extra: {
+    previousBuild: JSON.parse(JSON.stringify(first.build)),
+    previousIntent: JSON.parse(JSON.stringify(first.intent)),
+  },
+});
+
+/** A 100k gaming build whose monitor was swapped for a pricey one, with the budget raised to match. */
+async function buildWithPriceyMonitor({ min = 35000, max = 36000 } = {}) {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  const [monitor] = await engine.partRepository.query('startech', 'Monitor', { min, max }, 'price_asc');
+  assert.ok(monitor, `fixture should have a ${min}-${max} monitor`);
+  const budget = 100000 + monitor.price - first.build.Monitor.price;
+  first.build.Monitor = monitor;
+  first.intent.budget_bdt = budget;
+  first.spec = { budget, use: 'gaming' };
+  return first;
+}
+
+const urls = (b) => Object.fromEntries(parts(b).map(([c, p]) => [c, p.url]));
+
+test('patch follow-up: "monitor around 20k, saved money to a stronger PSU" re-searches only those two', async () => {
+  const first = await buildWithPriceyMonitor();
+  const second = await refine(first, 'find a monitor around 20k and use the saved money for a stronger PSU', {
+    ops: [
+      { category: 'Monitor', price_target: 20000 },
+      { category: 'PSU', direction: 'up', absorb_savings: true },
+    ],
+  }, first.spec);
+
+  assert.deepEqual([...second.scope.changing].sort(), ['Monitor', 'PSU']);
+  const before = urls(first.build);
+  const after = urls(second.build);
+  for (const category of Object.keys(before)) {
+    if (category === 'Monitor' || category === 'PSU') continue;
+    assert.equal(after[category], before[category], `${category} changed although the message did not touch it`);
+  }
+  assert.equal(second.intent.budget_bdt, first.spec.budget);
+
+  const monitor = second.build.Monitor;
+  assert.ok(monitor.price >= 17000 && monitor.price <= 23000, `monitor ${monitor.price} is not around 20k`);
+  assert.ok(second.build.PSU.specs.wattage > first.build.PSU.specs.wattage, 'PSU did not get stronger');
+  assert.ok(second.total <= ceilingOf(first.spec.budget));
+  assertSound(second, first.spec, 'patch monitor+psu');
+});
+
+test('patch follow-up: savings go only to the named part, which is capped', async () => {
+  // An 86k OLED swapped for a ~56k panel frees ~30k: enough for a 24k+ PSU if nothing stopped it.
+  const first = await buildWithPriceyMonitor({ min: 86000, max: 86000 });
+  const second = await refine(first, 'cheaper monitor, rest into the psu', {
+    ops: [
+      { category: 'Monitor', direction: 'down' },
+      { category: 'PSU', direction: 'up', absorb_savings: true },
+    ],
+  }, first.spec);
+  assert.ok(second.build.Monitor.price < first.build.Monitor.price);
+  const cap = Math.max(9000, Math.round(first.spec.budget * 0.12));
+  assert.ok(second.build.PSU.price <= cap, `PSU ${second.build.PSU.price} ran away with the savings (cap ${cap})`);
+  assert.equal(second.build['Graphics Card'].url, first.build['Graphics Card'].url);
+  assert.equal(second.build.Processor.url, first.build.Processor.url);
+});
+
+test('patch follow-up: a higher budget with a named part spends the extra on that part only', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  const second = await refine(first, 'raise the budget to 150k for a better gpu', {
+    budget_bdt: 150000,
+    ops: [{ category: 'Graphics Card', direction: 'up' }],
+  }, { budget: 150000, use: 'gaming' });
+  assert.equal(second.intent.budget_bdt, 150000);
+  assert.equal(second.build.Processor.url, first.build.Processor.url, 'CPU was redone though only the GPU was named');
+  assert.ok(second.build['Graphics Card'].price > first.build['Graphics Card'].price);
+  assert.ok(!second.scope.changing.includes('Processor'));
+});
+
+test('patch follow-up: an unclear message is a question, not a rebuild', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  await assert.rejects(
+    refine(first, 'make it better', { ops: [], clarify: 'Better how: faster GPU, more storage, or something else?' }),
+    (e) => e.code === 'NEEDS_CLARIFICATION' && /Better how/.test(e.userMessage),
+  );
+});
+
+test('patch follow-up: if the patch reader fails, the full-intent reader still serves the refine', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  const second = await build({ budget: 100000, use: 'gaming' }, {
+    message: 'build me a pc',
+    patchError: new Error('model down'),
+    extra: {
+      previousBuild: JSON.parse(JSON.stringify(first.build)),
+      previousIntent: JSON.parse(JSON.stringify(first.intent)),
+    },
+  });
+  assertSound(second, { budget: 100000, use: 'gaming' }, 'patch fallback');
+});
+
+test('patch follow-up: "start over" ignores the previous build', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  const second = await refine(first, 'start over, new build', { restart: true });
+  assert.deepEqual(second.scope, null);
 });
 
 test('invalid requests are classified build errors', async () => {
