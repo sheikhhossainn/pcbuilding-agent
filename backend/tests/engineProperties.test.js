@@ -258,6 +258,41 @@ test('follow-up: parts that leave no room for the change trigger a clean re-plan
   assert.ok(second.total <= ceilingOf(100000));
 });
 
+test('follow-up: a part price in the message does not replace the total budget', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  // The LLM misreads "monitor around 20k" as the new total.
+  const second = await build({ budget: 20000, use: 'gaming' }, {
+    message: 'find a monitor around 20k and use the saved money for a stronger PSU',
+    extra: {
+      previousBuild: JSON.parse(JSON.stringify(first.build)),
+      previousIntent: JSON.parse(JSON.stringify(first.intent)),
+    },
+  });
+  assert.equal(second.intent.budget_bdt, 100000);
+  assert.ok(second.total > 50000, `total collapsed to ${second.total}`);
+});
+
+test('follow-up: kept parts are not upgraded with leftover money, and the leftover is reported', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  const dropped = ['Monitor', 'Storage'];
+  const second = await build({ budget: 100000, use: 'gaming' }, {
+    message: 'remove the monitor and the ssd, I have my own',
+    extra: {
+      previousBuild: JSON.parse(JSON.stringify({ ...first.build, Monitor: null, Storage: null })),
+      previousIntent: JSON.parse(JSON.stringify(first.intent)),
+      removedCategories: dropped,
+    },
+  });
+  for (const category of dropped) assert.equal(second.build[category], null);
+  for (const [category, part] of parts(first.build)) {
+    if (dropped.includes(category)) continue;
+    assert.equal(second.build[category]?.url, part.url, `${category} changed although it was kept`);
+  }
+  assert.ok(100000 - second.total > 2000, 'scenario should leave money unspent');
+  assert.ok(second.warnings.some((w) => /unspent/.test(w)), 'leftover budget was not reported');
+  assert.ok(second.notes.some((w) => /unspent/.test(w)));
+});
+
 test('invalid requests are classified build errors', async () => {
   await assert.rejects(build({ budget: 80000 }, { message: '' }), (e) => e.code === 'INVALID_MESSAGE');
   await assert.rejects(build({ budget: 80000 }, { site: 'amazon' }), (e) => e.code === 'INVALID_SITE');

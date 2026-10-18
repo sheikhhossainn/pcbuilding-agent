@@ -74,6 +74,53 @@ export const parseBudgetFromMessage = (message) => {
   return null;
 };
 
+// Words that name a part. In a follow-up, a money figure in the same clause as one of these
+// ("find a monitor around 20k") is that part's price, not the new total budget.
+const PART_NOUNS = [
+  ['Monitor', /\b(?:monitors?|displays?|screens?)\b/],
+  ['PSU', /\b(?:psus?|power\s*suppl(?:y|ies)|smps)\b/],
+  ['Graphics Card', /\b(?:gpus?|graphics?(?:\s+cards?)?|video\s*cards?)\b/],
+  ['Processor', /\b(?:cpus?|processors?)\b/],
+  ['RAM', /\b(?:rams?|memory)\b/],
+  ['Storage', /\b(?:ssds?|nvme|hdds?|storage)\b/],
+  ['Motherboard', /\b(?:motherboards?|mobos?)\b/],
+  ['Casing', /\b(?:casing|cabinet|pc\s+case)\b/],
+  ['CPU Cooler', /\b(?:coolers?|cooling)\b/],
+  ['Keyboard', /\bkeyboards?\b/],
+  ['Mouse', /\bmouse\b/],
+  ['UPS', /\bups\b/],
+];
+
+// Wording that makes a figure the whole-build budget even if a part is named nearby
+// ("raise the budget to 150k for a better gpu"). "20k budget" alone does not qualify.
+const TOTAL_CUE_RE = /\b(?:total|overall|altogether|whole build|entire)\b|\bbudget\s+(?:to|of|is|up to)\b|\b(?:increase|raise|bump|lower|reduce|change|set|make)\s+(?:the\s+|my\s+)?budget\b/;
+const CLAUSE_SPLIT_RE = /\s*(?:[;,!?]|\.(?!\d)|\b(?:and|then|but|also|while)\b)\s*/;
+
+const partNamed = (clause) => PART_NOUNS.find(([, re]) => re.test(clause))?.[0] || null;
+
+/**
+ * Separate part-priced clauses from the rest of a follow-up message.
+ * @param {string} message
+ * @returns {{ rest: string, parts: Array<{category: string, amount: number}> }}
+ *   `rest` is the message without clauses that price a single part; `parts` lists those prices.
+ */
+export const splitPartPriceClauses = (message) => {
+  const text = String(message || '').toLowerCase().replace(/৳/g, ' tk ').replace(/(\d),(?=\d{3}\b)/g, '$1');
+  const kept = [];
+  const parts = [];
+  for (const clause of text.split(CLAUSE_SPLIT_RE)) {
+    if (!clause) continue;
+    const amount = parseBudgetFromMessage(clause);
+    const category = amount ? partNamed(clause) : null;
+    if (!category) { kept.push(clause); continue; }
+    // "budget is 20k for the monitor": a trailing "for <part>" re-binds even a total cue.
+    const forPart = PART_NOUNS.some(([, re]) => new RegExp(`\\bfor\\s+(?:the\\s+|a\\s+|my\\s+)?(?:new\\s+)?${re.source}\\s*$`).test(clause));
+    if (TOTAL_CUE_RE.test(clause) && !forPart) { kept.push(clause); continue; }
+    parts.push({ category, amount });
+  }
+  return { rest: kept.join(', '), parts };
+};
+
 const parseMonitorHz = (message) => {
   if (!message) return null;
   const match = message.toLowerCase().match(/(\d{2,3})\s*hz/);
@@ -107,15 +154,31 @@ const addExclude = (strat, cat, kw) => {
   }
 };
 
-export const applyIntentOverrides = (intent, message) => {
+/**
+ * @param {Object} intent - mutated in place
+ * @param {string} message
+ * @param {Object} [opts]
+ * @param {boolean} [opts.followUp] - the message edits an existing build, so a figure next to a
+ *   part name is that part's price and must not replace the total budget
+ * @param {number|null} [opts.previousBudget] - budget of the build being edited
+ */
+export const applyIntentOverrides = (intent, message, { followUp = false, previousBudget = null } = {}) => {
   // Parse budget from message (handles "400k", "400K BDT", "1.5 lakh", etc.)
-  const parsedBudget = parseBudgetFromMessage(message);
+  let budgetText = message;
+  let partPrices = [];
+  if (followUp) ({ rest: budgetText, parts: partPrices } = splitPartPriceClauses(message));
+
+  const parsedBudget = parseBudgetFromMessage(budgetText);
   if (parsedBudget) {
     const currentBudget = Number.isFinite(intent.budget_bdt) ? intent.budget_bdt : 0;
     const delta = Math.abs(parsedBudget - currentBudget);
     if (!currentBudget || delta >= Math.max(2000, currentBudget * 0.05)) {
       intent.budget_bdt = parsedBudget;
     }
+  } else if (followUp && Number.isFinite(previousBudget) && previousBudget > 0
+    && partPrices.some((p) => p.amount === intent.budget_bdt)) {
+    // The model read "monitor around 20k" as the new total; the user never changed the budget.
+    intent.budget_bdt = previousBudget;
   }
 
   if (!intent.component_strategy) return;

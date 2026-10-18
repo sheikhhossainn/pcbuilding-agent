@@ -138,8 +138,13 @@ export async function executeBuild(payload, deps, ctx = {}) {
     throw new BuildError(500, 'Failed to process your request. Please rephrase.', 'INVALID_INTENT');
   }
 
-  // Apply manual overrides
-  deps.intentOverrideApplier(intent, message);
+  // Apply manual overrides. In a follow-up, "monitor around 20k" prices the monitor; it must not
+  // become the new total budget (the recursive re-plan below passes `_intent` instead of a prevIntent).
+  const overrideOpts = {
+    followUp: Boolean(prevIntent || payload._intent),
+    previousBudget: Number(prevIntent?.budget_bdt) || null,
+  };
+  deps.intentOverrideApplier(intent, message, overrideOpts);
 
   // Honor parts the user removed by hand: don't quietly put them back on a refine.
   // The four parts a PC cannot boot without are never dropped.
@@ -328,7 +333,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
     const relaxedSpecs = Object.fromEntries(
       Object.entries(intent.component_strategy || {}).map(([c, st]) => [c, { ...(st?.structured_reqs || {}) }])
     );
-    deps.intentOverrideApplier(intent, message);
+    deps.intentOverrideApplier(intent, message, overrideOpts);
     for (const [c, specs] of Object.entries(relaxedSpecs)) {
       if (!intent.component_strategy?.[c]) continue;
       const current = intent.component_strategy[c].structured_reqs || {};
@@ -657,6 +662,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
     upgradeCandidates.forEach(cat => {
       if (failedUpgrades.has(cat)) return;
+      // A kept part stays as it was; leftover money is reported, not spent on it.
+      if (lockedCategories.has(cat)) return;
       const current = selectedBuild[cat];
       if (!current) return;
       const strategy = intent.component_strategy[cat];
@@ -762,6 +769,12 @@ export async function executeBuild(payload, deps, ctx = {}) {
       `This configuration costs ${totalCost.toLocaleString('en-BD')} BDT, which exceeds your budget ceiling of ${budgetCeiling.toLocaleString('en-BD')} BDT. Try adjusting your request, reducing requirements, or removing optional components like peripherals.`,
       'BUDGET_EXCEEDED'
     );
+  }
+
+  // Kept parts are not upgraded, so a follow-up can end well under budget: say so.
+  const unspent = budget - totalCost;
+  if (lockedCategories.size > 0 && unspent > Math.max(budget * 0.02, 1500)) {
+    buildWarnings.push(`${unspent.toLocaleString('en-BD')} BDT of your budget is unspent because the parts you kept were left as they are. Ask for a specific upgrade to use it.`);
   }
 
   // Warnings produced while selecting parts (degradations, missing parts, retailer notes).

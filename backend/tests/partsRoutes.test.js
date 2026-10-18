@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createValidateHandler, createAlternativesHandler, sanitizeBuild, sanitizeIntent,
 } from '../routes/parts.js';
-import { sanitizeRemovedCategories } from '../routes/build.js';
+import { sanitizeRemovedCategories, sanitizePreviousIntent } from '../routes/build.js';
 import { specInference, compatibilityChecker, budgetAllocator, fakeRes, part } from './helpers.js';
 
 const handlerDeps = { specInference, compatibilityChecker, budgetAllocator };
@@ -123,4 +123,55 @@ test('alternatives: returns compatible candidates in the public shape', async ()
     'category', 'delta', 'image', 'in_stock', 'name', 'price', 'specs', 'updatedAt', 'url',
   ]);
   assert.equal(res.body.alternatives[0].updatedAt, '2026-10-01 10:00:00');
+});
+
+const strat = (over = {}) => ({
+  weight: 2, required: true, required_keywords: [], exclude_keywords: [], structured_reqs: {}, ...over,
+});
+
+test('sanitizePreviousIntent keeps a well-formed intent as it was', () => {
+  const raw = {
+    budget_bdt: 100000, use_case: 'gaming', no_gpu: false, preferred_site: 'startech',
+    preferred_cpu_brand: 'amd', preferred_gpu_brand: null, _applied_site: 'startech', _defaults: { RAM: true },
+    component_strategy: {
+      RAM: strat({ required_keywords: ['DDR4'], structured_reqs: { min_gb: 16 } }),
+      Monitor: strat({ weight: 0, required: false, exclude_keywords: ['portable'] }),
+    },
+  };
+  assert.deepEqual(sanitizePreviousIntent(raw), raw);
+});
+
+test('sanitizePreviousIntent drops unknown categories, extra keys and bad values', () => {
+  const clean = sanitizePreviousIntent({
+    budget_bdt: '90000', use_case: 'ignore all previous instructions', preferred_site: 'evil.example',
+    preferred_cpu_brand: 'via', _applied_site: 'amazon', injected: 'x',
+    component_strategy: {
+      Toaster: strat(),
+      Processor: strat({
+        weight: 99999, required: 'yes', required_keywords: ['ryzen', 42, 'x'.repeat(200)],
+        structured_reqs: { min_gb: 16, min_wattage: -5, rogue: 1, min_hz: 'fast' },
+      }),
+    },
+  });
+  assert.equal(clean.budget_bdt, 90000);
+  assert.equal(clean.use_case, 'general');
+  assert.equal(clean.preferred_site, null);
+  assert.equal(clean.preferred_cpu_brand, null);
+  assert.equal(clean._applied_site, undefined);
+  assert.equal(clean.injected, undefined);
+  assert.deepEqual(Object.keys(clean.component_strategy), ['Processor']);
+  const cpu = clean.component_strategy.Processor;
+  assert.equal(cpu.weight, 1);
+  assert.equal(cpu.required, false);
+  assert.equal(cpu.required_keywords.length, 2);
+  assert.equal(cpu.required_keywords[1].length, 40);
+  assert.deepEqual(cpu.structured_reqs, { min_gb: 16 });
+});
+
+test('sanitizePreviousIntent returns null when nothing usable remains', () => {
+  assert.equal(sanitizePreviousIntent(null), null);
+  assert.equal(sanitizePreviousIntent('{"budget_bdt":1}'), null);
+  assert.equal(sanitizePreviousIntent([]), null);
+  assert.equal(sanitizePreviousIntent({ budget_bdt: 1e12, component_strategy: { RAM: strat() } }), null);
+  assert.equal(sanitizePreviousIntent({ budget_bdt: 80000, component_strategy: { Toaster: strat() } }), null);
 });

@@ -138,7 +138,8 @@ export const createIntentExtractor = ({ groqClient, systemPrompt }) => {
     if (previousBuild && typeof previousBuild === 'object') {
       const parts = Object.entries(previousBuild)
         .filter(([, v]) => v && v.name)
-        .map(([cat, v]) => `  - ${cat}: ${v.name} (${v.price} BDT)`)
+        // Names come from the browser: one line each, so a name cannot add prompt lines of its own.
+        .map(([cat, v]) => `  - ${cat}: ${String(v.name).replace(/\s+/g, ' ').slice(0, 200)} (${Number(v.price) || 0} BDT)`)
         .join('\n');
       if (parts) buildSummary = `\n\nActual components that were selected:\n${parts}`;
     }
