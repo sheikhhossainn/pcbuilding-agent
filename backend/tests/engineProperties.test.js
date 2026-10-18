@@ -378,6 +378,60 @@ test('patch follow-up: an old keyword that blocks the new price is relaxed, not 
   assert.ok(!second.warnings.some((w) => /Could not find a suitable \*\*Monitor/.test(w)), 'a stale "could not find" warning is still shown');
 });
 
+test('patch follow-up: when kept parts leave no room, the one part that frees enough is re-picked instead of a full re-plan', async () => {
+  // A 35k monitor is the costliest kept part per unit of weight; a 28k SSD does not fit beside it.
+  const first = await buildWithPriceyMonitor();
+  const scopes = [];
+  const second = await refine(first, 'I want a 2tb ssd', {
+    ops: [{ category: 'Storage', structured_reqs: { min_tb: 2 } }],
+  }, first.spec, { onScope: (c) => scopes.push(c) });
+
+  assert.ok(second.build.Storage, 'the requested storage is missing');
+  assert.ok(!second.notes.some((n) => /re-planned from scratch/.test(n)), 'whole build was re-planned');
+  assert.ok(second.notes.some((n) => /was picked again as well/.test(n)), 'the extra released part was not reported');
+  assert.ok(scopes.every((c) => c !== null), 'the UI was told everything is loading');
+
+  const before = urls(first.build);
+  const after = urls(second.build);
+  const changed = Object.keys(before).filter((c) => after[c] !== before[c]).sort();
+  assert.ok(changed.includes('Storage') && changed.includes('Monitor'), `changed: ${changed}`);
+  assert.ok(changed.length <= 3, `too many parts changed: ${changed}`);
+  assert.ok(second.total <= ceilingOf(first.spec.budget));
+  assertSound(second, first.spec, 'release');
+});
+
+test('patch follow-up: when no single kept part frees enough, the whole build is re-planned', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  const second = await refine(first, 'I want a 2tb ssd', {
+    ops: [{ category: 'Storage', structured_reqs: { min_tb: 2 } }],
+  });
+  assert.ok(second.build.Storage);
+  assert.ok(second.notes.some((n) => /re-planned from scratch/.test(n)));
+  assert.ok(second.total <= ceilingOf(100000));
+});
+
+test('patch follow-up: money handed to a part other than the PSU is capped too', async () => {
+  const first = await buildWithPriceyMonitor({ min: 86000, max: 86000 });
+  const second = await refine(first, 'cheaper monitor, put the rest into the case', {
+    ops: [
+      { category: 'Monitor', direction: 'down' },
+      { category: 'Casing', direction: 'up', absorb_savings: true },
+    ],
+  }, first.spec);
+  const cap = Math.max(8000, Math.round(first.spec.budget * 0.08));
+  assert.ok(second.build.Casing.price <= cap, `case ${second.build.Casing.price} ran away with the savings (cap ${cap})`);
+});
+
+test('patch follow-up: a named price nothing in stock matches is reported with what was picked instead', async () => {
+  const first = await buildWithPriceyMonitor();
+  const second = await refine(first, 'a monitor at exactly 26k', {
+    ops: [{ category: 'Monitor', price_target: 26000, tolerance: 0.05 }],
+  }, first.spec);
+  const { price } = second.build.Monitor;
+  assert.ok(price < 24700 || price > 27300, `fixture changed: ${price} is inside the band`);
+  assert.ok(second.warnings.some((w) => /asked for a Monitor around 26,000/.test(w) && /closest/.test(w)), JSON.stringify(second.warnings));
+});
+
 test('patch follow-up: savings go only to the named part, which is capped', async () => {
   // An 86k OLED swapped for a ~56k panel frees ~30k: enough for a 24k+ PSU if nothing stopped it.
   const first = await buildWithPriceyMonitor({ min: 86000, max: 86000 });

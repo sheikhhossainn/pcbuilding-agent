@@ -84,10 +84,27 @@ const UPGRADE_CAPS = {
 };
 
 // When the user hands freed-up money to one part, it still should not turn into the priciest one
-// on the shelf. Only applied to a part named as the absorber.
+// on the shelf. Only applied to a part named as the absorber; CPU and GPU are bounded by the
+// balance checks instead.
 const ABSORB_CAPS = {
   PSU: { share: 0.12, floor: 9000 },
+  Casing: { share: 0.08, floor: 8000 },
+  'CPU Cooler': { share: 0.06, floor: 7000 },
+  Storage: { share: 0.15, floor: 12000 },
+  RAM: { share: 0.15, floor: 12000 },
+  Motherboard: { share: 0.15, floor: 12000 },
 };
+
+// How many extra kept parts a refine may give up to make room before the whole build is re-planned.
+// One: giving up two or more (say GPU and CPU for a bigger SSD) is a bigger change than the user
+// asked for, and a full re-plan spreads that cost more evenly.
+const MAX_RELEASES = 1;
+// Board and memory follow the CPU choice, so they are never released on their own.
+const COUPLED_TO_PLATFORM = new Set(['Motherboard', 'RAM']);
+
+// Which kept part to give up first: the one that costs the most per unit of weight the user gave it.
+const releaseScore = (category, build, intent) =>
+  (build[category]?.price || 0) / Math.max(intent.component_strategy?.[category]?.weight || 0, 0.5);
 
 const absorbCapFor = (category, budget) => {
   const cap = ABSORB_CAPS[category];
@@ -150,7 +167,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
     if (payload._intent) {
       intent = JSON.parse(JSON.stringify(payload._intent));
       // A re-plan keeps what the user said about price and where freed money goes.
-      if (payload._followUp) followUp = { ...payload._followUp, changing: new Set() };
+      if (payload._followUp) followUp = { ...payload._followUp, changing: new Set(payload._followUp.changing || []) };
     } else {
       let patch = null;
       if (prevIntent && prevBuild && deps.intentExtractor.extractPatch) {
@@ -587,7 +604,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
       if (lockedCategories.has(later) || selectedBuild[later]) continue;
       if (onlyMandatory && !MANDATORY_CATEGORIES.has(later)) continue;
       if (!onlyMandatory && !(intent.component_strategy?.[later]?.required)) continue;
-      reserve += floorResult.minimums?.[later] || 0;
+      // A part the user priced keeps room for that price, so an earlier part (the PSU that is
+      // meant to take the savings) cannot eat what the monitor was promised.
+      reserve += Math.max(floorResult.minimums?.[later] || 0, targetFloors[later] || 0);
     }
     return reserve;
   };
@@ -705,14 +724,58 @@ export async function executeBuild(payload, deps, ctx = {}) {
           if (attempt.strat === relaxed && dropped.length) {
             strat.required_keywords = relaxed.required_keywords;
             buildWarnings.push(`No ${category} matching "${dropped.join(' ')}" was available${named ? ` around ${named.target.toLocaleString('en-BD')} BDT` : ''}, so that wish was dropped. Picked: ${part.name}.`);
-          } else if (named) {
-            buildWarnings.push(`Nothing exactly around ${named.target.toLocaleString('en-BD')} BDT for ${category}; picked the closest: ${part.name}.`);
           }
           console.log(`[Follow-up] ${category}: relaxed and kept the other parts → ${part.name} (${part.price} BDT)`);
           break;
         }
       }
       unmet = findUnmet();
+    }
+
+    // Still no room. If giving up a few more kept parts would cover the gap, re-pick just those
+    // (the ones that cost the most for the weight the user gave them) instead of the whole build.
+    if (unmet.length > 0 && followUp && prevBuild && !payload._release) {
+      const need = unmet.reduce((sum, c) => sum + (floorResult.minimums?.[c] || 0), 0);
+      const shortfall = need - Math.max(globalRemaining, 0);
+      const give = [];
+      if (shortfall > 0) {
+        let freed = 0;
+        const candidates = [...lockedCategories]
+          .filter((c) => !COUPLED_TO_PLATFORM.has(c) && selectedBuild[c])
+          .sort((a, b) => releaseScore(b, selectedBuild, intent) - releaseScore(a, selectedBuild, intent));
+        for (const c of candidates) {
+          if (freed >= shortfall || give.length >= MAX_RELEASES) break;
+          // What it frees is its price minus the cheapest acceptable replacement.
+          const gain = selectedBuild[c].price - (floorResult.minimums?.[c] || 0);
+          if (gain <= 0) continue;
+          give.push(c);
+          freed += gain;
+        }
+        if (freed < shortfall) give.length = 0; // not enough even then: re-plan the whole build
+      }
+      if (give.length > 0) {
+        console.log(`[Follow-up] No room for ${unmet.join(', ')}; also re-picking ${give.join(', ')}.`);
+        try {
+          const retried = await executeBuild(
+            {
+              ...payload, _intent: intentSnapshot, _release: give,
+              _followUp: {
+                targets: followUp.targets, absorbers: followUp.absorbers,
+                changing: [...followUp.changing, ...give],
+              },
+            },
+            deps,
+            ctx
+          );
+          const note = `To make room for ${unmet.join(', ')}, ${give.join(' and ')} ${give.length > 1 ? 'were' : 'was'} picked again as well.`;
+          retried.notes = [note, ...retried.notes];
+          retried.warnings = [note, ...retried.warnings];
+          return retried;
+        } catch (error) {
+          if (!(error instanceof BuildError)) throw error;
+          console.log(`[Follow-up] Re-picking ${give.join(', ')} did not help (${error.code}); falling back to a full re-plan.`);
+        }
+      }
     }
 
     if (unmet.length > 0) {
@@ -886,6 +949,14 @@ export async function executeBuild(payload, deps, ctx = {}) {
       `This configuration costs ${totalCost.toLocaleString('en-BD')} BDT, which exceeds your budget ceiling of ${budgetCeiling.toLocaleString('en-BD')} BDT. Try adjusting your request, reducing requirements, or removing optional components like peripherals.`,
       'BUDGET_EXCEEDED'
     );
+  }
+
+  // A price the user named for a part: say so when the part that fit is outside that range.
+  for (const [cat, { target, tolerance }] of Object.entries(followUp?.targets || {})) {
+    const picked = selectedBuild[cat];
+    if (!picked || lockedCategories.has(cat)) continue;
+    if (picked.price >= target * (1 - tolerance) && picked.price <= target * (1 + tolerance)) continue;
+    buildWarnings.push(`You asked for a ${cat} around ${target.toLocaleString('en-BD')} BDT; the closest that fit the rest of your budget was ${picked.name} at ${picked.price.toLocaleString('en-BD')} BDT.`);
   }
 
   // Kept parts are not upgraded, so a follow-up can end well under budget: say so.
