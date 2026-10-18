@@ -15,6 +15,7 @@ import fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import { createBuildLimiters } from './utils/buildLimiters.js';
 import Groq from 'groq-sdk';
 import OpenAI from 'openai';
 import path from 'path';
@@ -35,7 +36,7 @@ import { createPartSelector } from './engine/partSelector.js';
 import { createCacheManager } from './utils/cacheManager.js';
 import { createSpecInference } from './utils/specInference.js';
 import { createPartRepository } from './utils/partRepository.js';
-import { createSubmitHandler, createStatusHandler, sanitizePreviousIntent } from './routes/build.js';
+import { createSubmitHandler, createStatusHandler } from './routes/build.js';
 import { createAlternativesHandler, createValidateHandler } from './routes/parts.js';
 import { sendError, ERROR_INTERNAL } from './utils/errors.js';
 import { initWorkers } from './utils/queueManager.js';
@@ -70,38 +71,7 @@ app.use((req, res, next) => {
 });
 
 // ──── Rate Limiting ────
-const hasCustomKey = (req) => Boolean(req.body && req.body.customKeys && (req.body.customKeys.groq || req.body.customKeys.ollama));
-// Only a previous build the engine would actually accept counts, so junk cannot buy the larger quota.
-const isRefine = (req) => Boolean(
-  req.body && sanitizePreviousIntent(req.body.previousIntent)
-  && req.body.previousBuild && typeof req.body.previousBuild === 'object'
-);
-const apiLimiter = rateLimit({
-  windowMs: RATE_LIMITING.WINDOW_MS,
-  max: RATE_LIMITING.MAX_REQUESTS_PER_WINDOW,
-  message: { error: RATE_LIMITING.LIMIT_MESSAGE },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => {
-    // Skip test endpoint
-    if (req.path === '/api/test/build') return true;
-    // Refines are counted by refineLimiter below
-    if (isRefine(req)) return true;
-    // Skip for custom API keys
-    return hasCustomKey(req);
-  }
-});
-
-// A refine (a build that arrives with the previous one) makes one short AI call instead of two,
-// so it gets a larger share of the free quota than a fresh build.
-const refineLimiter = rateLimit({
-  windowMs: RATE_LIMITING.WINDOW_MS,
-  max: RATE_LIMITING.MAX_REFINES_PER_WINDOW,
-  message: { error: RATE_LIMITING.LIMIT_MESSAGE },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => !isRefine(req) || hasCustomKey(req),
-});
+const { apiLimiter, refineLimiter } = createBuildLimiters();
 
 // Swap/validate calls are cheap (no AI), so they get a much higher ceiling than /api/build.
 const partsLimiter = rateLimit({

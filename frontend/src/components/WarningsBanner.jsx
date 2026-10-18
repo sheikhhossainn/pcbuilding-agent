@@ -1,4 +1,5 @@
 import { AlertTriangle, ShieldAlert } from 'lucide-react';
+import { renderBold } from '../lib/renderBold';
 
 // Engine warnings, shown above the parts list so they can't be missed.
 export default function WarningsBanner({ warnings }) {
@@ -19,7 +20,7 @@ export default function WarningsBanner({ warnings }) {
             }`}
           >
             <Icon className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
-            <span>{warning}</span>
+            <span>{renderBold(warning)}</span>
           </div>
         );
       })}

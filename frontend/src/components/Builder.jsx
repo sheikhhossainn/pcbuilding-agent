@@ -208,7 +208,7 @@ function Builder({ page = null }) {
     text += `${rule}\n`;
     text += `Estimated power draw: ~${telemetry.estimatedDraw}W (recommended PSU: ${telemetry.recommendedPsu}W+)\n`;
     if (warnings.length > 0) {
-      text += `\nWarnings:\n${warnings.map((w) => `- ${w}`).join('\n')}\n`;
+      text += `\nWarnings:\n${warnings.map((w) => `- ${String(w).replace(/\*\*/g, '')}`).join('\n')}\n`;
     }
     if (explanation) text += `\nAI notes: ${explanation}\n`;
     text += `\nBuilt with BuildMyPC AI Configurator`;

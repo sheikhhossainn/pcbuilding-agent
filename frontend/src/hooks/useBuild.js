@@ -3,6 +3,7 @@ import axios from 'axios';
 import { INITIAL_BUILD, BUSY_STATES } from '../lib/constants';
 import { sumBuild } from '../lib/format';
 import { diffBuilds } from '../lib/buildDiff';
+import { keepLastingNotes } from '../lib/staleNotes';
 
 const SESSION_KEY = 'buildmypc.session.v1';
 const POLL_INTERVAL_MS = 800;
@@ -165,7 +166,10 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
         });
         if (requestId !== validateRequestRef.current) return;
         validatedSignatureRef.current = signature;
-        setWarnings([...notes, ...(data.warnings || [])]);
+        // Notes about the build as the engine made it ("X BDT unspent") no longer hold after a manual edit.
+        const lasting = keepLastingNotes(notes);
+        if (lasting.length !== notes.length) setNotes(lasting);
+        setWarnings([...lasting, ...(data.warnings || [])]);
         setPower(data.power || null);
       } catch {
         if (requestId !== validateRequestRef.current) return;

@@ -4,122 +4,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import catalog from './fixtures/miniCatalog.js';
-import { executeBuild } from '../engine/buildOrchestrator.js';
-import { createCompatibilityChecker } from '../engine/compatibilityChecker.js';
-import { createBudgetAllocator } from '../engine/budgetAllocator.js';
-import { createPartSelector } from '../engine/partSelector.js';
-import { createPartRepository } from '../utils/partRepository.js';
-import { createSpecInference } from '../utils/specInference.js';
-import { createCacheManager } from '../utils/cacheManager.js';
-import { applyIntentOverrides } from '../engine/intentOverrides.js';
-import { normalizePatch } from '../engine/followUpPatch.js';
+import { engine, build } from './engineHarness.js';
 import { qualityScore } from '../utils/partQuality.js';
 import { BUDGET } from '../config/budget.js';
-
-const CATEGORIES = [
-  'Processor', 'Motherboard', 'RAM', 'Storage', 'Graphics Card', 'PSU',
-  'Casing', 'CPU Cooler', 'Monitor', 'Mouse', 'Keyboard', 'UPS',
-];
-
-// ─── engine wiring over an in-memory catalog ───
-function createEngine(rows = catalog) {
-  const db = {
-    async execute({ sql, args }) {
-      if (sql.startsWith('SELECT * FROM components WHERE site')) {
-        const [site, category] = args;
-        let i = 2;
-        const min = sql.includes('price >= ?') ? args[i++] : null;
-        const max = sql.includes('price <= ?') ? args[i++] : null;
-        const dir = sql.includes('ASC') ? 1 : -1;
-        return {
-          rows: rows
-            .filter((r) => r.site === site && r.category === category && r.in_stock
-              && (min === null || r.price >= min) && (max === null || r.price <= max))
-            .sort((a, b) => dir * (a.price - b.price) || a.name.localeCompare(b.name)),
-        };
-      }
-      if (sql.startsWith('SELECT name, specs FROM components WHERE category')) {
-        const site = sql.includes('AND site = ?') ? args[1] : null;
-        return { rows: rows.filter((r) => r.category === args[0] && r.in_stock && (!site || r.site === site)) };
-      }
-      if (sql.startsWith('SELECT url, in_stock, price FROM components WHERE url IN')) {
-        return { rows: rows.filter((r) => args.includes(r.url)).map((r) => ({ url: r.url, in_stock: r.in_stock, price: r.price })) };
-      }
-      if (sql.startsWith('SELECT in_stock, price FROM components WHERE url')) {
-        const r = rows.find((x) => x.url === args[0]);
-        return { rows: r ? [{ in_stock: r.in_stock, price: r.price }] : [] };
-      }
-      throw new Error(`unhandled SQL: ${sql}`);
-    },
-  };
-
-  const specInference = createSpecInference();
-  const compatibilityChecker = createCompatibilityChecker();
-  const partRepository = createPartRepository({ db, specInference, cache: createCacheManager() });
-  const budgetAllocator = createBudgetAllocator({ partRepository, compatChecker: compatibilityChecker });
-  const partSelector = createPartSelector({ partRepository, compatChecker: compatibilityChecker });
-  return { specInference, compatibilityChecker, partRepository, budgetAllocator, partSelector };
-}
-
-const engine = createEngine();
-
-function makeIntent({ budget, use = 'gaming', noGpu = false, cpuBrand = null, gpuBrand = null, ddr = null, peripherals = true }) {
-  const weights = {
-    gaming: { Processor: 2.5, Motherboard: 1.5, RAM: 1.5, 'Graphics Card': 5, Storage: 1.5, PSU: 1.5, Casing: 1, Monitor: 2 },
-    editing: { Processor: 4, Motherboard: 2, RAM: 3, 'Graphics Card': 3, Storage: 2.5, PSU: 1.5, Casing: 1, Monitor: 2 },
-    office: { Processor: 3, Motherboard: 2, RAM: 2, 'Graphics Card': 0, Storage: 2.5, PSU: 1, Casing: 1, Monitor: 2 },
-    general: { Processor: 3, Motherboard: 2, RAM: 2, 'Graphics Card': 2, Storage: 2, PSU: 1.5, Casing: 1, Monitor: 1.5 },
-  }[use];
-
-  const strategy = Object.fromEntries(CATEGORIES.map((c) => [c, {
-    weight: 0, required: false, required_keywords: [], exclude_keywords: [], structured_reqs: {},
-  }]));
-  for (const c of ['Processor', 'Motherboard', 'RAM', 'Storage', 'PSU', 'Casing']) {
-    strategy[c] = { ...strategy[c], weight: weights[c], required: true };
-  }
-  if (!noGpu && weights['Graphics Card'] > 0) strategy['Graphics Card'] = { ...strategy['Graphics Card'], weight: weights['Graphics Card'], required: true };
-  if (peripherals) {
-    strategy.Monitor = { ...strategy.Monitor, weight: weights.Monitor, required: true };
-    strategy.Mouse = { ...strategy.Mouse, weight: 0.3, required: true };
-    strategy.Keyboard = { ...strategy.Keyboard, weight: 0.3, required: true };
-  }
-  if (ddr) {
-    strategy.RAM.required_keywords.push(ddr);
-    strategy.Motherboard.required_keywords.push(ddr);
-  }
-  return {
-    budget_bdt: budget, use_case: use, no_gpu: noGpu, preferred_site: null,
-    preferred_cpu_brand: cpuBrand, preferred_gpu_brand: gpuBrand, component_strategy: strategy,
-  };
-}
-
-async function build(spec, { site = 'startech', message = 'build me a pc', extra = {}, eng = engine, patch = null, patchError = null, ctx = {} } = {}) {
-  const intent = makeIntent(spec);
-  const deps = {
-    intentExtractor: {
-      extract: async () => JSON.parse(JSON.stringify(intent)),
-      // A follow-up is read as a patch; without one the full-intent path above is used.
-      ...((patch || patchError) && {
-        extractPatch: async () => { if (patchError) throw patchError; return normalizePatch(patch); },
-      }),
-    },
-    explanationGenerator: { generate: async () => 'ok' },
-    compatibilityChecker: eng.compatibilityChecker,
-    budgetAllocator: eng.budgetAllocator,
-    partSelector: eng.partSelector,
-    partRepository: eng.partRepository,
-    specInference: eng.specInference,
-    intentOverrideApplier: applyIntentOverrides,
-  };
-  const realLog = [console.log, console.warn, console.error];
-  console.log = () => {}; console.warn = () => {}; console.error = () => {};
-  try {
-    return await executeBuild({ message, site, ...extra }, deps, ctx);
-  } finally {
-    [console.log, console.warn, console.error] = realLog;
-  }
-}
 
 const parts = (b) => Object.entries(b).filter(([, p]) => p);
 const ceilingOf = (budget) => budget + Math.min(budget * BUDGET.CEILING_OVERSPEND_PERCENTAGE, BUDGET.CEILING_OVERSPEND_MAX_BDT);
@@ -548,4 +435,45 @@ test('the same request always yields the same build', async () => {
   const a = await build({ budget: 100000, use: 'gaming' });
   const b = await build({ budget: 100000, use: 'gaming' });
   assert.deepEqual(parts(a.build).map(([c, p]) => [c, p.url]), parts(b.build).map(([c, p]) => [c, p.url]));
+});
+
+// ─── "better"/"cheaper" when there is nothing better/cheaper, and parts nobody asked about ───
+test('patch follow-up: a better GPU and monitor that cannot be found leave RAM and the rest alone', async () => {
+  // The floor check used to relax the unnamed RAM from 16GB to 8GB, which unlocked and downgraded it.
+  const spec = { budget: 100000, use: 'editing' };
+  const first = await build(spec);
+  const second = await refine(first, 'a better graphics card and a better monitor, and use the saved money for the second', {
+    ops: [
+      { category: 'Graphics Card', direction: 'up' },
+      { category: 'Monitor', direction: 'up', absorb_savings: true },
+    ],
+  }, spec);
+  assert.equal(second.build.RAM.url, first.build.RAM.url, 'RAM was re-picked');
+  assert.ok(!second.warnings.some((w) => /Chose \d+GB of RAM/.test(w)), 'a budget warning about RAM the user never touched');
+  assert.equal(second.build.PSU.url, first.build.PSU.url, 'PSU was swapped although its GPU did not change');
+  assert.ok(second.scope.changing.every((c) => ['Graphics Card', 'Monitor'].includes(c)), `scope grew to ${second.scope.changing}`);
+});
+
+test('patch follow-up: "a stronger PSU" when nothing in stock is stronger keeps the PSU and every other part', async () => {
+  const spec = { budget: 100000, use: 'gaming' };
+  const first = await build(spec);
+  const all = await engine.partRepository.query('startech', 'PSU', { min: 0, max: 1000000 }, 'price_asc');
+  const best = all.reduce((top, p) => (qualityScore('PSU', p) > qualityScore('PSU', top) ? p : top));
+  first.build.PSU = best;
+  const total = Object.values(first.build).filter(Boolean).reduce((s, p) => s + p.price, 0);
+  first.intent.budget_bdt = total;
+  const second = await refine(first, 'a stronger PSU', { ops: [{ category: 'PSU', direction: 'up' }] }, { budget: total, use: 'gaming' });
+  assert.ok(!second.notes.some((n) => /re-planned from scratch/.test(n)), 'whole build was re-planned');
+  assert.deepEqual(urls(second.build), urls(first.build));
+  assert.ok(second.notes.some((n) => /No PSU better than your current/.test(n) && /so it stays/.test(n)));
+});
+
+test('patch follow-up: a cheaper part when the current one is already the cheapest is not an error', async () => {
+  const spec = { budget: 100000, use: 'gaming' };
+  const first = await build(spec);
+  const [cheapest] = await engine.partRepository.query('startech', 'Mouse', { min: 0, max: 100000 }, 'price_asc');
+  first.build.Mouse = cheapest;
+  const second = await refine(first, 'a cheaper mouse', { ops: [{ category: 'Mouse', direction: 'down' }] }, spec);
+  assert.equal(second.build.Mouse.url, cheapest.url);
+  assert.deepEqual(urls(second.build), urls(first.build));
 });

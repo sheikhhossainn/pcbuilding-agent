@@ -181,6 +181,39 @@ export function qualityScore(category, part) {
   return named + price * (PRICE_WEIGHT[category] ?? TIE_BREAK);
 }
 
+// Axes a "better" part must not lose, even when it wins on the weighted score: a monitor that gains
+// resolution but drops from 144Hz to 60Hz, or a drive that gains speed but loses capacity, is not
+// an upgrade. Softer axes (size, Wi-Fi, connection type) may trade off.
+const KEY_AXES = {
+  PSU: ['Wattage', 'Efficiency'],
+  RAM: ['Capacity', 'Generation'],
+  Storage: ['Capacity', 'Type'],
+  Monitor: ['Resolution', 'Refresh rate'],
+  Motherboard: ['Chipset tier', 'Memory'],
+  'CPU Cooler': ['Type'],
+  UPS: ['Capacity'],
+  'Graphics Card': ['VRAM'],
+};
+
+/** The values of a part's key axes, to hold a replacement to: { [axis label]: value }. */
+export function keyAxisFloor(category, part) {
+  const keys = KEY_AXES[category] || [];
+  const floor = {};
+  for (const axis of qualityAxes(category, part)) {
+    if (keys.includes(axis.label)) floor[axis.label] = axis.value || 0;
+  }
+  return floor;
+}
+
+/** True when `part` is no worse than `floor` (from keyAxisFloor) on every key axis. */
+export function meetsAxisFloor(category, part, floor) {
+  if (!floor || typeof floor !== 'object') return true;
+  return qualityAxes(category, part).every((axis) => {
+    const need = floor[axis.label];
+    return typeof need !== 'number' || (axis.value || 0) >= need;
+  });
+}
+
 /**
  * What differs between two parts of one category, in words: ["Wattage 850W → 1000W", ...].
  * Axes that read the same on both sides are left out.

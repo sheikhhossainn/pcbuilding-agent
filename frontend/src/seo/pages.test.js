@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   SITE_URL, ALL_PAGES, HOME, LANDING_PAGES, FAQ,
-  findLandingPage, faqJsonLd, absoluteUrl, LAST_MODIFIED,
+  findLandingPage, faqJsonLd, absoluteUrl,
 } from './pages.js';
 import { generateSitemapXml, VALID_CHANGEFREQS } from './sitemap.js';
 
@@ -99,5 +99,8 @@ test('public/sitemap.xml exists and matches current pages', () => {
 
   const content = fs.readFileSync(publicSitemapPath, 'utf8');
   assert.ok(content.includes('<loc>https://buildmypc-eight.vercel.app/</loc>'));
-  assert.ok(content.includes(`<lastmod>${LAST_MODIFIED}</lastmod>`));
+  // The date is stamped when the site is built, so it is allowed to be older than today. The page list is what must match.
+  const stamped = content.match(/<lastmod>(\d{4}-\d{2}-\d{2})<\/lastmod>/)?.[1];
+  assert.ok(stamped, 'sitemap.xml must carry a lastmod date');
+  assert.equal(content, generateSitemapXml(ALL_PAGES, stamped));
 });

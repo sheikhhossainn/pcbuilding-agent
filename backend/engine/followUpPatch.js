@@ -10,7 +10,7 @@
  * Pure functions only: no LLM, no database.
  */
 
-import { qualityScore } from '../utils/partQuality.js';
+import { qualityScore, keyAxisFloor } from '../utils/partQuality.js';
 
 export const PATCH_CATEGORIES = [
   'Processor', 'Motherboard', 'RAM', 'Storage', 'Graphics Card', 'PSU',
@@ -167,6 +167,11 @@ const mentionsBrand = (message, kind, brand) => {
   return !re || re.test(message.toLowerCase());
 };
 
+// "Gets the saved money" must be something the user said. A model that adds absorb_savings on its
+// own would let a part quietly spend the whole leftover budget.
+const SAVINGS_WORDS = /\b(sav(?:e|ed|es|ing|ings)|left\s?over|leftover|rest|remain(?:ing|s|der)?|extra|spare|freed?|surplus|difference|excess|the money|that money|spend|spent|put it|use it|use that|use this)\b/;
+const mentionsSavings = (message) => typeof message !== 'string' || SAVINGS_WORDS.test(message.toLowerCase());
+
 const nextTier = (tiers, current) => tiers.find((t) => t > current) ?? tiers[tiers.length - 1];
 
 /**
@@ -231,7 +236,10 @@ export function applyPatch(previousIntent, patch, previousBuild = {}, message) {
     let derived = false;
     if (op.direction && current) {
       const score = qualityScore(category, current);
-      if (op.direction === 'up') strat.structured_reqs.better_than = score;
+      if (op.direction === 'up') {
+        strat.structured_reqs.better_than = score;
+        strat.structured_reqs.no_worse_on = keyAxisFloor(category, current);
+      }
       else strat.structured_reqs.worse_than = score;
 
       if (category === 'PSU' && op.direction === 'up' && !Object.keys(op.structured_reqs).length) {
@@ -243,7 +251,7 @@ export function applyPatch(previousIntent, patch, previousBuild = {}, message) {
       }
     }
     if (target) targets[category] = { target, tolerance: derived ? DERIVED_TOLERANCE : op.tolerance, derived };
-    if (op.absorb_savings) absorbers.push(category);
+    if (op.absorb_savings && mentionsSavings(message)) absorbers.push(category);
     direct.add(category);
   }
 
@@ -310,7 +318,7 @@ const USE_LABEL = { gaming: 'gaming', editing: 'video editing', office: 'office 
  * @param {Object} [previousIntent] - to leave out settings that did not change
  * @returns {Array<{label: string, text: string}>}
  */
-export function describePatch(patch, previousIntent = {}) {
+export function describePatch(patch, previousIntent = {}, message) {
   const items = [];
 
   for (const op of patch.ops) {
@@ -320,7 +328,7 @@ export function describePatch(patch, previousIntent = {}) {
     if (op.direction === 'up') bits.push('better');
     if (op.direction === 'down') bits.push('cheaper');
     if (op.price_target) bits.push(`around ${baht(op.price_target)}`);
-    if (op.absorb_savings) bits.push('gets the saved money');
+    if (op.absorb_savings && mentionsSavings(message)) bits.push('gets the saved money');
     for (const word of op.required_keywords) bits.push(`"${word}"`);
     for (const word of op.exclude_keywords) bits.push(`not "${word}"`);
     for (const [key, value] of Object.entries(op.structured_reqs)) bits.push(SPEC_TEXT[key]?.(value) || `${key} ${value}`);

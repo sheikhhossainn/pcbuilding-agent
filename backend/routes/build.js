@@ -98,7 +98,8 @@ export function sanitizePreviousBuild(raw) {
       url: typeof part.url === 'string' ? part.url.slice(0, MAX_URL_LENGTH) : null,
       category,
       ...(part.image && typeof part.image === 'string' ? { image: part.image.slice(0, MAX_URL_LENGTH) } : {}),
-      ...(part.specs && typeof part.specs === 'object' ? { specs: part.specs } : {}),
+      // Specs are never taken from the browser: they decide compatibility and wattage, so the
+      // engine works them out again from the part name.
     };
   }
   return Object.keys(out).length > 0 ? out : null;

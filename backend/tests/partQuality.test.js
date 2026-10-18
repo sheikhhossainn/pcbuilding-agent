@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { qualityScore, qualityAxes, describeDifference } from '../utils/partQuality.js';
+import { qualityScore, qualityAxes, describeDifference, keyAxisFloor, meetsAxisFloor } from '../utils/partQuality.js';
 import { createPartRepository } from '../utils/partRepository.js';
 import { createSpecInference } from '../utils/specInference.js';
 import { createCacheManager } from '../utils/cacheManager.js';
@@ -94,4 +94,44 @@ test('matchesStrategy honours better_than / worse_than on the category scale', (
   const down = { ...up, structured_reqs: { worse_than: qualityScore('PSU', current) } };
   assert.equal(repo.matchesStrategy(weaker, down, 'PSU'), true);
   assert.equal(repo.matchesStrategy(stronger, down, 'PSU'), false);
+});
+
+test('keyAxisFloor: a better monitor may not give up refresh rate for resolution', () => {
+  const current = { name: 'MSI 27 inch FHD 165Hz IPS gaming monitor', price: 20000 };
+  const sharper = { name: 'Dell 27 inch 4K 60Hz IPS monitor', price: 30000 };
+  const faster = { name: 'Gigabyte 27 inch QHD 180Hz IPS monitor', price: 28000 };
+  const floor = keyAxisFloor('Monitor', current);
+  assert.deepEqual(floor, { Resolution: 2, 'Refresh rate': 165 });
+  // The 4K panel scores higher overall but loses refresh rate: it is not an upgrade.
+  assert.ok(qualityScore('Monitor', sharper) > qualityScore('Monitor', current));
+  assert.equal(meetsAxisFloor('Monitor', sharper, floor), false);
+  assert.equal(meetsAxisFloor('Monitor', faster, floor), true);
+});
+
+test('meetsAxisFloor: no floor, or a category without key axes, accepts anything', () => {
+  assert.equal(meetsAxisFloor('Monitor', { name: 'x' }, undefined), true);
+  assert.deepEqual(keyAxisFloor('Mouse', { name: 'Logitech G102' }), {});
+});
+
+test('keyAxisFloor: storage keeps capacity, PSU keeps wattage', () => {
+  const ssd = { name: 'Kingston NV2 1TB NVMe SSD', price: 8000 };
+  assert.equal(meetsAxisFloor('Storage', { name: 'Samsung 980 Pro 500GB NVMe Gen4 SSD', price: 9000 }, keyAxisFloor('Storage', ssd)), false);
+  const psu = { name: 'Corsair RM750e 750W 80+ Gold fully modular', price: 15000, specs: { wattage: 750 } };
+  assert.equal(meetsAxisFloor('PSU', { name: 'Seasonic 650W 80+ Platinum', price: 16000, specs: { wattage: 650 } }, keyAxisFloor('PSU', psu)), false);
+});
+
+test('matchesStrategy: better_than with no_worse_on rejects a part that loses a key axis', () => {
+  const repo = createPartRepository({ db: { execute: async () => ({ rows: [] }) }, specInference: createSpecInference(), cache: createCacheManager() });
+  const current = part('Monitor', 'MSI 27 inch FHD 165Hz IPS gaming monitor', 20000);
+  const sharper = part('Monitor', 'Dell 27 inch 4K 60Hz IPS monitor', 30000);
+  const faster = part('Monitor', 'Gigabyte 27 inch QHD 180Hz IPS monitor', 28000);
+  const strategy = {
+    required: true, weight: 1, required_keywords: [], exclude_keywords: [],
+    structured_reqs: { better_than: qualityScore('Monitor', current), no_worse_on: keyAxisFloor('Monitor', current) },
+  };
+  assert.equal(repo.matchesStrategy(sharper, strategy, 'Monitor'), false);
+  assert.equal(repo.matchesStrategy(faster, strategy, 'Monitor'), true);
+  // Without the floor (the last relax step) the sharper panel is allowed again.
+  const relaxed = { ...strategy, structured_reqs: { better_than: strategy.structured_reqs.better_than } };
+  assert.equal(repo.matchesStrategy(sharper, relaxed, 'Monitor'), true);
 });

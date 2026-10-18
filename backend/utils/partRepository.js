@@ -6,7 +6,7 @@
 
 import { PART_SELECTION } from '../config/thresholds.js';
 import { parseRamCapacityGb, parseStorageCapacityGb } from './capacity.js';
-import { qualityScore } from './partQuality.js';
+import { qualityScore, meetsAxisFloor } from './partQuality.js';
 
 const CATEGORY_MAPPING = {
   'Processor': 'cpu',
@@ -209,8 +209,9 @@ export const createPartRepository = ({ db, specInference, cache }) => {
     // Structured requirements check (category-specific)
     if (strategy.structured_reqs) {
       // "Better than / cheaper than the part I have": compared on the category's own quality scale.
-      const { better_than: betterThan, worse_than: worseThan } = strategy.structured_reqs;
+      const { better_than: betterThan, worse_than: worseThan, no_worse_on: noWorseOn } = strategy.structured_reqs;
       if (typeof betterThan === 'number' && qualityScore(category, part) <= betterThan) return false;
+      if (typeof betterThan === 'number' && !meetsAxisFloor(category, part, noWorseOn)) return false;
       if (typeof worseThan === 'number' && qualityScore(category, part) >= worseThan) return false;
 
       if (category === 'PSU' && strategy.structured_reqs.min_wattage) {

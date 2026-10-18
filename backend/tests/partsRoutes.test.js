@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createValidateHandler, createAlternativesHandler, sanitizeBuild, sanitizeIntent,
 } from '../routes/parts.js';
-import { sanitizeRemovedCategories, sanitizePreviousIntent } from '../routes/build.js';
+import { sanitizeRemovedCategories, sanitizePreviousIntent, sanitizePreviousBuild } from '../routes/build.js';
 import { specInference, compatibilityChecker, budgetAllocator, fakeRes, part } from './helpers.js';
 
 const handlerDeps = { specInference, compatibilityChecker, budgetAllocator };
@@ -174,4 +174,14 @@ test('sanitizePreviousIntent returns null when nothing usable remains', () => {
   assert.equal(sanitizePreviousIntent([]), null);
   assert.equal(sanitizePreviousIntent({ budget_bdt: 1e12, component_strategy: { RAM: strat() } }), null);
   assert.equal(sanitizePreviousIntent({ budget_bdt: 80000, component_strategy: { Toaster: strat() } }), null);
+});
+
+test('sanitizePreviousBuild never takes specs from the browser', () => {
+  const clean = sanitizePreviousBuild({
+    PSU: { name: 'Corsair RM850x 850W', price: 18000, specs: { wattage: 99999 } },
+    Monitor: { name: 'Acer 24 inch', price: 15000, specs: { anything: true } },
+  });
+  assert.equal(clean.PSU.specs, undefined);
+  assert.equal(clean.Monitor.specs, undefined);
+  assert.equal(clean.PSU.price, 18000);
 });

@@ -96,10 +96,10 @@ const ABSORB_CAPS = {
   Motherboard: { share: 0.15, floor: 12000 },
 };
 
-// How many extra kept parts a refine may give up to make room before the whole build is re-planned.
-// One: giving up two or more (say GPU and CPU for a bigger SSD) is a bigger change than the user
-// asked for, and a full re-plan spreads that cost more evenly.
-const MAX_RELEASES = 1;
+// A refine that has no room may give up ONE extra kept part before the whole build is re-planned
+// (giving up two or more, say GPU and CPU for a bigger SSD, is a bigger change than the user asked
+// for). This is how many different single parts are tried, in order, for that role.
+const MAX_RELEASE_TRIES = 3;
 // Board and memory follow the CPU choice, so they are never released on their own.
 const COUPLED_TO_PLATFORM = new Set(['Motherboard', 'RAM']);
 
@@ -191,7 +191,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
         const plan = applyPatch(prevIntent, patch, prevBuild, message);
         intent = plan.intent;
         followUp = plan;
-        plan.interpretation = describePatch(patch, prevIntent);
+        plan.interpretation = describePatch(patch, prevIntent, message);
         setInterpretation(plan.interpretation);
         setScope([...plan.changing]);
         console.log(`[orchestrator] Follow-up patch: re-search ${[...plan.changing].join(', ') || 'nothing'}`);
@@ -259,6 +259,25 @@ export async function executeBuild(payload, deps, ctx = {}) {
   setStage('planning');
   console.log("PHASE 1 & 2: Dynamic Blueprint Reality Check & Weighted Budget Allocation");
 
+  const intentSnapshotBeforeFloor = JSON.parse(JSON.stringify(intent));
+
+  // "Better than what I have" / "cheaper than what I have" / "a stronger PSU" steer which part is
+  // picked; they are not a reason to refuse the build. If nothing better exists (the part is already
+  // the best or the cheapest in stock) the floor check would fail with "no X found". It runs without
+  // them, and they are put back for the selection, which keeps the old part and says so.
+  const steering = {};
+  const steeringFloor = {};
+  for (const op of followUp?.ops || []) {
+    if (!op.direction) continue;
+    const reqs = intent.component_strategy?.[op.category]?.structured_reqs;
+    if (!reqs) continue;
+    const keys = ['better_than', 'worse_than', 'no_worse_on'];
+    if (op.category === 'PSU' && op.direction === 'up' && !Object.keys(op.structured_reqs || {}).length) keys.push('min_wattage');
+    steering[op.category] = {};
+    for (const key of keys) {
+      if (key in reqs) { steering[op.category][key] = reqs[key]; delete reqs[key]; }
+    }
+  }
   const floorResult = await deps.budgetAllocator.calculateFloorPrices({
     blueprint: intent,
     budgetCeiling,
@@ -271,6 +290,38 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
   if (floorResult.updatedBlueprint) {
     intent = floorResult.updatedBlueprint;
+  }
+
+  for (const [category, held] of Object.entries(steering)) {
+    const strat = intent.component_strategy?.[category];
+    if (!strat) continue;
+    strat.structured_reqs = { ...(strat.structured_reqs || {}), ...held };
+    // The part has to be at least as dear as the cheapest one that satisfies the wish, or its share of
+    // the budget would be sized for the part it is replacing. When nothing does, the floor stays as it was.
+    const current = floorResult.minimums?.[category];
+    if (typeof current !== 'number') continue;
+    const cheapest = (await deps.partRepository.query(site, category, { min: 0, max: budgetCeiling }, 'price_asc'))
+      .find((part) => deps.partRepository.matchesStrategy(part, strat, category));
+    if (cheapest && cheapest.price > current) steeringFloor[category] = cheapest.price;
+  }
+
+  // The floor check prices every part at its cheapest and, when that total is over budget, relaxes
+  // requirements (16GB of RAM down to 8GB, a keyword dropped). A refine keeps most parts at the
+  // price they already have, so relaxing a part the user did not touch would only unlock it and
+  // downgrade it for nothing. Parts outside the refine's scope get their requirements back.
+  if (followUp) {
+    const restored = [];
+    for (const category of Object.keys(intentSnapshotBeforeFloor.component_strategy || {})) {
+      if (followUp.changing.has(category)) continue;
+      const before = JSON.stringify(intentSnapshotBeforeFloor.component_strategy[category]);
+      if (intent.component_strategy?.[category] && JSON.stringify(intent.component_strategy[category]) !== before) {
+        intent.component_strategy[category] = JSON.parse(before);
+        restored.push(category);
+      }
+    }
+    if (restored.length > 0 && floorResult.degradations) {
+      floorResult.degradations = floorResult.degradations.filter((d) => !restored.some((c) => d.includes(c)));
+    }
   }
 
   let dynamicBudgets = deps.budgetAllocator.allocateBudgets({
@@ -458,6 +509,17 @@ export async function executeBuild(payload, deps, ctx = {}) {
         if (lockedCategories.has(cat)) continue; // Skip locked categories
         adjustedMinimums[cat] = floorResult.minimums[cat] || 0;
         adjustedFloor += adjustedMinimums[cat];
+      }
+      // A part asked to be "better" has to be sized for the better part, not the one it replaces,
+      // as long as the money for that exists; otherwise its share is left as it was.
+      const steeredFloor = adjustedFloor + Object.entries(steeringFloor)
+        .filter(([cat]) => !lockedCategories.has(cat) && cat in adjustedMinimums)
+        .reduce((sum, [cat, price]) => sum + price - adjustedMinimums[cat], 0);
+      if (steeredFloor > adjustedFloor && steeredFloor <= adjustedCeiling) {
+        for (const [cat, price] of Object.entries(steeringFloor)) {
+          if (!lockedCategories.has(cat) && cat in adjustedMinimums) adjustedMinimums[cat] = price;
+        }
+        adjustedFloor = steeredFloor;
       }
       dynamicBudgets = deps.budgetAllocator.allocateBudgets({
         blueprint: intent,
@@ -687,6 +749,17 @@ export async function executeBuild(payload, deps, ctx = {}) {
         if (part) break;
       }
 
+      // A released part exists to make room, so it must come back cheaper. The selector widens
+      // upward when its band is empty (a gap in the catalog), which can hand back the old part.
+      const cap = payload._shrink?.[category];
+      if (part && cap && part.price > cap) {
+        const cheaper = await deps.partSelector.selectPart(
+          site, category, { min: 0, max: Math.min(cap, Math.max(globalRemaining, 0)) }, 'price_desc',
+          createFilterFn(category, strat, selectedBuild, { platformCap }),
+        );
+        if (cheaper) part = cheaper;
+      }
+
       if (part) {
         selectedBuild[category] = part;
         totalCost += part.price;
@@ -713,15 +786,22 @@ export async function executeBuild(payload, deps, ctx = {}) {
     // First loosen what the user said earlier for that part (a "27 inch QHD" from the first request
     // against a new "around 20k"), keeping every other part as it is. Only if that fails is it
     // a re-plan of the whole build.
+    const canRelease = Boolean(followUp && prevBuild && !payload._release);
+    const deferredQuality = new Map();
     if (followUp && unmet.length > 0) {
       for (const category of unmet) {
         const strat = intent.component_strategy[category];
         const named = followUp.targets?.[category];
-        const pool = globalRemaining - reserveAfter(selectionOrder.indexOf(category), true);
+        // Read when used: a part settled later (after a release attempt) must see what the others spent meanwhile.
+        const poolNow = () => globalRemaining - reserveAfter(selectionOrder.indexOf(category), true);
         const dropped = (strat.required_keywords || []).filter((k) => !/^ddr[345]$/i.test(k));
         const withoutKeywords = { ...strat, required_keywords: (strat.required_keywords || []).filter((k) => !dropped.includes(k)) };
+        // "A stronger PSU" with no figure was turned into the next wattage tier; it goes with the bound.
+        const derivedWattage = category === 'PSU' && followUp.ops?.some((o) => o.category === 'PSU'
+          && o.direction === 'up' && !Object.keys(o.structured_reqs || {}).length);
         const withoutBound = (st) => {
-          const { better_than: _b, worse_than: _w, ...reqs } = st.structured_reqs || {};
+          const { better_than: _b, worse_than: _w, no_worse_on: _n, ...reqs } = st.structured_reqs || {};
+          if (derivedWattage) delete reqs.min_wattage;
           return { ...st, structured_reqs: reqs };
         };
         const hasBound = typeof strat.structured_reqs?.better_than === 'number' || typeof strat.structured_reqs?.worse_than === 'number';
@@ -744,32 +824,54 @@ export async function executeBuild(payload, deps, ctx = {}) {
             { strat: withoutKeywords, spread: tol, kind: 'keywords' },
             { strat: withoutKeywords, spread: tol * 2.3, kind: 'keywords' },
           ] : []),
-          ...(hasBound ? [{ strat: withoutBound(dropped.length ? withoutKeywords : strat), spread: tol * 2.3, kind: 'quality' }] : []),
         ];
-        for (const attempt of attempts) {
-          const part = await deps.partSelector.selectWithFallback(
-            site, category, bandFor(attempt.spread), 'price_desc',
-            createFilterFn(category, attempt.strat, selectedBuild, {}), pool,
-          );
-          if (!part) continue;
-          selectedBuild[category] = part;
-          totalCost += part.price;
-          globalRemaining -= part.price;
-          // The first pass already warned that nothing matched; this part is now found.
-          const missed = `Could not find a suitable **${category}**`;
-          for (let i = buildWarnings.length - 1; i >= 0; i--) if (buildWarnings[i].startsWith(missed)) buildWarnings.splice(i, 1);
-          if (attempt.kind === 'keywords' || (attempt.kind === 'quality' && dropped.length)) {
-            strat.required_keywords = withoutKeywords.required_keywords;
-            buildWarnings.push(`No ${category} matching "${dropped.join(' ')}" was available${named && !named.derived ? ` around ${named.target.toLocaleString('en-BD')} BDT` : ''}, so that wish was dropped. Picked: ${part.name}.`);
+        const qualityAttempt = hasBound
+          ? { strat: withoutBound(dropped.length ? withoutKeywords : strat), spread: tol * 2.3, kind: 'quality' }
+          : null;
+
+        const run = async (list) => {
+          for (const attempt of list) {
+            const part = await deps.partSelector.selectWithFallback(
+              site, category, bandFor(attempt.spread), 'price_desc',
+              createFilterFn(category, attempt.strat, selectedBuild, {}), poolNow(),
+            );
+            if (!part) continue;
+            selectedBuild[category] = part;
+            totalCost += part.price;
+            globalRemaining -= part.price;
+            // The first pass already warned that nothing matched; this part is now found.
+            const missed = `Could not find a suitable **${category}**`;
+            for (let i = buildWarnings.length - 1; i >= 0; i--) if (buildWarnings[i].startsWith(missed)) buildWarnings.splice(i, 1);
+            if (attempt.kind === 'keywords' || (attempt.kind === 'quality' && dropped.length)) {
+              strat.required_keywords = withoutKeywords.required_keywords;
+              buildWarnings.push(`No ${category} matching "${dropped.join(' ')}" was available${named && !named.derived ? ` around ${named.target.toLocaleString('en-BD')} BDT` : ''}, so that wish was dropped. Picked: ${part.name}.`);
+            }
+            if (attempt.kind === 'quality') {
+              const same = prevBuild?.[category]?.name === part.name;
+              buildWarnings.push(same
+                ? `No ${category} better than your current ${part.name} fits the rest of the budget, so it stays. Raise the budget, or ask for something cheaper elsewhere, to make room.`
+                : `No ${category} clearly better than the old one fit the rest of the budget; picked the closest: ${part.name}.`);
+            }
+            console.log(`[Follow-up] ${category}: relaxed (${attempt.kind}) and kept the other parts → ${part.name} (${part.price} BDT)`);
+            return true;
           }
-          if (attempt.kind === 'quality') {
-            const same = prevBuild?.[category]?.name === part.name;
-            buildWarnings.push(same
-              ? `No ${category} better than your current ${part.name} fits the rest of the budget, so it stays.`
-              : `No ${category} clearly better than the old one fit the rest of the budget; picked the closest: ${part.name}.`);
-          }
-          console.log(`[Follow-up] ${category}: relaxed (${attempt.kind}) and kept the other parts → ${part.name} (${part.price} BDT)`);
-          break;
+          return false;
+        };
+
+        if (!(await run(attempts)) && qualityAttempt) {
+          // The better part exists but not at this price. Making room for it by re-picking one other
+          // part comes first; settling for the old part is what is left if that cannot be done.
+          const cheapest = canRelease
+            ? (await deps.partRepository.query(site, category, { min: 0, max: budgetCeiling }, 'price_asc'))
+              .find(createFilterFn(category, dropped.length ? withoutKeywords : strat, selectedBuild, {}))
+            : null;
+          if (cheapest) {
+            // Keep the old part's price aside, so what the other parts spend meanwhile cannot leave
+            // "the old part stays" with no money behind it.
+            const hold = prevBuild?.[category]?.price || 0;
+            globalRemaining -= hold;
+            deferredQuality.set(category, { need: cheapest.price, hold, settle: () => run([qualityAttempt]) });
+          } else await run([qualityAttempt]);
         }
       }
       unmet = findUnmet();
@@ -778,28 +880,25 @@ export async function executeBuild(payload, deps, ctx = {}) {
     // Still no room. If giving up a few more kept parts would cover the gap, re-pick just those
     // (the ones that cost the most for the weight the user gave them) instead of the whole build.
     if (unmet.length > 0 && followUp && prevBuild && !payload._release) {
-      const need = unmet.reduce((sum, c) => sum + (floorResult.minimums?.[c] || 0), 0);
-      const shortfall = need - Math.max(globalRemaining, 0);
-      const give = [];
-      const shrink = {};
+      const need = unmet.reduce((sum, c) => sum + (deferredQuality.get(c)?.need ?? (floorResult.minimums?.[c] || 0)), 0);
+      const held = [...deferredQuality.values()].reduce((sum, d) => sum + d.hold, 0);
+      const shortfall = need - Math.max(globalRemaining + held, 0);
+      // One kept part is given up per attempt (two or more is a bigger change than the user asked for),
+      // and a part that turns out to have nothing cheaper to give is followed by the next one.
+      const options = [];
       if (shortfall > 0) {
-        let freed = 0;
         const candidates = [...lockedCategories]
           .filter((c) => !COUPLED_TO_PLATFORM.has(c) && selectedBuild[c])
           .sort((a, b) => releaseScore(b, selectedBuild, intent) - releaseScore(a, selectedBuild, intent));
         for (const c of candidates) {
-          if (freed >= shortfall || give.length >= MAX_RELEASES) break;
           // What it frees is its price minus the cheapest acceptable replacement.
           const gain = selectedBuild[c].price - (floorResult.minimums?.[c] || 0);
-          if (gain <= 0) continue;
-          give.push(c);
-          freed += gain;
+          if (gain < shortfall) continue;
           // Re-pick it only as much cheaper as the gap needs, not from a fresh share of the budget.
-          shrink[c] = Math.max(floorResult.minimums?.[c] || 0, Math.round(selectedBuild[c].price - shortfall * 1.15));
+          options.push({ give: [c], shrink: { [c]: Math.max(floorResult.minimums?.[c] || 0, Math.round(selectedBuild[c].price - shortfall * 1.15)) } });
         }
-        if (freed < shortfall) give.length = 0; // not enough even then: re-plan the whole build
       }
-      if (give.length > 0) {
+      for (const { give, shrink } of options.slice(0, MAX_RELEASE_TRIES)) {
         console.log(`[Follow-up] No room for ${unmet.join(', ')}; also re-picking ${give.join(', ')}.`);
         try {
           const retried = await executeBuild(
@@ -813,16 +912,28 @@ export async function executeBuild(payload, deps, ctx = {}) {
             deps,
             ctx
           );
+          // Asked for a better part and got the old one back: the released part had nothing cheaper to give.
+          const stuck = [...deferredQuality.keys()].some((c) => retried.build[c] && retried.build[c].name === prevBuild[c]?.name);
+          if (stuck) {
+            console.log(`[Follow-up] Re-picking ${give.join(', ')} freed nothing; trying the next part.`);
+            continue;
+          }
           const note = `To make room for ${unmet.join(', ')}, ${give.join(' and ')} ${give.length > 1 ? 'were' : 'was'} picked again as well.`;
           retried.notes = [note, ...retried.notes];
           retried.warnings = [note, ...retried.warnings];
           return retried;
         } catch (error) {
           if (!(error instanceof BuildError)) throw error;
-          console.log(`[Follow-up] Re-picking ${give.join(', ')} did not help (${error.code}); falling back to a full re-plan.`);
+          console.log(`[Follow-up] Re-picking ${give.join(', ')} did not help (${error.code}).`);
         }
       }
     }
+
+    for (const [category, deferred] of deferredQuality) {
+      globalRemaining += deferred.hold;
+      if (!selectedBuild[category]) await deferred.settle();
+    }
+    if (deferredQuality.size > 0) unmet = findUnmet();
 
     if (unmet.length > 0) {
       console.log(`[Follow-up] Kept parts leave no room for ${unmet.join(', ')}; rebuilding from scratch.`);
@@ -988,6 +1099,31 @@ export async function executeBuild(payload, deps, ctx = {}) {
     }
   }
 
+  // A part is searched again only because the part it depends on might change (the PSU because the
+  // graphics card might). When that part came out the same, the new pick has no reason to differ:
+  // put the old one back, so "a better GPU" that finds nothing does not quietly swap the PSU.
+  if (followUp && prevBuild && !restarting) {
+    const named = new Set([...(followUp.ops || []).map((o) => o.category), ...Object.keys(followUp.targets || {}), ...(followUp.absorbers || [])]);
+    const DEPENDS_ON = { Motherboard: ['Processor'], RAM: ['Motherboard'], PSU: ['Processor', 'Graphics Card'] };
+    for (const category of ['Motherboard', 'RAM', 'PSU']) {
+      const now = selectedBuild[category];
+      const old = prevBuild[category];
+      if (!now || !old || lockedCategories.has(category) || named.has(category) || now.name === old.name) continue;
+      if (!DEPENDS_ON[category].every((parent) => (selectedBuild[parent]?.name ?? null) === (prevBuild[parent]?.name ?? null))) continue;
+      if (totalCost - now.price + old.price > budgetCeiling) continue;
+      const availability = old.url && deps.partRepository.checkAvailability
+        ? await deps.partRepository.checkAvailability(old.url)
+        : { price: old.price, in_stock: true };
+      if (!availability?.in_stock) continue;
+      const price = availability.price || old.price;
+      if (totalCost - now.price + price > budgetCeiling) continue;
+      totalCost += price - now.price;
+      selectedBuild[category] = { ...old, price };
+      lockedCategories.add(category);
+      console.log(`[Follow-up] ${category}: kept ${old.name}, nothing it depends on changed`);
+    }
+  }
+
   // ─── PHASE 5: Post-Build Validation ───
   console.log("\nPHASE 5: Post-Build Validation...");
 
@@ -1046,6 +1182,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
     if (strat?.structured_reqs) {
       delete strat.structured_reqs.better_than;
       delete strat.structured_reqs.worse_than;
+      delete strat.structured_reqs.no_worse_on;
     }
   }
 

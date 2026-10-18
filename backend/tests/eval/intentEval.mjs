@@ -9,6 +9,10 @@
 //
 // Both env vars are set to the same model so a failure is not hidden by a fallback model.
 // Needs OLLAMA_API_KEY (backend/.env). Spends real API quota: ~40 calls per model.
+//
+// The FOLLOW cases exercise the full-intent reader, which a refine now uses only as the fallback
+// when the patch call fails or the user starts over. How refine messages are read in normal
+// operation is scored by patchEval.mjs. Both: `npm run eval:intent`, `npm run eval:patch`.
 
 import fs from 'fs';
 import path from 'path';

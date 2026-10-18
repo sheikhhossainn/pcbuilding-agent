@@ -180,6 +180,19 @@ test('applyPatch: absorbers are collected', () => {
   assert.deepEqual(absorbers, ['PSU']);
 });
 
+test('applyPatch: absorb_savings the user never asked for is ignored', () => {
+  const patch = patchOf({ ops: [{ category: 'Monitor', price_target: 20000 }, { category: 'PSU', direction: 'up', absorb_savings: true }] });
+  const psu = { PSU: { price: 3000, specs: { wattage: 650 } } };
+  const said = applyPatch(previousIntent(), patch, psu, 'find a monitor around 20k and use the saved budget for a stronger PSU');
+  assert.deepEqual(said.absorbers, ['PSU']);
+  const invented = applyPatch(previousIntent(), patch, psu, 'find a monitor around 20k and a stronger PSU');
+  assert.deepEqual(invented.absorbers, []);
+  assert.ok(!describePatch(patch, previousIntent(), 'find a monitor around 20k and a stronger PSU')
+    .some((item) => /saved money/.test(item.text)));
+  assert.ok(describePatch(patch, previousIntent(), 'use the leftover on a stronger PSU')
+    .some((item) => /saved money/.test(item.text)));
+});
+
 test('applyPatch scope: CPU change re-picks board, RAM and PSU; GPU change re-picks PSU', () => {
   const cpu = applyPatch(previousIntent(), patchOf({ ops: [{ category: 'Processor', required_keywords: ['ryzen'] }] }));
   assert.deepEqual([...cpu.changing].sort(), ['Motherboard', 'PSU', 'Processor', 'RAM']);
