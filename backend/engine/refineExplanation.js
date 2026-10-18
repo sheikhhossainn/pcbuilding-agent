@@ -50,6 +50,7 @@ export function describeRefine({ build, previousBuild, locked, followUp, total, 
   const targets = followUp?.targets || {};
   const absorbers = new Set(followUp?.absorbers || []);
 
+  const opsAsked = (followUp?.ops || []).length > 0;
   const changed = [];
   for (const category of Object.keys(build)) {
     const after = build[category];
@@ -62,7 +63,9 @@ export function describeRefine({ build, previousBuild, locked, followUp, total, 
 
   const parts = [];
   if (changed.length === 0) {
-    parts.push('Nothing in your build needed to change for that request, so every part stays as it was.');
+    parts.push(opsAsked
+      ? 'Nothing you asked for fit within your budget, so every part stays as it was.'
+      : 'Nothing in your build needed to change for that request, so every part stays as it was.');
   } else {
     const keptCount = locked.length;
     parts.push(`I changed ${changed.length === 1 ? 'one part' : `${changed.length} parts`} and kept ${keptCount === 0 ? 'nothing' : keptCount === 1 ? 'one part' : `the other ${keptCount}`} exactly as ${keptCount === 1 ? 'it was' : 'they were'}.`);

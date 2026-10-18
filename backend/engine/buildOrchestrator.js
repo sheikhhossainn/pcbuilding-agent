@@ -829,20 +829,28 @@ export async function executeBuild(payload, deps, ctx = {}) {
           ? { strat: withoutBound(dropped.length ? withoutKeywords : strat), spread: tol * 2.3, kind: 'quality' }
           : null;
 
+        // A price the user named that the budget cannot reach: the best part the rest of the budget can pay for.
+        const afford = named && !named.derived
+          ? { strat: withoutBound(dropped.length ? withoutKeywords : strat), band: { min: 0, max: Math.round(named.target) }, kind: 'afford' }
+          : null;
+
         const run = async (list) => {
           for (const attempt of list) {
             const part = await deps.partSelector.selectWithFallback(
-              site, category, bandFor(attempt.spread), 'price_desc',
+              site, category, attempt.band || bandFor(attempt.spread), 'price_desc',
               createFilterFn(category, attempt.strat, selectedBuild, {}), poolNow(),
             );
-            if (!part) continue;
+            if (!part) {
+              console.log(`[Follow-up] ${category}: nothing for the ${attempt.kind} attempt (pool ${Math.round(poolNow())} BDT)`);
+              continue;
+            }
             selectedBuild[category] = part;
             totalCost += part.price;
             globalRemaining -= part.price;
             // The first pass already warned that nothing matched; this part is now found.
             const missed = `Could not find a suitable **${category}**`;
             for (let i = buildWarnings.length - 1; i >= 0; i--) if (buildWarnings[i].startsWith(missed)) buildWarnings.splice(i, 1);
-            if (attempt.kind === 'keywords' || (attempt.kind === 'quality' && dropped.length)) {
+            if (attempt.kind === 'keywords' || (['quality', 'afford'].includes(attempt.kind) && dropped.length)) {
               strat.required_keywords = withoutKeywords.required_keywords;
               buildWarnings.push(`No ${category} matching "${dropped.join(' ')}" was available${named && !named.derived ? ` around ${named.target.toLocaleString('en-BD')} BDT` : ''}, so that wish was dropped. Picked: ${part.name}.`);
             }
@@ -872,6 +880,13 @@ export async function executeBuild(payload, deps, ctx = {}) {
             globalRemaining -= hold;
             deferredQuality.set(category, { need: cheapest.price, hold, settle: () => run([qualityAttempt]) });
           } else await run([qualityAttempt]);
+        } else if (afford && !selectedBuild[category]) {
+          // Same order as above: re-picking one other part to reach the named price comes before settling for less.
+          if (canRelease) {
+            const hold = prevBuild?.[category]?.price || 0;
+            globalRemaining -= hold;
+            deferredQuality.set(category, { need: Math.round(named.target * (1 - tol)), hold, settle: () => run([afford]) });
+          } else await run([afford]);
         }
       }
       unmet = findUnmet();
@@ -918,6 +933,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
             console.log(`[Follow-up] Re-picking ${give.join(', ')} freed nothing; trying the next part.`);
             continue;
           }
+          // The retry may itself have fallen back to a re-plan, which says so; one explanation is enough.
+          if (retried.notes.some((n) => /re-planned from scratch/.test(n))) return retried;
           const note = `To make room for ${unmet.join(', ')}, ${give.join(' and ')} ${give.length > 1 ? 'were' : 'was'} picked again as well.`;
           retried.notes = [note, ...retried.notes];
           retried.warnings = [note, ...retried.warnings];
@@ -934,6 +951,58 @@ export async function executeBuild(payload, deps, ctx = {}) {
       if (!selectedBuild[category]) await deferred.settle();
     }
     if (deferredQuality.size > 0) unmet = findUnmet();
+
+    // Nothing could be found at any price the rest of the budget allows. Before re-planning everything,
+    // put the user's current part back, and take back whatever else was swapped meanwhile until the
+    // build fits again. The result is "nothing could be done within this budget", said plainly.
+    // Only for wishes that are a matter of degree ("around 20k", "better"). A hard requirement ("2TB",
+    // "DDR5") cannot be met by keeping the old part, so that still ends in a re-plan.
+    const isSoftWish = (category) => {
+      const op = followUp?.ops?.find((o) => o.category === category);
+      return Boolean(op) && op.action !== 'add' && (op.price_target || op.direction)
+        && !op.required_keywords.length && !Object.keys(op.structured_reqs).length;
+    };
+    if (unmet.length > 0 && followUp && prevBuild && !restarting
+      && unmet.every((c) => prevBuild[c]?.name && isSoftWish(c))) {
+      const swapBack = async (category) => {
+        const old = prevBuild[category];
+        const availability = old.url && deps.partRepository.checkAvailability
+          ? await deps.partRepository.checkAvailability(old.url)
+          : { price: old.price, in_stock: true };
+        if (!availability?.in_stock) return false;
+        const price = availability.price || old.price;
+        if (selectedBuild[category]) totalCost -= selectedBuild[category].price;
+        selectedBuild[category] = { ...old, price };
+        totalCost += price;
+        lockedCategories.add(category);
+        return true;
+      };
+      const restored = [];
+      const takenBack = [];
+      for (const category of unmet) if (await swapBack(category)) restored.push(category);
+      if (restored.length === unmet.length) {
+        const byRise = Object.keys(selectedBuild)
+          .filter((c) => !lockedCategories.has(c) && selectedBuild[c] && prevBuild[c] && selectedBuild[c].name !== prevBuild[c].name)
+          .sort((a, b) => (selectedBuild[b].price - prevBuild[b].price) - (selectedBuild[a].price - prevBuild[a].price));
+        for (const category of byRise) {
+          if (totalCost <= budgetCeiling) break;
+          if (await swapBack(category)) takenBack.push(category);
+        }
+        const platformIntact = ['Processor', 'Motherboard', 'RAM'].every((c) => selectedBuild[c]?.name === prevBuild[c]?.name);
+        if (totalCost <= budgetCeiling && platformIntact) {
+          // The part that could not be found is no longer "missing": it is the user's current one.
+          for (const category of restored) {
+            const missed = `Could not find a suitable **${category}**`;
+            for (let i = buildWarnings.length - 1; i >= 0; i--) if (buildWarnings[i].startsWith(missed)) buildWarnings.splice(i, 1);
+          }
+          for (const category of [...restored, ...takenBack]) {
+            buildWarnings.push(`Could not fit a new ${category} into your budget, so your current ${prevBuild[category].name} was kept. Raise the budget, or ask for something cheaper elsewhere, to make room.`);
+          }
+          unmet = [];
+          setScope(Object.keys(selectedBuild).filter((c) => !lockedCategories.has(c) && (selectedBuild[c] || prevBuild[c])));
+        }
+      }
+    }
 
     if (unmet.length > 0) {
       console.log(`[Follow-up] Kept parts leave no room for ${unmet.join(', ')}; rebuilding from scratch.`);

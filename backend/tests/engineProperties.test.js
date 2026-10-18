@@ -477,3 +477,22 @@ test('patch follow-up: a cheaper part when the current one is already the cheape
   assert.equal(second.build.Mouse.url, cheapest.url);
   assert.deepEqual(urls(second.build), urls(first.build));
 });
+
+test('patch follow-up: a priced monitor plus a stronger PSU on a build with no spare money keeps the parts, not a re-plan', async () => {
+  // The headline request on a build already at its ceiling: nothing can pay for a 20k monitor.
+  const spec = { budget: 100000, use: 'gaming' };
+  const first = await build(spec);
+  const second = await refine(first, 'find a monitor around 20k and use the saved budget from the monitor to get a more powerful PSU', {
+    ops: [
+      { category: 'Monitor', price_target: 20000 },
+      { category: 'PSU', direction: 'up', absorb_savings: true },
+    ],
+  }, spec);
+  assert.ok(!second.notes.some((n) => /re-planned from scratch/.test(n)), 'whole build was re-planned');
+  assert.ok(second.total <= ceilingOf(spec.budget));
+  assertSound(second, spec, 'priced monitor, no room');
+  const before = urls(first.build);
+  const after = urls(second.build);
+  const moved = Object.keys(before).filter((c) => before[c] !== after[c]);
+  assert.ok(moved.every((c) => ['Monitor', 'PSU', 'Graphics Card'].includes(c)), `unexpected changes: ${moved}`);
+});

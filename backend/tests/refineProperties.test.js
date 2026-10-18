@@ -107,7 +107,8 @@ test(`refine properties: ${SCENARIOS} random follow-ups never touch parts they d
 
     // Scope: nothing outside what was asked for (plus what depends on it) moved, except for the
     // one part the engine says it released to make room.
-    if (second.notes.some((note) => /re-planned from scratch/.test(note))) { replanned += 1; continue; }
+    if (second.notes.some((note) => /re-planned from scratch/.test(note))) { replanned += 1; if (process.env.PROP_VERBOSE) process.stderr.write(`REPLAN ${label}: ${second.notes.join(" | ")}
+`); continue; }
     const before = urlsOf(first.build);
     const after = urlsOf(b);
     const moved = Object.keys({ ...before, ...after }).filter((c) => before[c] !== after[c]);

@@ -24,7 +24,7 @@ export default function RefineSummary({ refine, onUndo, onDismiss }) {
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <h2 className="text-sm font-semibold text-fg">
           {nothingChanged
-            ? 'No parts needed to change'
+            ? (refine.interpretation?.length ? 'Nothing could be changed within your budget' : 'No parts needed to change')
             : `Changed ${changed.length} ${changed.length === 1 ? 'part' : 'parts'}`}
           <span className="font-normal text-fg-3">
             {' '}· kept {kept.length} as {kept.length === 1 ? 'it was' : 'they were'}
