@@ -42,6 +42,9 @@ function createEngine(rows = catalog) {
         const site = sql.includes('AND site = ?') ? args[1] : null;
         return { rows: rows.filter((r) => r.category === args[0] && r.in_stock && (!site || r.site === site)) };
       }
+      if (sql.startsWith('SELECT url, in_stock, price FROM components WHERE url IN')) {
+        return { rows: rows.filter((r) => args.includes(r.url)).map((r) => ({ url: r.url, in_stock: r.in_stock, price: r.price })) };
+      }
       if (sql.startsWith('SELECT in_stock, price FROM components WHERE url')) {
         const r = rows.find((x) => x.url === args[0]);
         return { rows: r ? [{ in_stock: r.in_stock, price: r.price }] : [] };
@@ -339,6 +342,11 @@ test('patch follow-up: "monitor around 20k, saved money to a stronger PSU" re-se
   for (const announced of scopes) assert.deepEqual(announced, ['Monitor', 'PSU']);
 
   assert.deepEqual([...second.scope.changing].sort(), ['Monitor', 'PSU']);
+  // The story of a refine is written from the diff, not by a second LLM call (the stub would say 'ok').
+  assert.notEqual(second.explanation, 'ok');
+  assert.match(second.explanation, /changed 2 parts/);
+  assert.match(second.explanation, /monitor is now/);
+  assert.match(second.explanation, /PSU is now/);
   const before = urls(first.build);
   const after = urls(second.build);
   for (const category of Object.keys(before)) {

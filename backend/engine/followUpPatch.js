@@ -178,6 +178,7 @@ const nextTier = (tiers, current) => tiers.find((t) => t > current) ?? tiers[tie
  *   targets: Object,                { [category]: { target, tolerance } } price the user named
  *   absorbers: string[],            parts that should take the money other changes free up
  *   notes: string[],                things in the patch that could not be honoured
+ *   ops: Array,                     the normalized per-part operations, for describing the result
  * }}
  */
 export function applyPatch(previousIntent, patch, previousBuild = {}, message) {
@@ -276,5 +277,5 @@ export function applyPatch(previousIntent, patch, previousBuild = {}, message) {
     }
   }
 
-  return { intent, changing, targets, absorbers, notes };
+  return { intent, changing, targets, absorbers, notes, ops: patch.ops };
 }

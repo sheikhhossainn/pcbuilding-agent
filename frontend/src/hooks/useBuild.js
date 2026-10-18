@@ -5,7 +5,7 @@ import { sumBuild } from '../lib/format';
 import { diffBuilds } from '../lib/buildDiff';
 
 const SESSION_KEY = 'buildmypc.session.v1';
-const POLL_INTERVAL_MS = 1500;
+const POLL_INTERVAL_MS = 800;
 const REVALIDATE_DEBOUNCE_MS = 400;
 
 // Pipeline step reported by the API -> coarse UI state used for busy/idle logic.

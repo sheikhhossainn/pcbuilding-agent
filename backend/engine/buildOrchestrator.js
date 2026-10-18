@@ -8,6 +8,7 @@ import { BUDGET } from '../config/budget.js';
 import { API } from '../config/thresholds.js';
 import { collectBuildWarnings, estimatePower } from './buildValidator.js';
 import { applyPatch, isEmptyPatch } from './followUpPatch.js';
+import { describeRefine } from './refineExplanation.js';
 
 // A build cannot be assembled without these, so "remove" never applies to them.
 const MANDATORY_CATEGORIES = new Set(['Processor', 'Motherboard', 'RAM', 'PSU']);
@@ -411,10 +412,16 @@ export async function executeBuild(payload, deps, ctx = {}) {
       intent.component_strategy[c].structured_reqs = current;
     }
 
-    // Verify inventory availability and apply final locks
+    // Verify inventory availability and apply final locks (one query for all kept parts).
+    const lockUrls = [...initialLocks].map((c) => prevBuild[c].url).filter(Boolean);
+    const availabilityByUrl = deps.partRepository.checkAvailabilityMany && lockUrls.length > 0
+      ? await deps.partRepository.checkAvailabilityMany(lockUrls)
+      : null;
     for (const category of initialLocks) {
       const prevPart = prevBuild[category];
-      const availability = deps.partRepository.checkAvailability ? await deps.partRepository.checkAvailability(prevPart.url) : { price: prevPart.price, in_stock: true };
+      const availability = availabilityByUrl
+        ? availabilityByUrl.get(prevPart.url) ?? null
+        : deps.partRepository.checkAvailability ? await deps.partRepository.checkAvailability(prevPart.url) : { price: prevPart.price, in_stock: true };
       
       if (availability && availability.in_stock) {
         const currentPrice = availability.price || prevPart.price;
@@ -980,10 +987,16 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
   // ─── PHASE 6: Generate explanation ───
   setStage('explaining');
-  const explanation = await deps.explanationGenerator.generate({
-    selectedBuild, totalCost, intent, sitePreference: site, buildWarnings,
-    lockedCategories: Array.from(lockedCategories),
-  });
+  // A refine's story is already known from the diff, so it is written here instead of by a second LLM call.
+  const explanation = followUp && prevBuild && !restarting && lockedCategories.size > 0
+    ? describeRefine({
+      build: selectedBuild, previousBuild: prevBuild, locked: Array.from(lockedCategories),
+      followUp, total: totalCost, budget,
+    })
+    : await deps.explanationGenerator.generate({
+      selectedBuild, totalCost, intent, sitePreference: site, buildWarnings,
+      lockedCategories: Array.from(lockedCategories),
+    });
 
   intent._applied_site = site;
 

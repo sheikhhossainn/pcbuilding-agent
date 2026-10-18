@@ -300,12 +300,36 @@ export const createPartRepository = ({ db, specInference, cache }) => {
     }
   };
 
+  /**
+   * Stock and price for several listings in one round trip.
+   * @param {string[]} urls
+   * @returns {Promise<Map<string, {in_stock: boolean, price: number}>>} only the urls found; empty on error
+   */
+  const checkAvailabilityMany = async (urls) => {
+    const unique = [...new Set((urls || []).filter(Boolean))];
+    const found = new Map();
+    if (unique.length === 0) return found;
+    try {
+      const result = await dbClient.execute({
+        sql: `SELECT url, in_stock, price FROM components WHERE url IN (${unique.map(() => '?').join(',')})`,
+        args: unique,
+      });
+      for (const row of result.rows || []) {
+        found.set(row.url, { in_stock: Boolean(row.in_stock), price: Number(row.price) });
+      }
+    } catch (e) {
+      // Same as checkAvailability: an unreadable row means the part is not trusted as available.
+    }
+    return found;
+  };
+
   return {
     query,
     findCheapest,
     matchesStrategy,
     getAvailableSockets,
     checkAvailability,
+    checkAvailabilityMany,
   };
 };
 

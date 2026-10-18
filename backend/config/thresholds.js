@@ -55,6 +55,9 @@ export const RATE_LIMITING = {
   // Max requests per window for unauthenticated users
   MAX_REQUESTS_PER_WINDOW: 10,
 
+  // Refines of an existing build (one short AI call each) per window, counted separately from builds
+  MAX_REFINES_PER_WINDOW: 20,
+
   // Message to display when limit exceeded
   LIMIT_MESSAGE: "You've reached the free limit of 10 builds per 15 minutes. Please wait, or enter your own API key in the settings to continue immediately.",
 };
