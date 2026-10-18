@@ -105,6 +105,7 @@ const upgradeCapFor = (category, budget) => {
  * @param {Object} deps - injected dependencies
  * @param {Object} [ctx]
  * @param {(stage: string) => void} [ctx.onStage] - progress hook: intent | planning | selecting | optimizing | checking | explaining
+ * @param {(changing: string[]|null) => void} [ctx.onScope] - refine only: the parts being searched again (null = all of them)
  * @returns {Object} { build, total, budget, explanation, intent, warnings, notes, power }
  */
 export async function executeBuild(payload, deps, ctx = {}) {
@@ -127,6 +128,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
     try { ctx.onStage?.(stage); } catch { /* progress reporting must never break a build */ }
   };
   setStage('intent');
+  const setScope = (changing) => {
+    try { ctx.onScope?.(changing); } catch { /* progress reporting must never break a build */ }
+  };
 
   // Validate input
   if (!message || message.length > API.MAX_MESSAGE_LENGTH) {
@@ -145,6 +149,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
   try {
     if (payload._intent) {
       intent = JSON.parse(JSON.stringify(payload._intent));
+      // A re-plan keeps what the user said about price and where freed money goes.
+      if (payload._followUp) followUp = { ...payload._followUp, changing: new Set() };
     } else {
       let patch = null;
       if (prevIntent && prevBuild && deps.intentExtractor.extractPatch) {
@@ -162,6 +168,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
         const plan = applyPatch(prevIntent, patch, prevBuild, message);
         intent = plan.intent;
         followUp = plan;
+        setScope([...plan.changing]);
         console.log(`[orchestrator] Follow-up patch: re-search ${[...plan.changing].join(', ') || 'nothing'}`);
       } else {
         restarting = Boolean(patch?.restart);
@@ -406,6 +413,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
       }
     }
 
+    // Final answer on what is being searched again (stock checks above may have unlocked a part).
+    setScope(Object.keys(selectedBuild).filter((c) => !lockedCategories.has(c) && (prevBuild[c] || intent.component_strategy?.[c]?.required)));
+
     if (lockedCategories.size > 0) {
       console.log(`[Follow-up] Locked ${lockedCategories.size} unchanged categories, re-selecting ${Object.keys(selectedBuild).length - lockedCategories.size}`);
       
@@ -435,7 +445,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
     // A price the user named for a part replaces the share the allocator would have given it.
     for (const [cat, { target, tolerance }] of Object.entries(followUp?.targets || {})) {
       if (lockedCategories.has(cat)) continue;
-      dynamicBudgets[cat] = Math.round(target * (1 + tolerance));
+      // Closest at or under the named price first (the selector then tries a little above it).
+      dynamicBudgets[cat] = Math.round(target);
       targetFloors[cat] = Math.round(target * (1 - tolerance));
     }
   }
@@ -655,12 +666,63 @@ export async function executeBuild(payload, deps, ctx = {}) {
   // the user actually changed (e.g. "2TB storage" with a locked 33k GPU). Rebuild fresh
   // from the same intent rather than failing or silently dropping what they asked for.
   if (lockedCategories.size > 0) {
-    const unmet = selectionOrder.filter((c) => !lockedCategories.has(c) && !selectedBuild[c]
+    const findUnmet = () => selectionOrder.filter((c) => !lockedCategories.has(c) && !selectedBuild[c]
       && !removed.has(c) && intent.component_strategy?.[c]?.required && (dynamicBudgets[c] || 0) > 0);
+    let unmet = findUnmet();
+
+    // First loosen what the user said earlier for that part (a "27 inch QHD" from the first request
+    // against a new "around 20k"), keeping every other part as it is. Only if that fails is it
+    // a re-plan of the whole build.
+    if (followUp && unmet.length > 0) {
+      for (const category of unmet) {
+        const strat = intent.component_strategy[category];
+        const named = followUp.targets?.[category];
+        const pool = globalRemaining - reserveAfter(selectionOrder.indexOf(category), true);
+        const dropped = (strat.required_keywords || []).filter((k) => !/^ddr[345]$/i.test(k));
+        const relaxed = { ...strat, required_keywords: (strat.required_keywords || []).filter((k) => !dropped.includes(k)) };
+        // Closest at or under the named price; the selector itself then tries a little above it.
+        const bandFor = (spread) => (named
+          ? { min: Math.round(named.target * (1 - spread)), max: Math.round(named.target) }
+          : { min: 0, max: Math.round((dynamicBudgets[category] || 0) * (1 + spread)) });
+
+        // Same keywords with a wider price band, then without the old keywords, then both.
+        const attempts = [
+          { strat, spread: (named?.tolerance ?? 0.15) * 2.3 },
+          ...(dropped.length ? [{ strat: relaxed, spread: named?.tolerance ?? 0.15 }, { strat: relaxed, spread: (named?.tolerance ?? 0.15) * 2.3 }] : []),
+        ];
+        for (const attempt of attempts) {
+          const part = await deps.partSelector.selectWithFallback(
+            site, category, bandFor(attempt.spread), 'price_desc',
+            createFilterFn(category, attempt.strat, selectedBuild, {}), pool,
+          );
+          if (!part) continue;
+          selectedBuild[category] = part;
+          totalCost += part.price;
+          globalRemaining -= part.price;
+          // The first pass already warned that nothing matched; this part is now found.
+          const missed = `Could not find a suitable **${category}**`;
+          for (let i = buildWarnings.length - 1; i >= 0; i--) if (buildWarnings[i].startsWith(missed)) buildWarnings.splice(i, 1);
+          if (attempt.strat === relaxed && dropped.length) {
+            strat.required_keywords = relaxed.required_keywords;
+            buildWarnings.push(`No ${category} matching "${dropped.join(' ')}" was available${named ? ` around ${named.target.toLocaleString('en-BD')} BDT` : ''}, so that wish was dropped. Picked: ${part.name}.`);
+          } else if (named) {
+            buildWarnings.push(`Nothing exactly around ${named.target.toLocaleString('en-BD')} BDT for ${category}; picked the closest: ${part.name}.`);
+          }
+          console.log(`[Follow-up] ${category}: relaxed and kept the other parts → ${part.name} (${part.price} BDT)`);
+          break;
+        }
+      }
+      unmet = findUnmet();
+    }
+
     if (unmet.length > 0) {
       console.log(`[Follow-up] Kept parts leave no room for ${unmet.join(', ')}; rebuilding from scratch.`);
+      setScope(null);
       const rebuilt = await executeBuild(
-        { ...payload, previousBuild: null, previousIntent: null, _intent: intentSnapshot },
+        {
+          ...payload, previousBuild: null, previousIntent: null, _intent: intentSnapshot,
+          _followUp: followUp && { targets: followUp.targets, absorbers: followUp.absorbers },
+        },
         deps,
         ctx
       );

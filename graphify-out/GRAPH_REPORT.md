@@ -1,16 +1,16 @@
-# Graph Report - BuildMyPC  (2026-10-16)
+# Graph Report - BuildMyPC  (2026-10-18)
 
 ## Corpus Check
-- 102 files · ~77,373 words
+- 108 files · ~87,183 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 660 nodes · 1126 edges · 46 communities (41 shown, 5 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 16 edges (avg confidence: 0.73)
+- 730 nodes · 1260 edges · 47 communities (42 shown, 5 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 15 edges (avg confidence: 0.72)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1b3dc866`
+- Built from commit: `fb5dc2d6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -48,7 +48,6 @@
 - 1. Key Logic Refinements
 - Core Issues & Fixes (Integration Phase)
 - Phase 2: Modularization Complete ✅
-- SettingsDialog.jsx
 - UI/UX Enhancements (Senior-Level)
 - Phase 4: Queue System ✅
 - Phase 5: Conversational Follow-Up ✅
@@ -57,67 +56,69 @@
 - Critical Dependencies
 - graphify.md
 - graphify.md
+- build.js
+- patchEval.mjs
 
 ## God Nodes (most connected - your core abstractions)
-1. `BuildMyPC — Project Context` - 19 edges
-2. `executeBuild()` - 17 edges
-3. `formatPrice()` - 14 edges
-4. `BuildMyPC` - 14 edges
-5. `applyIntentOverrides()` - 13 edges
-6. `Builder()` - 13 edges
-7. `part()` - 12 edges
-8. `useBuild()` - 10 edges
-9. `chaos()` - 9 edges
-10. `followUps()` - 9 edges
+1. `executeBuild()` - 19 edges
+2. `BuildMyPC — Project Context` - 19 edges
+3. `formatPrice()` - 16 edges
+4. `applyIntentOverrides()` - 14 edges
+5. `BuildMyPC` - 14 edges
+6. `normalizePatch()` - 12 edges
+7. `Builder()` - 12 edges
+8. `useBuild()` - 11 edges
+9. `createIntentExtractor()` - 9 edges
+10. `chaos()` - 9 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Builder()` --indirect_call--> `part()`  [INFERRED]
-  frontend/src/components/Builder.jsx → backend/tests/helpers.js
-- `SwapDrawer()` --indirect_call--> `part()`  [INFERRED]
-  frontend/src/components/SwapDrawer.jsx → backend/tests/helpers.js
-- `useBuild()` --indirect_call--> `part()`  [INFERRED]
-  frontend/src/hooks/useBuild.js → backend/tests/helpers.js
+- `buildPatchPrompt()` --indirect_call--> `text()`  [INFERRED]
+  backend/ai/intentExtractor.js → frontend/src/lib/share.js
 - `AnimatedPrice()` --indirect_call--> `v()`  [INFERRED]
   frontend/src/components/AnimatedPrice.jsx → backend/tests/stress/harness.mjs
-- `executeBuild()` --indirect_call--> `score()`  [INFERRED]
-  backend/engine/buildOrchestrator.js → backend/tests/eval/intentEval.mjs
+- `normalizePatch()` --indirect_call--> `v()`  [INFERRED]
+  backend/engine/followUpPatch.js → backend/tests/stress/harness.mjs
+- `createDepsForKey()` --indirect_call--> `applyIntentOverrides()`  [INFERRED]
+  backend/server.js → backend/engine/intentOverrides.js
+- `build()` --indirect_call--> `applyIntentOverrides()`  [INFERRED]
+  backend/tests/engineProperties.test.js → backend/engine/intentOverrides.js
 
 ## Import Cycles
 - None detected.
 
-## Communities (46 total, 5 thin omitted)
+## Communities (47 total, 5 thin omitted)
 
 ### Community 0 - "server.js"
-Cohesion: 0.06
-Nodes (57): buildFacts(), createExplanationGenerator(), KNOWN(), ALWAYS_REQUIRED, createIntentExtractor(), DEFAULT_STRATEGY, EXPECTED_CATEGORIES, parseIntentJson() (+49 more)
+Cohesion: 0.13
+Nodes (18): buildFacts(), createExplanationGenerator(), KNOWN(), AI, apiLimiter, app, cacheManager, compatibilityChecker (+10 more)
 
 ### Community 1 - "Builder.jsx"
-Cohesion: 0.13
-Nodes (13): AmbientBackground(), H_TRACES, V_TRACES, STAGE_MESSAGES, Notice(), TONES, RationaleCard(), Toast() (+5 more)
+Cohesion: 0.21
+Nodes (8): StatusChip(), TONES, BudgetSplitCard(), SEGMENTS, CompatCard(), PowerCard(), STATUS, SummaryRail()
 
 ### Community 2 - "buildOrchestrator.js"
-Cohesion: 0.09
-Nodes (37): findAlternatives(), SWAPPABLE_CATEGORIES, applyDefaultExcludes(), applyDefaultRamCapacity(), applyDefaultStorageCapacity(), BuildError, DEFAULT_EXCLUDES, executeBuild() (+29 more)
+Cohesion: 0.27
+Nodes (7): API, CPU_GPU_BALANCE, GPU_ADEQUACY, PART_SELECTION, RATE_LIMITING, SOCKET_RAM_TYPES, createPartSelector()
 
 ### Community 3 - "constants.js"
-Cohesion: 0.26
-Nodes (11): PartRow(), rowMotion(), SkeletonRow(), computeTelemetry(), estimateLocally(), getPartSpecs(), getSpecChips(), known() (+3 more)
+Cohesion: 0.16
+Nodes (17): createBudgetAllocator(), createCompatibilityChecker(), assertSound(), BUDGETS, build(), buildWithPriceyMonitor(), CATEGORIES, ceilingOf() (+9 more)
 
 ### Community 4 - "harness.mjs"
-Cohesion: 0.07
-Nodes (45): addExclude(), addKeyword(), addStructured(), applyIntentOverrides(), parseBudgetFromMessage(), parseMonitorHz(), plausible(), UNIT_PATTERNS (+37 more)
+Cohesion: 0.08
+Nodes (36): args, brands, budgetAllocator, cache, catalogPath, CATEGORIES, chaos(), check() (+28 more)
 
 ### Community 5 - "sync_db.py"
-Cohesion: 0.10
-Nodes (31): clean_price(), parse_products_from_page(), Scrape all pages for a category from ComputerMania BD.          Uses DrissionPag, Extract numeric price from WooCommerce bdi text like '13,800৳ '., Wait for Cloudflare 'Just a moment...' challenge to clear (up to 5 minutes)., Extract product data from a loaded DrissionPage.          HTML structure (Woodma, scrape(), wait_for_cloudflare() (+23 more)
+Cohesion: 0.09
+Nodes (32): clean_price(), parse_products_from_page(), Scrape all pages for a category from ComputerMania BD.          Uses DrissionPag, Extract numeric price from WooCommerce bdi text like '13,800৳ '., Wait for Cloudflare 'Just a moment...' challenge to clear (up to 5 minutes)., Extract product data from a loaded DrissionPage.          HTML structure (Woodma, scrape(), wait_for_cloudflare() (+24 more)
 
 ### Community 6 - "build.js"
-Cohesion: 0.11
-Nodes (26): createStatusHandler(), createSubmitHandler(), sanitizePreviousBuild(), sanitizeRemovedCategories(), createError(), ERROR_GROQ_UNAVAILABLE, ERROR_INTERNAL, ERROR_INVALID_INTENT (+18 more)
+Cohesion: 0.05
+Nodes (59): findAlternatives(), SWAPPABLE_CATEGORIES, cleanWords(), CPU_BRANDS, createStatusHandler(), createSubmitHandler(), finiteIn(), GPU_BRANDS (+51 more)
 
 ### Community 7 - "prerender.mjs"
-Cohesion: 0.10
-Nodes (31): baseDir, distDir, publicDir, sitemap, bodyHtml(), dist, esc(), jsonScript() (+23 more)
+Cohesion: 0.11
+Nodes (30): baseDir, distDir, publicDir, sitemap, bodyHtml(), dist, esc(), jsonScript() (+22 more)
 
 ### Community 8 - "devDependencies"
 Cohesion: 0.07
@@ -132,8 +133,8 @@ Cohesion: 0.09
 Nodes (22): all, args, baseIntent(), byCheck, CATS, checks, client, CONCURRENCY (+14 more)
 
 ### Community 11 - "StoreSelect.jsx"
-Cohesion: 0.14
-Nodes (15): BuildProgress(), STEPS, Composer(), Header(), Hero(), LogoMark(), ModifiersMenu(), RowMenu() (+7 more)
+Cohesion: 0.07
+Nodes (45): AnimatedPrice(), BuildList(), SECTIONS, MobileSummaryBar(), PartRow(), rowMotion(), SkeletonRow(), partLabel() (+37 more)
 
 ### Community 12 - "dashboard.py"
 Cohesion: 0.11
@@ -164,32 +165,32 @@ Cohesion: 0.40
 Nodes (4): counts, db, here, rows
 
 ### Community 26 - "share.js"
-Cohesion: 0.22
-Nodes (13): Builder(), buildShareUrl(), clearShareFromLocation(), decodeShare(), encodeShare(), fromBase64Url(), readShareFromLocation(), safeUrl() (+5 more)
+Cohesion: 0.06
+Nodes (42): App(), AmbientBackground(), H_TRACES, V_TRACES, Builder(), STAGE_MESSAGES, BuildProgress(), STEPS (+34 more)
 
 ### Community 27 - "SwapDrawer.jsx"
-Cohesion: 0.30
-Nodes (9): AnimatedPrice(), MobileSummaryBar(), TotalCard(), DeltaLabel(), EMPTY, SwapDrawer(), toPartsPayload(), CATEGORY_ICONS (+1 more)
+Cohesion: 0.31
+Nodes (8): BUDGET, CPU_TDP, GPU_MODEL_TDP_MAP, GPU_TDP, PSU_SIZING, PSU_WATTAGE, SYSTEM_DRAW, CORE_COMPONENTS
 
 ### Community 28 - "SummaryRail.jsx"
-Cohesion: 0.21
-Nodes (8): StatusChip(), TONES, BudgetSplitCard(), SEGMENTS, CompatCard(), PowerCard(), STATUS, SummaryRail()
+Cohesion: 0.20
+Nodes (14): ABSORB_CAPS, absorbCapFor(), applyDefaultExcludes(), applyDefaultRamCapacity(), applyDefaultStorageCapacity(), BuildError, DEFAULT_EXCLUDES, executeBuild() (+6 more)
 
 ### Community 29 - "BuildMyPC — Project Context"
 Cohesion: 0.18
 Nodes (10): AI Providers & Model Tiers, Architecture (Phase 2: Modularized), BuildMyPC — Project Context, Deployment Checklist, Environment Variables (.env), Files to Delete/Archive, Module Dependencies (Dependency Injection), Next Phase: Phase 3 (Post-Deployment) (+2 more)
 
 ### Community 30 - "useBuild.js"
-Cohesion: 0.33
-Nodes (9): buildSignature(), loadSavedSession(), STAGE_TO_STATE, toValidationIntent(), toValidationPayload(), useBuild(), BUSY_STATES, INITIAL_BUILD (+1 more)
+Cohesion: 0.43
+Nodes (7): build_url(), clean_price(), get_first(), Fetch URL with automatic retry and exponential backoff on network errors., safe_fetch(), scrape(), scrape_page()
 
 ### Community 31 - "constants.js"
-Cohesion: 0.39
-Nodes (7): BuildList(), SECTIONS, CATEGORY_DEPENDENCIES, CORE_CATEGORIES, PERIPHERAL_CATEGORIES, PLATFORM_CATEGORIES, REQUIRED_CATEGORIES
+Cohesion: 0.53
+Nodes (4): parseRamCapacityGb(), parseStorageCapacityGb(), CATEGORY_MAPPING, createPartRepository()
 
 ### Community 32 - "startech.py"
-Cohesion: 0.36
-Nodes (8): build_url(), clean_price(), get_first(), # IMPORTANT: For some StarTech categories, adding sort params makes the site rep, Fetch URL with automatic retry and exponential backoff on network errors., safe_fetch(), scrape(), scrape_page()
+Cohesion: 0.24
+Nodes (14): addExclude(), addKeyword(), addStructured(), applyIntentOverrides(), parseBudgetFromMessage(), parseMonitorHz(), PART_NOUNS, partNamed() (+6 more)
 
 ### Community 33 - "Phase 3.5: Modular Audit & Hardening"
 Cohesion: 0.29
@@ -206,10 +207,6 @@ Nodes (5): 1. The "Trap CPU" Inventory Gap, 2. Chipset Detection Blindness, 3. A
 ### Community 36 - "Phase 2: Modularization Complete ✅"
 Cohesion: 0.40
 Nodes (5): Key Bug Fix: Fallback Degradation, New Features, New File Structure, Phase 2: Modularization Complete ✅, What Changed
-
-### Community 37 - "SettingsDialog.jsx"
-Cohesion: 0.60
-Nodes (3): PROVIDERS, SettingsDialog(), useDialogFocus()
 
 ### Community 38 - "UI/UX Enhancements (Senior-Level)"
 Cohesion: 0.50
@@ -235,25 +232,33 @@ Nodes (4): Integration Testing, Manual Testing (Node REPL), Testing Strategy, Un
 Cohesion: 0.67
 Nodes (3): Backend, Critical Dependencies, Frontend
 
+### Community 46 - "build.js"
+Cohesion: 0.12
+Nodes (27): ALWAYS_REQUIRED, buildPatchPrompt(), createIntentExtractor(), DEFAULT_STRATEGY, EXPECTED_CATEGORIES, parseIntentJson(), validateAndNormalizeIntent(), ACTIONS (+19 more)
+
+### Community 48 - "patchEval.mjs"
+Cohesion: 0.12
+Nodes (13): args, CASES, client, CONCURRENCY, extractor, here, PREV_BUILD, PREV_INTENT (+5 more)
+
 ## Knowledge Gaps
-- **262 isolated node(s):** `EXPECTED_CATEGORIES`, `DEFAULT_STRATEGY`, `ALWAYS_REQUIRED`, `CORE_COMPONENTS`, `DEFAULT_EXCLUDES` (+257 more)
+- **285 isolated node(s):** `EXPECTED_CATEGORIES`, `DEFAULT_STRATEGY`, `ALWAYS_REQUIRED`, `CORE_COMPONENTS`, `DEFAULT_EXCLUDES` (+280 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **5 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `part()` connect `buildOrchestrator.js` to `server.js`, `share.js`, `SwapDrawer.jsx`, `useBuild.js`?**
-  _High betweenness centrality (0.213) - this node is a cross-community bridge._
-- **Why does `SwapDrawer()` connect `SwapDrawer.jsx` to `Builder.jsx`, `buildOrchestrator.js`, `constants.js`, `SettingsDialog.jsx`, `StoreSelect.jsx`?**
-  _High betweenness centrality (0.108) - this node is a cross-community bridge._
-- **Why does `createPartRepository()` connect `server.js` to `buildOrchestrator.js`, `harness.mjs`?**
-  _High betweenness centrality (0.091) - this node is a cross-community bridge._
+- **Why does `v()` connect `harness.mjs` to `StoreSelect.jsx`, `build.js`?**
+  _High betweenness centrality (0.128) - this node is a cross-community bridge._
+- **Why does `AnimatedPrice()` connect `StoreSelect.jsx` to `harness.mjs`?**
+  _High betweenness centrality (0.127) - this node is a cross-community bridge._
+- **Why does `text()` connect `share.js` to `StoreSelect.jsx`, `build.js`?**
+  _High betweenness centrality (0.096) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `applyIntentOverrides()` (e.g. with `createDepsForKey()` and `build()`) actually correct?**
   _`applyIntentOverrides()` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `EXPECTED_CATEGORIES`, `DEFAULT_STRATEGY`, `ALWAYS_REQUIRED` to the rest of the system?**
-  _279 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _302 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `server.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.05627545353572751 - nodes in this community are weakly interconnected._
-- **Should `Builder.jsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.12987012987012986 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.12857142857142856 - nodes in this community are weakly interconnected._
+- **Should `harness.mjs` be split into smaller, more focused modules?**
+  _Cohesion score 0.0796221322537112 - nodes in this community are weakly interconnected._

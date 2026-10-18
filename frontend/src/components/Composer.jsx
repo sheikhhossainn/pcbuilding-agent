@@ -39,8 +39,8 @@ export default function Composer({
       : 'e.g. Gaming build under 75,000 BDT with Ryzen 5 and 16GB RAM';
   } else if (isRefining) {
     placeholder = isNarrow
-      ? 'Refine, e.g. cheaper GPU'
-      : 'Refine your build, e.g. "Upgrade GPU to RTX 4060"';
+      ? 'Refine, e.g. cheaper monitor'
+      : 'Refine, e.g. "monitor around 20k, put the savings into a stronger PSU"';
   } else {
     placeholder = 'Describe your PC...';
   }

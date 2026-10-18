@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { INITIAL_BUILD, BUSY_STATES } from '../lib/constants';
 import { sumBuild } from '../lib/format';
+import { diffBuilds } from '../lib/buildDiff';
 
 const SESSION_KEY = 'buildmypc.session.v1';
 const POLL_INTERVAL_MS = 1500;
@@ -80,6 +81,14 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   const [removedCategories, setRemovedCategories] = useState(savedSession?.removedCategories || []);
   const [previousIntent, setPreviousIntent] = useState(savedSession?.previousIntent || null);
   const [previousBuild, setPreviousBuild] = useState(savedSession?.previousBuild || null);
+
+  // Refine progress: which parts the server is searching again (undefined = not known yet,
+  // null = all of them), what the last refine changed, and a question when the message was unclear.
+  const [scope, setScope] = useState(undefined);
+  const [lastRefine, setLastRefine] = useState(null);
+  const [clarify, setClarify] = useState("");
+  // The session as it was before the running refine, so the whole refine can be undone.
+  const refineSnapshotRef = useRef(null);
 
   const [loadingState, setLoadingState] = useState("idle"); // idle | analyzing | selecting | checking | success | error
   const [stage, setStage] = useState(null);
@@ -183,6 +192,10 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setPreviousIntent(null);
     setPreviousBuild(null);
     setRemovedCategories([]);
+    setScope(undefined);
+    setLastRefine(null);
+    setClarify("");
+    refineSnapshotRef.current = null;
     validatedSignatureRef.current = '';
     if (hadContent) showToast("Build cleared");
   }, [build, explanation, errorMsg, isBusy, cancelInFlight, showToast]);
@@ -191,6 +204,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     cancelInFlight();
     setLoadingState("idle");
     setStage(null);
+    setScope(undefined);
     setErrorMsg("");
     setQueuePosition(0);
     setShowTrafficWarning(false);
@@ -200,6 +214,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   const removePart = useCallback((category) => {
     const removed = build[category];
     if (!removed) return;
+    setLastRefine(null);
     setBuild((prev) => ({ ...prev, [category]: null }));
     // Tell the next refine this part is intentionally gone, and don't lock the old one back in.
     setRemovedCategories((prev) => (prev.includes(category) ? prev : [...prev, category]));
@@ -218,6 +233,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
 
   const swapPart = useCallback((category, part) => {
     const before = build[category] || null;
+    setLastRefine(null);
     setBuild((prev) => ({ ...prev, [category]: part }));
     // Keep follow-up "refine" requests in sync so the engine locks the part the user chose.
     setPreviousBuild((prev) => (prev ? { ...prev, [category]: part } : prev));
@@ -234,6 +250,27 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   }, [build, showToast, dismissToast]);
 
   const dismissTrafficWarning = useCallback(() => setShowTrafficWarning(false), []);
+  const dismissRefine = useCallback(() => setLastRefine(null), []);
+  const dismissClarify = useCallback(() => setClarify(""), []);
+
+  /** Put the whole session back to how it was before the last refine. */
+  const undoRefine = useCallback(() => {
+    const snap = refineSnapshotRef.current;
+    if (!snap) return;
+    cancelInFlight();
+    setBuild(snap.build);
+    setExplanation(snap.explanation);
+    setWarnings(snap.warnings);
+    setNotes(snap.notes);
+    setPower(snap.power);
+    setPreviousIntent(snap.previousIntent);
+    setPreviousBuild(snap.previousBuild);
+    setRemovedCategories(snap.removedCategories);
+    validatedSignatureRef.current = snap.validatedSignature;
+    setLastRefine(null);
+    refineSnapshotRef.current = null;
+    showToast("Restored your previous build");
+  }, [cancelInFlight, showToast]);
 
   /**
    * @param {string} message - the user's prompt
@@ -245,9 +282,20 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     cancelInFlight();
     setLoadingState("analyzing");
     setStage(null);
+    setScope(undefined);
     setErrorMsg("");
+    setClarify("");
+    setLastRefine(null);
     setQueuePosition(0);
     setShowTrafficWarning(false);
+
+    // A failed refine leaves the build as it was, and says so.
+    const isRefine = Boolean(previousIntent);
+    const failureText = (text) => (isRefine && !/not changed/i.test(text) ? `${text} Your build was not changed.` : text);
+    const snapshot = isRefine ? {
+      build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories,
+      validatedSignature: validatedSignatureRef.current,
+    } : null;
 
     const currentRequestId = requestIdRef.current + 1;
     requestIdRef.current = currentRequestId;
@@ -268,7 +316,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
       if (currentRequestId !== requestIdRef.current) return;
 
       if (submitRes.data.error) {
-        setErrorMsg(submitRes.data.error);
+        setErrorMsg(failureText(submitRes.data.error));
         setLoadingState("error");
         return;
       }
@@ -293,6 +341,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
 
           if (data.status === 'processing') {
             setQueuePosition(0);
+            if ('scope' in data) setScope(data.scope);
             if (data.stage) {
               setStage(data.stage);
               setLoadingState(STAGE_TO_STATE[data.stage] || "analyzing");
@@ -312,6 +361,13 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
             setPower(result.power || null);
             setPreviousIntent(result.intent || null);
             setPreviousBuild(result.build || null);
+            if (snapshot) {
+              refineSnapshotRef.current = snapshot;
+              setLastRefine({ ...diffBuilds(snapshot.build, nextBuild, Object.keys(INITIAL_BUILD)), message });
+            } else {
+              refineSnapshotRef.current = null;
+            }
+            setScope(undefined);
             // The engine honored the removals; its intent now records them as not required.
             setRemovedCategories([]);
             setLoadingState("success");
@@ -324,8 +380,15 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
 
           if (data.status === 'failed') {
             stopPolling();
-            setErrorMsg(data.error || "Build failed unexpectedly.");
-            setLoadingState("error");
+            setScope(undefined);
+            if (data.errorCode === 'NEEDS_CLARIFICATION' && data.error) {
+              // Not a failure: the message did not say what to change. The build stays as it is.
+              setClarify(data.error);
+              setLoadingState("idle");
+            } else {
+              setErrorMsg(failureText(data.error || "Build failed unexpectedly."));
+              setLoadingState("error");
+            }
             setStage(null);
             setQueuePosition(0);
           }
@@ -340,14 +403,15 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
         return;
       }
       if (err.response?.status === 429) {
-        setErrorMsg("You've reached the free tier limit. Wait 15 minutes, or paste your own free Groq API key in Settings to continue immediately.");
+        setErrorMsg(failureText("You've reached the free tier limit. Wait 15 minutes, or paste your own free Groq API key in Settings to continue immediately."));
       } else {
-        setErrorMsg(err.response?.data?.error || "Failed to connect to the AI builder engine.");
+        setErrorMsg(failureText(err.response?.data?.error || "Failed to connect to the AI builder engine."));
       }
       setLoadingState("error");
     }
   }, [
     apiBaseUrl, site, customKeys, previousIntent, previousBuild, removedCategories, isBusy,
+    build, explanation, warnings, notes, power,
     cancelInFlight, stopPolling, showToast,
   ]);
 
@@ -361,6 +425,9 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     previousIntent,
     loadingState,
     stage,
+    scope,
+    lastRefine,
+    clarify,
     isBusy,
     errorMsg,
     queuePosition,
@@ -371,5 +438,8 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     removePart,
     swapPart,
     dismissTrafficWarning,
+    dismissRefine,
+    dismissClarify,
+    undoRefine,
   };
 }

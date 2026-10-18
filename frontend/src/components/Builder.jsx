@@ -15,6 +15,7 @@ import MobileSummaryBar from './MobileSummaryBar';
 import Notice from './Notice';
 import WarningsBanner from './WarningsBanner';
 import BuildList from './BuildList';
+import RefineSummary from './RefineSummary';
 import RationaleCard from './RationaleCard';
 import SummaryRail from './SummaryRail';
 import Composer from './Composer';
@@ -80,8 +81,14 @@ function Builder({ page = null }) {
   });
   const {
     build, total, explanation, warnings, notes, power, previousIntent,
-    stage, isBusy, errorMsg, queuePosition, showTrafficWarning,
+    stage, isBusy, errorMsg, queuePosition, showTrafficWarning, scope, lastRefine, clarify,
   } = buildSession;
+
+  // category -> what the last refine did to it, for the row badges.
+  const changesByCategory = useMemo(
+    () => (lastRefine ? Object.fromEntries(lastRefine.changed.map((c) => [c.category, c])) : null),
+    [lastRefine]
+  );
 
   const telemetry = useMemo(
     () => computeTelemetry({ build, total, warnings, power }),
@@ -262,6 +269,13 @@ function Builder({ page = null }) {
           </Notice>
         )}
 
+        {clarify && (
+          <Notice tone="info" role="status" onDismiss={buildSession.dismissClarify}>
+            <p className="font-medium">{clarify}</p>
+            <p className="text-fg-2 mt-1">Your build was not changed. Type your answer below and send it again.</p>
+          </Notice>
+        )}
+
         {showHero ? (
           <Hero
             composerProps={composerProps}
@@ -300,12 +314,23 @@ function Builder({ page = null }) {
               {isBusy && <BuildProgress key="progress" stage={stage} message={loadingMessage} />}
             </AnimatePresence>
 
+            {!isBusy && lastRefine && (
+              <RefineSummary
+                refine={lastRefine}
+                onUndo={buildSession.undoRefine}
+                onDismiss={buildSession.dismissRefine}
+              />
+            )}
+
             {!isBusy && <WarningsBanner warnings={warnings} />}
 
             <BuildList
               build={build}
               hideEmpty={hideEmpty}
               isBusy={isBusy}
+              refining={Boolean(previousIntent)}
+              changing={scope}
+              changes={changesByCategory}
               onRemove={buildSession.removePart}
               onSwap={swapSite ? setSwapCategory : undefined}
             />

@@ -162,3 +162,40 @@ test('job status exposes the current stage while processing', async () => {
   assert.equal(after.status, 'completed');
   assert.equal(after.stage, undefined);
 });
+
+test('job status exposes which parts a refine is searching again, and tags clarify questions', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let reached;
+  const scoped = new Promise((resolve) => { reached = resolve; });
+
+  initWorkers({
+    buildFn: async (payload, _deps, ctx) => {
+      if (payload.message === 'unclear') {
+        const error = new Error('internal');
+        error.userMessage = 'Better how?';
+        error.code = 'NEEDS_CLARIFICATION';
+        throw error;
+      }
+      ctx.onScope(['Monitor', 'PSU']);
+      reached();
+      await gate;
+      return { build: {}, total: 0, warnings: [] };
+    },
+    depsFactory: () => ({}),
+    groqKeys: ['test-key'],
+  });
+
+  const { jobId } = createJob({ message: 'refine', customKeys: {} });
+  await scoped;
+  assert.deepEqual(getJobStatus(jobId).scope, ['Monitor', 'PSU']);
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const { jobId: unclearId } = createJob({ message: 'unclear', customKeys: {} });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const failed = getJobStatus(unclearId);
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.error, 'Better how?');
+  assert.equal(failed.errorCode, 'NEEDS_CLARIFICATION');
+});

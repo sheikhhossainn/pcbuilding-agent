@@ -90,7 +90,7 @@ function makeIntent({ budget, use = 'gaming', noGpu = false, cpuBrand = null, gp
   };
 }
 
-async function build(spec, { site = 'startech', message = 'build me a pc', extra = {}, eng = engine, patch = null, patchError = null } = {}) {
+async function build(spec, { site = 'startech', message = 'build me a pc', extra = {}, eng = engine, patch = null, patchError = null, ctx = {} } = {}) {
   const intent = makeIntent(spec);
   const deps = {
     intentExtractor: {
@@ -111,7 +111,7 @@ async function build(spec, { site = 'startech', message = 'build me a pc', extra
   const realLog = [console.log, console.warn, console.error];
   console.log = () => {}; console.warn = () => {}; console.error = () => {};
   try {
-    return await executeBuild({ message, site, ...extra }, deps);
+    return await executeBuild({ message, site, ...extra }, deps, ctx);
   } finally {
     [console.log, console.warn, console.error] = realLog;
   }
@@ -300,9 +300,10 @@ test('follow-up: kept parts are not upgraded with leftover money, and the leftov
   assert.ok(second.notes.some((w) => /unspent/.test(w)));
 });
 
-const refine = (first, message, patch, spec = { budget: 100000, use: 'gaming' }) => build(spec, {
+const refine = (first, message, patch, spec = { budget: 100000, use: 'gaming' }, ctx = {}) => build(spec, {
   message,
   patch,
+  ctx,
   extra: {
     previousBuild: JSON.parse(JSON.stringify(first.build)),
     previousIntent: JSON.parse(JSON.stringify(first.intent)),
@@ -325,12 +326,17 @@ const urls = (b) => Object.fromEntries(parts(b).map(([c, p]) => [c, p.url]));
 
 test('patch follow-up: "monitor around 20k, saved money to a stronger PSU" re-searches only those two', async () => {
   const first = await buildWithPriceyMonitor();
+  const scopes = [];
   const second = await refine(first, 'find a monitor around 20k and use the saved money for a stronger PSU', {
     ops: [
       { category: 'Monitor', price_target: 20000 },
       { category: 'PSU', direction: 'up', absorb_savings: true },
     ],
-  }, first.spec);
+  }, first.spec, { onScope: (changing) => scopes.push(changing && [...changing].sort()) });
+
+  // The UI shows loading rows from this: announced as soon as the patch is read, and again once locks are final.
+  assert.ok(scopes.length >= 1);
+  for (const announced of scopes) assert.deepEqual(announced, ['Monitor', 'PSU']);
 
   assert.deepEqual([...second.scope.changing].sort(), ['Monitor', 'PSU']);
   const before = urls(first.build);
@@ -346,6 +352,30 @@ test('patch follow-up: "monitor around 20k, saved money to a stronger PSU" re-se
   assert.ok(second.build.PSU.specs.wattage > first.build.PSU.specs.wattage, 'PSU did not get stronger');
   assert.ok(second.total <= ceilingOf(first.spec.budget));
   assertSound(second, first.spec, 'patch monitor+psu');
+});
+
+test('patch follow-up: an old keyword that blocks the new price is relaxed, not answered with a full re-plan', async () => {
+  const first = await buildWithPriceyMonitor();
+  // The first request wanted QHD: in stock (35k), so the floor check passes, but not near 12k.
+  first.intent.component_strategy.Monitor.required_keywords = ['qhd'];
+  const second = await refine(first, 'find a monitor around 12k and use the saved money for a stronger PSU', {
+    ops: [
+      { category: 'Monitor', price_target: 12000 },
+      { category: 'PSU', direction: 'up', absorb_savings: true },
+    ],
+  }, first.spec);
+
+  const before = urls(first.build);
+  const after = urls(second.build);
+  for (const category of Object.keys(before)) {
+    if (category === 'Monitor' || category === 'PSU') continue;
+    assert.equal(after[category], before[category], `${category} was re-picked`);
+  }
+  assert.ok(!second.notes.some((n) => /re-planned from scratch/.test(n)), 'fell back to a full re-plan');
+  assert.ok(second.build.Monitor.price >= 7500 && second.build.Monitor.price <= 16500, `monitor ${second.build.Monitor.price}`);
+  assert.ok(second.notes.some((n) => /Monitor/.test(n) && /dropped|closest/.test(n)), 'the relaxed wish was not reported');
+  assert.deepEqual(second.intent.component_strategy.Monitor.required_keywords, []);
+  assert.ok(!second.warnings.some((w) => /Could not find a suitable \*\*Monitor/.test(w)), 'a stale "could not find" warning is still shown');
 });
 
 test('patch follow-up: savings go only to the named part, which is capped', async () => {

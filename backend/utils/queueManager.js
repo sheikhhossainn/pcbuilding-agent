@@ -79,9 +79,14 @@ export function getJobStatus(jobId) {
     response.estimatedWait = 0;
     // Which pipeline step the worker is on: intent | planning | selecting | optimizing | checking | explaining
     response.stage = job.stage;
+    // Refine only. Absent = not known yet; an array = the parts being searched again; null = all of them.
+    if (job.scope !== undefined) response.scope = job.scope;
   }
   if (job.status === 'completed') response.result = job.result;
-  if (job.status === 'failed') response.error = job.error;
+  if (job.status === 'failed') {
+    response.error = job.error;
+    if (job.errorCode) response.errorCode = job.errorCode;
+  }
 
   return response;
 }
@@ -136,6 +141,7 @@ async function processNext(worker) {
     const deps = depsFactory({ key: apiKey, provider });
     const result = await buildFn(job.payload, deps, {
       onStage: (stage) => { job.stage = stage; },
+      onScope: (changing) => { job.scope = changing; },
     });
     job.status = 'completed';
     job.result = result;
@@ -144,6 +150,8 @@ async function processNext(worker) {
     job.status = 'failed';
     // Only errors written for users reach the client; internals stay in the server log.
     job.error = err.userMessage || 'Build failed unexpectedly. Please try again.';
+    // Lets the client tell "your message needs a question answered" from a real failure.
+    if (err.userMessage && err.code === 'NEEDS_CLARIFICATION') job.errorCode = err.code;
   } finally {
     job.completedAt = Date.now();
     worker.busy = false;

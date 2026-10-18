@@ -13,12 +13,28 @@ const SECTIONS = [
   { key: 'peripherals', title: 'Peripherals', hint: 'Monitor, mouse, keyboard, UPS', icon: Monitor, categories: PERIPHERAL_CATEGORIES, optional: true },
 ];
 
-export default function BuildList({ build, hideEmpty, isBusy, onRemove, onSwap }) {
+/**
+ * @param {boolean} refining - a build already exists and a refine is what is running
+ * @param {string[]|null|undefined} changing - parts being searched again: undefined = not known yet,
+ *   null = all of them. Only those rows show loading; the rest stay on screen as kept.
+ * @param {Object} [changes] - category -> {before, after, delta} from the last refine
+ */
+export default function BuildList({ build, hideEmpty, isBusy, refining = false, changing, changes, onRemove, onSwap }) {
   // Optional group: collapsed until something in it is chosen, unless the user toggles it.
   const [optionalOpen, setOptionalOpen] = useState(null);
 
   // Running index across sections drives the 30ms entrance stagger.
   let rowIndex = 0;
+
+  // A fresh build is all new. A refine only loads the rows it is searching again.
+  const isLoadingRow = (category) => {
+    if (!isBusy) return false;
+    if (!refining || changing === null) return true;
+    if (changing === undefined) return false; // still reading the message: leave the parts as they are
+    return changing.includes(category);
+  };
+  const isKeptRow = (category) => isBusy && refining && Array.isArray(changing)
+    && !changing.includes(category) && Boolean(build[category]);
 
   return (
     <>
@@ -61,7 +77,9 @@ export default function BuildList({ build, hideEmpty, isBusy, onRemove, onSwap }
               <div id={panelId} className="space-y-2">
                 <AnimatePresence>
                   {categories.map((category) => {
-                    if (isBusy) return <SkeletonRow key={`skel-${category}`} />;
+                    if (isLoadingRow(category)) {
+                      return <SkeletonRow key={`skel-${category}`} label={refining && changing ? category : undefined} />;
+                    }
                     const item = build[category];
                     if (hideEmpty && !item) return null;
                     const index = rowIndex++;
@@ -73,6 +91,8 @@ export default function BuildList({ build, hideEmpty, isBusy, onRemove, onSwap }
                         isRequired={REQUIRED_CATEGORIES.has(category)}
                         dependency={CATEGORY_DEPENDENCIES[category]}
                         isCore={key === 'core'}
+                        kept={isKeptRow(category)}
+                        change={changes?.[category] || null}
                         index={index}
                         onRemove={onRemove}
                         onSwap={onSwap}

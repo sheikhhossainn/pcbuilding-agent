@@ -36,7 +36,6 @@
   "34": "1. Key Logic Refinements",
   "35": "Core Issues & Fixes (Integration Phase)",
   "36": "Phase 2: Modularization Complete ✅",
-  "37": "SettingsDialog.jsx",
   "38": "UI/UX Enhancements (Senior-Level)",
   "39": "Phase 4: Queue System ✅",
   "40": "Phase 5: Conversational Follow-Up ✅",
@@ -44,5 +43,7 @@
   "42": "Testing Strategy",
   "43": "Critical Dependencies",
   "44": "graphify.md",
-  "45": "graphify.md"
+  "45": "graphify.md",
+  "46": "build.js",
+  "48": "patchEval.mjs"
 }

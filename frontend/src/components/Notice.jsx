@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
-import { AlertCircle, AlertTriangle, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, HelpCircle, X } from 'lucide-react';
 
 const TONES = {
   warn: { box: 'bg-warn-soft border-warn-line text-fg', icon: 'text-warn', Icon: AlertTriangle },
   bad: { box: 'bg-bad-soft border-bad-line text-fg', icon: 'text-bad', Icon: AlertCircle },
+  info: { box: 'bg-accent-soft border-accent-line text-fg', icon: 'text-accent', Icon: HelpCircle },
 };
 
 // Dismissible inline banner for traffic warnings and request errors.
