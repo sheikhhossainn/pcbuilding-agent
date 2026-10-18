@@ -30,6 +30,13 @@ export function diffBuilds(before, after, order = []) {
   return { changed, kept, totalDelta: changed.reduce((sum, c) => sum + c.delta, 0) };
 }
 
+/** Text color for a price change: cost up reads as a caution, cost down as a saving. */
+export function deltaTone(delta) {
+  if (delta > 0) return 'text-warn';
+  if (delta < 0) return 'text-ok';
+  return 'text-fg-3';
+}
+
 /** "+৳3,401", "−৳14,200", or "same price". */
 export function formatDelta(delta) {
   if (!delta) return 'same price';

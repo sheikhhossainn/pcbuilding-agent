@@ -8,6 +8,8 @@ import { keepLastingNotes } from '../lib/staleNotes';
 const SESSION_KEY = 'buildmypc.session.v1';
 const POLL_INTERVAL_MS = 800;
 const REVALIDATE_DEBOUNCE_MS = 400;
+// Versions kept for the "Versions" list; the oldest drop off first.
+const MAX_VERSIONS = 10;
 
 // Pipeline step reported by the API -> coarse UI state used for busy/idle logic.
 const STAGE_TO_STATE = {
@@ -92,6 +94,10 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   const [interpretation, setInterpretation] = useState(null);
   // The session as it was before the running refine, so the whole refine can be undone.
   const refineSnapshotRef = useRef(null);
+  // Every finished build and refine, oldest first: {id, label, total, at, session}. Restoring one
+  // keeps the others, so a good build survives a refine that went the wrong way.
+  const [versions, setVersions] = useState(savedSession?.versions || []);
+  const [currentVersionId, setCurrentVersionId] = useState(savedSession?.currentVersionId ?? null);
 
   const [loadingState, setLoadingState] = useState("idle"); // idle | analyzing | selecting | checking | success | error
   const [stage, setStage] = useState(null);
@@ -144,12 +150,12 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
       }
       localStorage.setItem(SESSION_KEY, JSON.stringify({
         build, explanation, buildWarnings: warnings, notes, power,
-        previousIntent, previousBuild, removedCategories,
+        previousIntent, previousBuild, removedCategories, versions, currentVersionId,
       }));
     } catch {
       // storage unavailable (private mode / quota) — session just won't persist
     }
-  }, [build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories]);
+  }, [build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories, versions, currentVersionId]);
 
   // After the user removes/swaps/undoes a part, re-run compatibility + power checks
   // on the server so the warnings and power card never describe a build that no longer exists.
@@ -184,6 +190,12 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
 
   const clear = useCallback(() => {
     const hadContent = Object.values(build).some(Boolean) || Boolean(explanation) || Boolean(errorMsg) || isBusy;
+    const hadParts = Object.values(build).some(Boolean);
+    // Everything needed to bring the cleared session back from the toast.
+    const cleared = {
+      build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories,
+      versions, currentVersionId, validatedSignature: validatedSignatureRef.current,
+    };
     cancelInFlight();
     setBuild(INITIAL_BUILD);
     setExplanation("");
@@ -202,10 +214,32 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setInterpretation(null);
     setLastRefine(null);
     setClarify("");
+    setVersions([]);
+    setCurrentVersionId(null);
     refineSnapshotRef.current = null;
     validatedSignatureRef.current = '';
-    if (hadContent) showToast("Build cleared");
-  }, [build, explanation, errorMsg, isBusy, cancelInFlight, showToast]);
+    if (!hadContent) return;
+    showToast("Build cleared", hadParts ? {
+      label: 'Undo',
+      onClick: () => {
+        setBuild(cleared.build);
+        setExplanation(cleared.explanation);
+        setWarnings(cleared.warnings);
+        setNotes(cleared.notes);
+        setPower(cleared.power);
+        setPreviousIntent(cleared.previousIntent);
+        setPreviousBuild(cleared.previousBuild);
+        setRemovedCategories(cleared.removedCategories);
+        setVersions(cleared.versions);
+        setCurrentVersionId(cleared.currentVersionId);
+        validatedSignatureRef.current = cleared.validatedSignature;
+        dismissToast();
+      },
+    } : null);
+  }, [
+    build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories,
+    versions, currentVersionId, errorMsg, isBusy, cancelInFlight, showToast, dismissToast,
+  ]);
 
   const stop = useCallback(() => {
     cancelInFlight();
@@ -275,10 +309,34 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setPreviousBuild(snap.previousBuild);
     setRemovedCategories(snap.removedCategories);
     validatedSignatureRef.current = snap.validatedSignature;
+    setCurrentVersionId(snap.versionId ?? null);
     setLastRefine(null);
     refineSnapshotRef.current = null;
     showToast("Restored your previous build");
   }, [cancelInFlight, showToast]);
+
+  /** Make an earlier version the working build. Newer versions stay in the list. */
+  const restoreVersion = useCallback((id) => {
+    const version = versions.find((v) => v.id === id);
+    if (!version || isBusy) return;
+    const { session } = version;
+    cancelInFlight();
+    setBuild({ ...INITIAL_BUILD, ...session.build });
+    setExplanation(session.explanation || "");
+    setWarnings(session.warnings || []);
+    setNotes(session.notes || []);
+    setPower(session.power || null);
+    setPreviousIntent(session.previousIntent || null);
+    setPreviousBuild(session.previousBuild || null);
+    setRemovedCategories([]);
+    // The server validated this build when it made it.
+    validatedSignatureRef.current = buildSignature({ ...INITIAL_BUILD, ...session.build });
+    setCurrentVersionId(id);
+    setLastRefine(null);
+    setErrorMsg("");
+    refineSnapshotRef.current = null;
+    showToast(`Restored "${version.label}"`);
+  }, [versions, isBusy, cancelInFlight, showToast]);
 
   /**
    * @param {string} message - the user's prompt
@@ -304,6 +362,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     const snapshot = isRefine ? {
       build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories,
       validatedSignature: validatedSignatureRef.current,
+      versionId: currentVersionId,
     } : null;
 
     const currentRequestId = requestIdRef.current + 1;
@@ -381,6 +440,43 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
             } else {
               refineSnapshotRef.current = null;
             }
+            const version = {
+              id: Date.now(),
+              label: message.trim().slice(0, 120),
+              total: sumBuild(nextBuild),
+              at: new Date().toISOString(),
+              session: {
+                build: result.build || {},
+                explanation: result.explanation,
+                warnings: result.warnings || [],
+                notes: result.notes ?? (result.warnings || []).filter((w) => !String(w).includes('INCOMPATIBLE')),
+                power: result.power || null,
+                previousIntent: result.intent || null,
+                previousBuild: result.build || null,
+              },
+            };
+            // A fresh build starts a new list; a refine adds to it. A build opened from a link or an
+            // older saved session has no list yet, so the build it refined becomes the first entry.
+            setVersions((prev) => {
+              if (!snapshot) return [version];
+              const base = prev.length > 0 ? prev : [{
+                id: version.id - 1,
+                label: 'Your build before changes',
+                total: sumBuild(snapshot.build),
+                at: version.at,
+                session: {
+                  build: Object.fromEntries(Object.entries(snapshot.build).filter(([, item]) => item)),
+                  explanation: snapshot.explanation,
+                  warnings: snapshot.warnings,
+                  notes: snapshot.notes,
+                  power: snapshot.power,
+                  previousIntent: snapshot.previousIntent,
+                  previousBuild: snapshot.previousBuild,
+                },
+              }];
+              return [...base, version].slice(-MAX_VERSIONS);
+            });
+            setCurrentVersionId(version.id);
             setScope(undefined);
             setInterpretation(null);
             // The engine honored the removals; its intent now records them as not required.
@@ -427,7 +523,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     }
   }, [
     apiBaseUrl, site, customKeys, previousIntent, previousBuild, removedCategories, isBusy,
-    build, explanation, warnings, notes, power,
+    build, explanation, warnings, notes, power, currentVersionId,
     cancelInFlight, stopPolling, showToast,
   ]);
 
@@ -445,6 +541,8 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     interpretation,
     lastRefine,
     clarify,
+    versions,
+    currentVersionId,
     isBusy,
     errorMsg,
     queuePosition,
@@ -458,5 +556,6 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     dismissRefine,
     dismissClarify,
     undoRefine,
+    restoreVersion,
   };
 }

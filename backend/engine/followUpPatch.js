@@ -329,7 +329,8 @@ export function describePatch(patch, previousIntent = {}, message) {
     if (op.direction === 'down') bits.push('cheaper');
     if (op.price_target) bits.push(`around ${baht(op.price_target)}`);
     if (op.absorb_savings && mentionsSavings(message)) bits.push('gets the saved money');
-    for (const word of op.required_keywords) bits.push(`"${word}"`);
+    // Required keywords all have to match, so they read as one phrase: "ryzen 7", not "ryzen", "7".
+    if (op.required_keywords.length) bits.push(`"${op.required_keywords.join(' ')}"`);
     for (const word of op.exclude_keywords) bits.push(`not "${word}"`);
     for (const [key, value] of Object.entries(op.structured_reqs)) bits.push(SPEC_TEXT[key]?.(value) || `${key} ${value}`);
     items.push({ label: op.category, text: bits.join(', ') || 'change' });

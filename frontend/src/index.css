@@ -362,6 +362,15 @@ body {
   }
 }
 
+/* A part row the change summary pointed at: a brief accent ring so the eye lands on it */
+.part-row.is-flashing {
+  animation: row-flash 1.4s cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes row-flash {
+  0%, 35% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
 /* Active pipeline step breathes */
 .progress-pulse {
   animation: progress-pulse 1.2s ease-in-out infinite;

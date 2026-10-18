@@ -9,7 +9,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 import { computeTelemetry } from '../lib/telemetry';
 import { suggestRefines } from '../lib/suggestRefines';
 import { formatPrice } from '../lib/format';
-import { TOTAL_PARTS } from '../lib/constants';
+import { TOTAL_PARTS, partRowId } from '../lib/constants';
 import { buildShareUrl, readShareFromLocation, clearShareFromLocation } from '../lib/share';
 import Header from './Header';
 import MobileSummaryBar from './MobileSummaryBar';
@@ -17,7 +17,6 @@ import Notice from './Notice';
 import WarningsBanner from './WarningsBanner';
 import BuildList from './BuildList';
 import RefineSummary from './RefineSummary';
-import InterpretationChips from './InterpretationChips';
 import RationaleCard from './RationaleCard';
 import SummaryRail from './SummaryRail';
 import Composer from './Composer';
@@ -28,6 +27,9 @@ import SwapDrawer from './SwapDrawer';
 import Toast from './Toast';
 
 // Pipeline steps reported by the API while a job is processing.
+// What a build is for, as the engine read it, for the heading.
+const USE_LABEL = { gaming: 'Gaming', editing: 'Video editing', office: 'Office', general: 'Everyday' };
+
 const STAGE_MESSAGES = {
   intent: "Reading your requirements...",
   planning: "Planning your budget...",
@@ -84,7 +86,9 @@ function Builder({ page = null }) {
   const {
     build, total, explanation, warnings, notes, power, previousIntent,
     stage, isBusy, errorMsg, queuePosition, showTrafficWarning, scope, interpretation, lastRefine, clarify,
+    versions, currentVersionId,
   } = buildSession;
+  const versionNumber = versions.findIndex((v) => v.id === currentVersionId) + 1;
 
   // category -> what the last refine did to it, for the row badges.
   const changesByCategory = useMemo(
@@ -99,6 +103,13 @@ function Builder({ page = null }) {
 
   // Budget the user asked for, as parsed by the engine.
   const budget = Number(previousIntent?.budget_bdt) || 0;
+
+  // "Gaming PC · ৳90,000 budget · live prices from Bangladeshi retailers" under the heading.
+  const buildContext = [
+    USE_LABEL[previousIntent?.use_case] && `${USE_LABEL[previousIntent.use_case]} PC`,
+    budget > 0 && `${formatPrice(budget)} budget`,
+    'live prices from Bangladeshi retailers',
+  ].filter(Boolean).join(' · ').replace(/^./, (c) => c.toUpperCase());
 
   const refineIdeas = useMemo(
     () => suggestRefines(build, { budget, total }),
@@ -161,7 +172,20 @@ function Builder({ page = null }) {
     isRefining: Boolean(previousIntent),
     suggestions: refineIdeas,
     isNarrow,
-    onReset: buildSession.clear,
+    versionNumber,
+  };
+
+  // Scroll a part row into view and ring it briefly (from the change summary).
+  const focusPart = (category) => {
+    const el = document.getElementById(partRowId(category));
+    if (!el) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+    el.classList.remove('is-flashing');
+    // Restart the animation when the same row is picked twice.
+    void el.offsetWidth;
+    el.classList.add('is-flashing');
+    setTimeout(() => el.classList.remove('is-flashing'), 1500);
   };
 
   const pickPreset = (prompt) => {
@@ -304,7 +328,9 @@ function Builder({ page = null }) {
                   <span>Your build</span>
                   <span className="chip num hidden sm:inline-flex">{telemetry.configuredCount} of {TOTAL_PARTS} parts</span>
                 </h1>
-                <p className="text-sm text-fg-3 mt-1 hidden sm:block">Prices from live Bangladeshi retailers</p>
+                <p className="text-sm text-fg-3 mt-1 hidden sm:block">
+                  {buildContext}
+                </p>
               </div>
 
               <label className="flex items-center gap-2 min-h-11 cursor-pointer text-fg-2 text-sm font-medium hover:text-fg transition-colors">
@@ -319,16 +345,30 @@ function Builder({ page = null }) {
             </div>
 
             <AnimatePresence>
-              {isBusy && <BuildProgress key="progress" stage={stage} message={loadingMessage} />}
+              {isBusy && (
+                <BuildProgress
+                  key="progress"
+                  stage={stage}
+                  message={loadingMessage}
+                  request={previousIntent ? chatInput.trim() : ''}
+                  interpretation={interpretation}
+                />
+              )}
             </AnimatePresence>
-
-            {isBusy && <InterpretationChips items={interpretation} label="Understood" live />}
 
             {!isBusy && lastRefine && (
               <RefineSummary
                 refine={lastRefine}
+                total={total}
+                budget={budget}
                 onUndo={buildSession.undoRefine}
                 onDismiss={buildSession.dismissRefine}
+                onFocusPart={focusPart}
+                onFixBudget={() => {
+                  // Through the input, so the progress card and a failed attempt both show the request.
+                  setChatInput('Make it cheaper');
+                  buildSession.submit('Make it cheaper', () => setChatInput(''));
+                }}
               />
             )}
 
@@ -355,6 +395,10 @@ function Builder({ page = null }) {
             onCopy={handleCopySpecSheet}
             onShare={handleShare}
             onExport={handleExport}
+            versions={versions}
+            currentVersionId={currentVersionId}
+            onRestoreVersion={buildSession.restoreVersion}
+            busy={isBusy}
           />
         </div>
         )}

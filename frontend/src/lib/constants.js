@@ -37,6 +37,9 @@ export const INITIAL_BUILD = Object.fromEntries(
 
 export const TOTAL_PARTS = Object.keys(INITIAL_BUILD).length;
 
+/** DOM id of a part's row, so the change summary can scroll to it. */
+export const partRowId = (category) => `part-${category.toLowerCase().replace(/\s+/g, '-')}`;
+
 export const BUSY_STATES = ['analyzing', 'selecting', 'checking'];
 
 export const PRESET_WORKLOADS = [

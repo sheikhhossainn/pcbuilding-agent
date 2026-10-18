@@ -1,8 +1,8 @@
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Box, ExternalLink, Trash2, ArrowLeftRight, Lock } from 'lucide-react';
-import { CATEGORY_ICONS } from '../lib/constants';
+import { CATEGORY_ICONS, partRowId } from '../lib/constants';
 import { formatPrice } from '../lib/format';
-import { formatDelta } from '../lib/buildDiff';
+import { formatDelta, deltaTone } from '../lib/buildDiff';
 import { getSpecChips } from '../lib/telemetry';
 import { describeFreshness } from '../lib/time';
 import RowMenu from './RowMenu';
@@ -32,6 +32,86 @@ const rowMotion = (index) => ({
   transition: { duration: 0.2, ease: [0.23, 1, 0.32, 1], delay: Math.min(index, 8) * 0.03 },
 });
 
+const BADGE = {
+  added: { label: 'New', className: 'bg-ok-soft text-ok border-ok-line' },
+  changed: { label: 'Changed', className: 'bg-accent-soft text-accent border-accent-line' },
+  removed: { label: 'Removed', className: 'bg-surface-2 text-fg-2 border-line-strong' },
+};
+
+// What the last refine did to a row: one small tag, its own color, the price change sits beside it.
+function ChangeBadge({ kind }) {
+  const { label, className } = BADGE[kind];
+  return (
+    <span className={`inline-flex items-center h-5 px-1.5 rounded-md border text-[11px] font-semibold leading-none ${className}`}>
+      {label}
+    </span>
+  );
+}
+
+/**
+ * A part the last refine took out. It stays readable as what was there: the old part, struck
+ * through as the row settles, and what removing it saved.
+ */
+function RemovedRow({ category, part, delta, index, Icon }) {
+  const reduceMotion = useReducedMotion();
+  const delay = 0.12 + Math.min(index, 8) * 0.05;
+  const settle = { duration: reduceMotion ? 0 : 0.35, ease: [0.23, 1, 0.32, 1], delay: reduceMotion ? 0 : delay };
+
+  return (
+    <motion.div
+      {...rowMotion(index)}
+      id={partRowId(category)}
+      className="part-row relative overflow-hidden rounded-xl border border-dashed border-line-strong px-3 sm:px-4 py-2.5 min-h-14 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 scroll-mt-40"
+    >
+      <motion.div
+        className="w-10 h-10 rounded-lg shrink-0 overflow-hidden"
+        initial={{ opacity: 1, filter: 'grayscale(0)' }}
+        animate={{ opacity: 0.45, filter: 'grayscale(1)' }}
+        transition={settle}
+        aria-hidden="true"
+      >
+        {part.image ? (
+          <img src={part.image} alt="" className="w-full h-full object-contain bg-white p-0.5 border border-line rounded-lg" />
+        ) : (
+          <div className="w-full h-full bg-surface-2 text-fg-3 flex items-center justify-center">
+            <Icon size={18} strokeWidth={1.5} />
+          </div>
+        )}
+      </motion.div>
+
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-fg-3">{category}</span>
+          <ChangeBadge kind="removed" />
+        </div>
+        <div className="relative max-w-full w-fit">
+          <motion.p
+            className="text-sm text-fg-2 truncate"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 0.75 }}
+            transition={settle}
+            title={part.name}
+          >
+            {part.name}
+          </motion.p>
+          <motion.span
+            className="absolute left-0 right-0 top-1/2 h-px bg-fg-3 origin-left"
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            transition={settle}
+            aria-hidden="true"
+          />
+        </div>
+      </div>
+
+      <div className="text-right">
+        <div className={`num text-sm font-semibold ${deltaTone(delta)}`}>{formatDelta(delta)}</div>
+        <div className="text-xs text-fg-3">saved</div>
+      </div>
+    </motion.div>
+  );
+}
+
 /**
  * One line per part (two on phones). Empty optional rows are dashed and quiet;
  * empty required rows say so.
@@ -42,11 +122,16 @@ export default function PartRow({
 }) {
   const Icon = CATEGORY_ICONS[category] || Box;
 
+  if (!item && change?.before) {
+    return <RemovedRow category={category} part={change.before} delta={change.delta} index={index} Icon={Icon} />;
+  }
+
   if (!item) {
     return (
       <motion.div
         {...rowMotion(index)}
-        className="flex items-center gap-3 rounded-xl border border-dashed border-line-strong px-3 sm:px-4 py-2 min-h-14"
+        id={partRowId(category)}
+        className="part-row flex items-center gap-3 rounded-xl border border-dashed border-line-strong px-3 sm:px-4 py-2 min-h-14 scroll-mt-40"
       >
         <div className="w-9 h-9 rounded-lg bg-surface-2 text-fg-3 flex items-center justify-center shrink-0" aria-hidden="true">
           <Icon size={18} strokeWidth={1.5} />
@@ -60,9 +145,7 @@ export default function PartRow({
           )}
           {dependency && <span className="text-xs text-fg-3">Must match {dependency}</span>}
         </div>
-        <span className="text-sm text-fg-3 shrink-0">
-          {change ? `Removed \u00b7 ${formatDelta(change.delta)}` : 'Not selected'}
-        </span>
+        <span className="text-sm text-fg-3 shrink-0">Not selected</span>
       </motion.div>
     );
   }
@@ -73,10 +156,17 @@ export default function PartRow({
   return (
     <motion.div
       {...rowMotion(index)}
-      className={`card px-3 sm:px-4 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 ${
-        change ? 'border-accent-line' : ''
+      id={partRowId(category)}
+      className={`part-row card relative overflow-hidden px-3 sm:px-4 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 scroll-mt-40 transition-opacity duration-300 ${
+        kept ? 'opacity-60' : ''
       }`}
     >
+      {change && (
+        <span
+          className={`absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r-full ${change.before ? 'bg-accent' : 'bg-ok'}`}
+          aria-hidden="true"
+        />
+      )}
       {item.image ? (
         <img
           src={item.image}
@@ -104,8 +194,9 @@ export default function PartRow({
             </span>
           )}
           {change && (
-            <span className="chip bg-accent-soft border-accent-line text-accent">
-              {change.before ? 'Changed' : 'Added'} {'\u00b7'} <span className="num">{formatDelta(change.delta)}</span>
+            <span className="inline-flex items-center gap-1.5">
+              <ChangeBadge kind={change.before ? 'changed' : 'added'} />
+              <span className={`num text-xs font-medium ${deltaTone(change.delta)}`}>{formatDelta(change.delta)}</span>
             </span>
           )}
           <span className="num text-sm font-semibold text-fg sm:hidden">{formatPrice(item.price)}</span>
@@ -122,7 +213,8 @@ export default function PartRow({
         </div>
         {change?.before && (
           <div className="text-xs text-fg-3 truncate" title={change.before.name}>
-            Was {change.before.name} ({formatPrice(change.before.price)})
+            Was {change.before.name}{' '}
+            <span className="num line-through">{formatPrice(change.before.price)}</span>
           </div>
         )}
         {chips.length > 0 && (

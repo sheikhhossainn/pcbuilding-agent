@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Send, RefreshCw, RotateCcw } from 'lucide-react';
+import { Send, RefreshCw } from 'lucide-react';
 import ModifiersMenu from './ModifiersMenu';
 import { LogoMark } from './Logo';
 
@@ -15,7 +15,7 @@ export default function Composer({
   variant = 'dock',
   value, onChange, onSubmit, onStop, inputRef,
   isBusy, loadingMessage,
-  isRefining, isNarrow, onReset, suggestions = [],
+  isRefining, isNarrow, suggestions = [], versionNumber = 0,
 }) {
   const fallbackRef = useRef(null);
   const textareaRef = inputRef || fallbackRef;
@@ -110,67 +110,63 @@ export default function Composer({
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-8 pointer-events-none bg-gradient-to-t from-bg via-bg/85 to-transparent print:hidden">
-      <div className="max-w-2xl mx-auto relative pointer-events-auto">
-        {isBusy && (
-          <div className="absolute left-1/2 -top-12 -translate-x-1/2 z-50 pointer-events-none">
-            <div
-              role="status"
-              className="surface-float bg-surface border border-line text-fg px-5 py-2 rounded-full flex items-center gap-3 text-sm whitespace-nowrap"
-            >
-              <LogoMark size={22} animated className="shrink-0" />
-              <span>{loadingMessage}</span>
-            </div>
-          </div>
-        )}
+    // Lined up with the parts column (8 of 12 on desktop) so it never covers the summary rail.
+    <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none print:hidden">
+      <div className="lg:hidden absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-bg via-bg/90 to-transparent" aria-hidden="true" />
+      <div className="relative max-w-7xl mx-auto px-3 sm:px-6 pb-3 lg:grid lg:grid-cols-12 lg:gap-8">
+        <div className="relative lg:col-span-8 max-w-2xl lg:max-w-none mx-auto w-full pointer-events-auto">
+          {/* Desktop: the fade stays over the parts column and leaves the summary rail readable. */}
+          <div className="hidden lg:block absolute inset-x-0 -top-10 -bottom-3 bg-gradient-to-t from-bg via-bg/90 to-transparent pointer-events-none" aria-hidden="true" />
+          <div className="composer card surface-float rounded-2xl relative">
+            {isBusy ? (
+              <div className="flex items-center gap-2.5 px-3.5 pt-2.5 text-sm text-fg-2 min-w-0">
+                <LogoMark size={18} animated className="shrink-0" />
+                <span className="truncate">{loadingMessage}</span>
+              </div>
+            ) : isRefining && (
+              <div className="flex items-center gap-2 pl-3.5 pt-2 min-w-0">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-accent shrink-0">
+                  <RefreshCw size={12} aria-hidden="true" />
+                  {versionNumber > 1 ? `Refining version ${versionNumber}` : 'Refining'}
+                </span>
+                {value === '' && suggestions.length > 0 && (
+                  <div
+                    role="group"
+                    aria-label="Refine ideas"
+                    className="flex-1 min-w-0 flex gap-1.5 overflow-x-auto no-scrollbar mask-fade-edges pr-3 py-0.5"
+                  >
+                    {suggestions.map((idea) => (
+                      <button
+                        key={idea}
+                        type="button"
+                        onClick={() => { onChange(idea); textareaRef.current?.focus(); }}
+                        className="chip shrink-0 whitespace-nowrap min-h-7 px-2.5 cursor-pointer hover:border-accent-line hover:text-fg"
+                      >
+                        {idea}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
-        {isRefining && !isBusy && (
-          <div className="flex mb-2 items-center justify-between gap-2 px-1">
-            <span className="chip bg-accent-soft border-accent-line text-accent">
-              <RefreshCw size={12} aria-hidden="true" />
-              Refining your build
-            </span>
-            <button
-              type="button"
-              onClick={onReset}
-              className="btn border-line-strong text-fg hover:border-bad-line hover:bg-bad-soft hover:text-bad"
-            >
-              <RotateCcw size={14} aria-hidden="true" />
-              Start over
-            </button>
+            <form onSubmit={handleSubmit} className="p-1.5 flex items-end gap-1">
+              <ModifiersMenu onPick={addModifier} disabled={isBusy} />
+              {textarea}
+              {sendOrStop || (
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-icon shrink-0"
+                  disabled={!canSubmit}
+                  title={isRefining ? 'Refine' : 'Build'}
+                  aria-label={isRefining ? 'Refine build' : 'Build'}
+                >
+                  <Send size={18} strokeWidth={2.2} className="ml-0.5" aria-hidden="true" />
+                </button>
+              )}
+            </form>
           </div>
-        )}
-
-        {isRefining && !isBusy && value === '' && suggestions.length > 0 && (
-          <div role="group" aria-label="Refine ideas" className="flex gap-2 overflow-x-auto pb-2 px-1 -mx-1">
-            {suggestions.map((idea) => (
-              <button
-                key={idea}
-                type="button"
-                onClick={() => { onChange(idea); textareaRef.current?.focus(); }}
-                className="chip shrink-0 whitespace-nowrap min-h-9 px-3 cursor-pointer hover:border-accent-line hover:text-accent"
-              >
-                {idea}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="composer card surface-float rounded-2xl p-1.5 flex items-end gap-1">
-          <ModifiersMenu onPick={addModifier} disabled={isBusy} />
-          {textarea}
-          {sendOrStop || (
-            <button
-              type="submit"
-              className="btn btn-primary btn-icon shrink-0"
-              disabled={!canSubmit}
-              title="Build"
-              aria-label="Build"
-            >
-              <Send size={18} strokeWidth={2.2} className="ml-0.5" aria-hidden="true" />
-            </button>
-          )}
-        </form>
+        </div>
       </div>
     </div>
   );

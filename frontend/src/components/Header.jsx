@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Key, FileDown, Trash2, Menu, X, Link2 } from 'lucide-react';
+import { Copy, Key, FileDown, Plus, Menu, X, Link2 } from 'lucide-react';
 import { LogoMark } from './Logo';
 import StoreSelect from './StoreSelect';
 
@@ -67,10 +67,12 @@ export default function Header({
             <FileDown size={14} strokeWidth={1.75} aria-hidden="true" />
             <span>Export</span>
           </button>
-          <button type="button" onClick={onClear} className="btn btn-danger" title="Clear current build">
-            <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span>Clear</span>
-          </button>
+          {!hideStore && (
+            <button type="button" onClick={onClear} className="btn border-line-strong text-fg" title="Clear this build and start a new one">
+              <Plus size={14} strokeWidth={2} aria-hidden="true" />
+              <span>New build</span>
+            </button>
+          )}
         </div>
 
         {/* Mobile menu toggle */}
@@ -121,9 +123,9 @@ export default function Header({
                 <FileDown size={16} aria-hidden="true" />
                 <span>Export PDF</span>
               </button>
-              <button type="button" onClick={closeThen(onClear)} className="btn btn-touch btn-danger col-span-2">
-                <Trash2 size={16} aria-hidden="true" />
-                <span>Clear build</span>
+              <button type="button" onClick={closeThen(onClear)} className="btn btn-touch col-span-2 border-line-strong text-fg">
+                <Plus size={16} aria-hidden="true" />
+                <span>New build</span>
               </button>
             </div>
           </motion.div>

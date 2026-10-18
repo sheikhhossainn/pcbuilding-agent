@@ -3,8 +3,12 @@ import TotalCard from './summary/TotalCard';
 import PowerCard from './summary/PowerCard';
 import BudgetSplitCard from './summary/BudgetSplitCard';
 import CompatCard from './summary/CompatCard';
+import VersionsCard from './summary/VersionsCard';
 
-export default function SummaryRail({ telemetry, total, budget, onCopy, onShare, onExport }) {
+export default function SummaryRail({
+  telemetry, total, budget, onCopy, onShare, onExport,
+  versions, currentVersionId, onRestoreVersion, busy = false,
+}) {
   return (
     <div id="summary-rail" className="lg:col-span-4 space-y-4 lg:sticky lg:top-24 scroll-mt-40">
       <TotalCard total={total} configuredCount={telemetry.configuredCount} budget={budget} />
@@ -14,6 +18,12 @@ export default function SummaryRail({ telemetry, total, budget, onCopy, onShare,
         noteCount={telemetry.noteCount}
       />
       {telemetry.configuredCount > 0 && <PowerCard telemetry={telemetry} />}
+      <VersionsCard
+        versions={versions}
+        currentVersionId={currentVersionId}
+        onRestore={onRestoreVersion}
+        disabled={busy}
+      />
       {total > 0 && <BudgetSplitCard telemetry={telemetry} />}
 
       <div className="grid grid-cols-2 gap-2.5 print:hidden">
