@@ -112,7 +112,7 @@ test('applyPatch: a part price is a target for that part and never the total', (
     ops: [{ category: 'Monitor', price_target: 20000 }],
   }));
   assert.equal(intent.budget_bdt, 100000);
-  assert.deepEqual(targets.Monitor, { target: 20000, tolerance: 0.15 });
+  assert.deepEqual(targets.Monitor, { target: 20000, tolerance: 0.15, derived: false });
 });
 
 test('applyPatch: a stated total replaces the budget', () => {

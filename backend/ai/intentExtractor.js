@@ -311,7 +311,7 @@ Reply with ONLY this JSON, no prose:
 
 Rules:
 - A price next to a part name is that part's "price_target". It is NEVER "budget_bdt". Set "budget_bdt" only when the user states a new total for the whole PC ("budget 120k", "make it 1.5 lakh total").
-- "more powerful", "stronger", "better" with no figure: "direction": "up". "cheaper", "lower end": "direction": "down".
+- "more powerful", "stronger", "better", "faster", "bigger", "higher quality", "upgrade" with no figure: "direction": "up". The engine decides what better means for that part (a PSU: more watts and a better efficiency rating; RAM: more capacity or a newer generation; a monitor: sharper or faster; storage: bigger or faster), so do not guess numbers. "cheaper", "lower end", "downgrade": "direction": "down". Direction only applies to a part the user named; "make it better" with no part named is a question for "clarify", not an op on every part.
 - "use the money saved from X for Y" / "put the rest into Y": Y gets "absorb_savings": true. X is changed (a lower price_target or direction "down") if the user said how; otherwise ask via "clarify".
 - "remove X" / "no X" / "I have my own X": action "remove". Do not remove Processor, Motherboard, RAM or PSU.
 - 'lakh' = 100000, 'k' = 1000.

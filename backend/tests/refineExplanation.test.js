@@ -89,7 +89,7 @@ test('describeRefine: every number in the text comes from the parts, their price
 
   const digits = (value) => String(value).match(/\d+(?:\.\d+)?/g) || [];
   const allowed = new Set();
-  for (const p of Object.values(next)) { digits(p.name).forEach((d) => allowed.add(d)); allowed.add(String(p.price)); }
+  for (const p of [...Object.values(next), ...Object.values(prev)]) { digits(p.name).forEach((d) => allowed.add(d)); allowed.add(String(p.price)); }
   allowed.add(String(Math.abs(next.PSU.price - prev.PSU.price)));
   allowed.add(String(Math.abs(next.Monitor.price - prev.Monitor.price)));
   allowed.add('20000'); // the user's named target

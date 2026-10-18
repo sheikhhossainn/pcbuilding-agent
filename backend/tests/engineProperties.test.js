@@ -14,6 +14,7 @@ import { createSpecInference } from '../utils/specInference.js';
 import { createCacheManager } from '../utils/cacheManager.js';
 import { applyIntentOverrides } from '../engine/intentOverrides.js';
 import { normalizePatch } from '../engine/followUpPatch.js';
+import { qualityScore } from '../utils/partQuality.js';
 import { BUDGET } from '../config/budget.js';
 
 const CATEGORIES = [
@@ -438,6 +439,46 @@ test('patch follow-up: a named price nothing in stock matches is reported with w
   const { price } = second.build.Monitor;
   assert.ok(price < 24700 || price > 27300, `fixture changed: ${price} is inside the band`);
   assert.ok(second.warnings.some((w) => /asked for a Monitor around 26,000/.test(w) && /closest/.test(w)), JSON.stringify(second.warnings));
+});
+
+test('patch follow-up: "a stronger PSU" is better on its own scale, not just a bigger number', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  const second = await refine(first, 'a stronger psu', { ops: [{ category: 'PSU', direction: 'up' }] });
+  const before = first.build.PSU;
+  const after = second.build.PSU;
+  assert.notEqual(after.url, before.url);
+  assert.ok(qualityScore('PSU', after) > qualityScore('PSU', before), `${after.name} is not better than ${before.name}`);
+  assert.ok(after.specs.wattage > before.specs.wattage, 'wattage did not go up');
+  // The build had no money left over, so at most one other part is re-picked to pay for it, and the notes say so.
+  assert.ok(second.scope.changing.includes('PSU'));
+  assert.ok(second.scope.changing.length <= 2, `scope grew to ${second.scope.changing}`);
+  if (second.scope.changing.length === 2) assert.ok(second.notes.some((n) => /was picked again as well/.test(n)));
+  assert.ok(!second.notes.some((n) => /You asked for a PSU around/.test(n)), 'a price we derived was shown as a user request');
+  assert.match(second.explanation, /PSU is now/);
+  assert.match(second.explanation, /Wattage \d+W → \d+W/);
+  // the search bound is scaffolding, not something to keep in the saved intent
+  assert.equal(second.intent.component_strategy.PSU.structured_reqs.better_than, undefined);
+});
+
+test('patch follow-up: "a better monitor" and "faster storage" use each part own quality scale', async () => {
+  const first = await build({ budget: 100000, use: 'gaming' });
+  const second = await refine(first, 'a better monitor and bigger faster storage', {
+    ops: [{ category: 'Monitor', direction: 'up' }, { category: 'Storage', direction: 'up' }],
+  });
+  for (const category of ['Monitor', 'Storage']) {
+    const old = first.build[category];
+    const now = second.build[category];
+    if (now.url === old.url) continue; // nothing better fit the budget: reported below
+    assert.ok(qualityScore(category, now) > qualityScore(category, old), `${category}: ${now.name} is not better than ${old.name}`);
+  }
+  assert.ok(second.total <= ceilingOf(100000));
+});
+
+test('patch follow-up: "worse" parts are cheaper on the same scale', async () => {
+  const first = await buildWithPriceyMonitor();
+  const second = await refine(first, 'a more modest monitor', { ops: [{ category: 'Monitor', direction: 'down' }] }, first.spec);
+  assert.ok(qualityScore('Monitor', second.build.Monitor) < qualityScore('Monitor', first.build.Monitor));
+  assert.ok(second.build.Monitor.price < first.build.Monitor.price);
 });
 
 test('patch follow-up: savings go only to the named part, which is capped', async () => {

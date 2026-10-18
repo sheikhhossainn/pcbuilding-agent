@@ -10,6 +10,8 @@
  * Pure functions only: no LLM, no database.
  */
 
+import { qualityScore } from '../utils/partQuality.js';
+
 export const PATCH_CATEGORIES = [
   'Processor', 'Motherboard', 'RAM', 'Storage', 'Graphics Card', 'PSU',
   'Casing', 'CPU Cooler', 'Monitor', 'Mouse', 'Keyboard', 'UPS',
@@ -51,6 +53,8 @@ const DEFAULT_TOLERANCE = 0.15;
 const PSU_TIERS = [450, 550, 650, 750, 850, 1000, 1200, 1600];
 const SCALE_UP = 1.3;
 const SCALE_DOWN = 0.7;
+// A price worked out from "better"/"cheaper" is a guide, not a promise: the quality bound decides.
+const DERIVED_TOLERANCE = 0.3;
 
 export function canonicalCategory(name) {
   if (typeof name !== 'string') return null;
@@ -220,16 +224,25 @@ export function applyPatch(previousIntent, patch, previousBuild = {}, message) {
       .filter((k) => !dropped.has(k.toLowerCase()));
     strat.structured_reqs = { ...(strat.structured_reqs || {}), ...op.structured_reqs };
 
-    // "More powerful" / "cheaper" with no figure: derive one from the part being replaced.
+    // "Better" / "stronger" / "cheaper" with no figure: the new part has to beat (or undercut) the one
+    // being replaced on that category's own scale (wattage and efficiency for a PSU, resolution and
+    // refresh rate for a monitor, ...), and the price is guided from the current one.
     let target = op.price_target;
+    let derived = false;
     if (op.direction && current) {
+      const score = qualityScore(category, current);
+      if (op.direction === 'up') strat.structured_reqs.better_than = score;
+      else strat.structured_reqs.worse_than = score;
+
       if (category === 'PSU' && op.direction === 'up' && !Object.keys(op.structured_reqs).length) {
         strat.structured_reqs.min_wattage = nextTier(PSU_TIERS, Number(current.specs?.wattage) || 0);
-      } else if (!target && Number(current.price) > 0) {
+      }
+      if (!target && Number(current.price) > 0) {
         target = Math.round(current.price * (op.direction === 'up' ? SCALE_UP : SCALE_DOWN));
+        derived = true;
       }
     }
-    if (target) targets[category] = { target, tolerance: op.tolerance };
+    if (target) targets[category] = { target, tolerance: derived ? DERIVED_TOLERANCE : op.tolerance, derived };
     if (op.absorb_savings) absorbers.push(category);
     direct.add(category);
   }

@@ -473,6 +473,13 @@ export async function executeBuild(payload, deps, ctx = {}) {
       dynamicBudgets[cat] = Math.round(target);
       targetFloors[cat] = Math.round(target * (1 - tolerance));
     }
+
+    // A released part comes back only as much cheaper as the gap needs.
+    for (const [cat, maxPrice] of Object.entries(payload._shrink || {})) {
+      if (lockedCategories.has(cat)) continue;
+      dynamicBudgets[cat] = maxPrice;
+      targetFloors[cat] = Math.round(maxPrice * 0.75);
+    }
   }
 
   const availableSockets = await deps.partRepository.getAvailableSockets(site);
@@ -705,16 +712,32 @@ export async function executeBuild(payload, deps, ctx = {}) {
         const named = followUp.targets?.[category];
         const pool = globalRemaining - reserveAfter(selectionOrder.indexOf(category), true);
         const dropped = (strat.required_keywords || []).filter((k) => !/^ddr[345]$/i.test(k));
-        const relaxed = { ...strat, required_keywords: (strat.required_keywords || []).filter((k) => !dropped.includes(k)) };
-        // Closest at or under the named price; the selector itself then tries a little above it.
-        const bandFor = (spread) => (named
-          ? { min: Math.round(named.target * (1 - spread)), max: Math.round(named.target) }
-          : { min: 0, max: Math.round((dynamicBudgets[category] || 0) * (1 + spread)) });
+        const withoutKeywords = { ...strat, required_keywords: (strat.required_keywords || []).filter((k) => !dropped.includes(k)) };
+        const withoutBound = (st) => {
+          const { better_than: _b, worse_than: _w, ...reqs } = st.structured_reqs || {};
+          return { ...st, structured_reqs: reqs };
+        };
+        const hasBound = typeof strat.structured_reqs?.better_than === 'number' || typeof strat.structured_reqs?.worse_than === 'number';
+        const tol = named?.tolerance ?? 0.15;
+        // A named price: closest at or under it (the selector then tries a little above). A price
+        // worked out from "better"/"cheaper" is only a guide, so it widens on both sides.
+        const bandFor = (spread) => {
+          if (!named) return { min: 0, max: Math.round((dynamicBudgets[category] || 0) * (1 + spread)) };
+          return {
+            min: Math.round(named.target * (1 - spread)),
+            max: Math.round(named.derived ? named.target * (1 + spread) : named.target),
+          };
+        };
 
-        // Same keywords with a wider price band, then without the old keywords, then both.
+        // Loosen one thing at a time, oldest wish first: a wider price band, then the keywords
+        // from the earlier request, and only last the "better than what I have" bound.
         const attempts = [
-          { strat, spread: (named?.tolerance ?? 0.15) * 2.3 },
-          ...(dropped.length ? [{ strat: relaxed, spread: named?.tolerance ?? 0.15 }, { strat: relaxed, spread: (named?.tolerance ?? 0.15) * 2.3 }] : []),
+          { strat, spread: tol * 2.3, kind: 'band' },
+          ...(dropped.length ? [
+            { strat: withoutKeywords, spread: tol, kind: 'keywords' },
+            { strat: withoutKeywords, spread: tol * 2.3, kind: 'keywords' },
+          ] : []),
+          ...(hasBound ? [{ strat: withoutBound(dropped.length ? withoutKeywords : strat), spread: tol * 2.3, kind: 'quality' }] : []),
         ];
         for (const attempt of attempts) {
           const part = await deps.partSelector.selectWithFallback(
@@ -728,11 +751,17 @@ export async function executeBuild(payload, deps, ctx = {}) {
           // The first pass already warned that nothing matched; this part is now found.
           const missed = `Could not find a suitable **${category}**`;
           for (let i = buildWarnings.length - 1; i >= 0; i--) if (buildWarnings[i].startsWith(missed)) buildWarnings.splice(i, 1);
-          if (attempt.strat === relaxed && dropped.length) {
-            strat.required_keywords = relaxed.required_keywords;
-            buildWarnings.push(`No ${category} matching "${dropped.join(' ')}" was available${named ? ` around ${named.target.toLocaleString('en-BD')} BDT` : ''}, so that wish was dropped. Picked: ${part.name}.`);
+          if (attempt.kind === 'keywords' || (attempt.kind === 'quality' && dropped.length)) {
+            strat.required_keywords = withoutKeywords.required_keywords;
+            buildWarnings.push(`No ${category} matching "${dropped.join(' ')}" was available${named && !named.derived ? ` around ${named.target.toLocaleString('en-BD')} BDT` : ''}, so that wish was dropped. Picked: ${part.name}.`);
           }
-          console.log(`[Follow-up] ${category}: relaxed and kept the other parts → ${part.name} (${part.price} BDT)`);
+          if (attempt.kind === 'quality') {
+            const same = prevBuild?.[category]?.name === part.name;
+            buildWarnings.push(same
+              ? `No ${category} better than your current ${part.name} fits the rest of the budget, so it stays.`
+              : `No ${category} clearly better than the old one fit the rest of the budget; picked the closest: ${part.name}.`);
+          }
+          console.log(`[Follow-up] ${category}: relaxed (${attempt.kind}) and kept the other parts → ${part.name} (${part.price} BDT)`);
           break;
         }
       }
@@ -745,6 +774,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
       const need = unmet.reduce((sum, c) => sum + (floorResult.minimums?.[c] || 0), 0);
       const shortfall = need - Math.max(globalRemaining, 0);
       const give = [];
+      const shrink = {};
       if (shortfall > 0) {
         let freed = 0;
         const candidates = [...lockedCategories]
@@ -757,6 +787,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
           if (gain <= 0) continue;
           give.push(c);
           freed += gain;
+          // Re-pick it only as much cheaper as the gap needs, not from a fresh share of the budget.
+          shrink[c] = Math.max(floorResult.minimums?.[c] || 0, Math.round(selectedBuild[c].price - shortfall * 1.15));
         }
         if (freed < shortfall) give.length = 0; // not enough even then: re-plan the whole build
       }
@@ -765,9 +797,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
         try {
           const retried = await executeBuild(
             {
-              ...payload, _intent: intentSnapshot, _release: give,
+              ...payload, _intent: intentSnapshot, _release: give, _shrink: shrink,
               _followUp: {
-                targets: followUp.targets, absorbers: followUp.absorbers,
+                targets: followUp.targets, absorbers: followUp.absorbers, ops: followUp.ops,
                 changing: [...followUp.changing, ...give],
               },
             },
@@ -791,7 +823,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
       const rebuilt = await executeBuild(
         {
           ...payload, previousBuild: null, previousIntent: null, _intent: intentSnapshot,
-          _followUp: followUp && { targets: followUp.targets, absorbers: followUp.absorbers },
+          _followUp: followUp && { targets: followUp.targets, absorbers: followUp.absorbers, ops: followUp.ops },
         },
         deps,
         ctx
@@ -829,6 +861,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
   const maxRebalanceIterations = intent.budget_bdt >= 150000 ? 7 : 6;
   const failedUpgrades = new Set();
   const absorbers = new Set(followUp?.absorbers || []);
+  // Parts the user named for a change, or handed money to, must not balloon with leftover budget.
+  const capped = new Set([...absorbers, ...(followUp?.ops || []).map((o) => o.category)]);
   // Cheapest cooler on offer, so a CPU upgrade never strands the build without one.
   const coolerFloor = floorResult.minimums?.['CPU Cooler']
     || ((await deps.partRepository.query(site, 'CPU Cooler', { min: 0, max: budgetCeiling }, 'price_asc'))[0]?.price ?? 0);
@@ -855,7 +889,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
       const strategy = intent.component_strategy[cat];
       if (!strategy || !strategy.required) return;
       const weight = strategy.weight || 1;
-      const absorbCap = absorbers.has(cat) ? absorbCapFor(cat, budget) : Infinity;
+      const absorbCap = capped.has(cat) ? absorbCapFor(cat, budget) : Infinity;
       const expandedMax = Math.min(current.price + remaining, budgetCeiling, upgradeCapFor(cat, budget), absorbCap);
       const gap = expandedMax - current.price;
       const score = gap * weight;
@@ -959,9 +993,10 @@ export async function executeBuild(payload, deps, ctx = {}) {
   }
 
   // A price the user named for a part: say so when the part that fit is outside that range.
-  for (const [cat, { target, tolerance }] of Object.entries(followUp?.targets || {})) {
+  for (const [cat, { target, tolerance, derived }] of Object.entries(followUp?.targets || {})) {
     const picked = selectedBuild[cat];
-    if (!picked || lockedCategories.has(cat)) continue;
+    // A price worked out from "better"/"cheaper" is a guide of ours, not something the user asked for.
+    if (!picked || lockedCategories.has(cat) || derived) continue;
     if (picked.price >= target * (1 - tolerance) && picked.price <= target * (1 + tolerance)) continue;
     buildWarnings.push(`You asked for a ${cat} around ${target.toLocaleString('en-BD')} BDT; the closest that fit the rest of your budget was ${picked.name} at ${picked.price.toLocaleString('en-BD')} BDT.`);
   }
@@ -999,6 +1034,13 @@ export async function executeBuild(payload, deps, ctx = {}) {
     });
 
   intent._applied_site = site;
+  // "Better than what I have" only steered this search; it must not outlive it in the saved intent.
+  for (const strat of Object.values(intent.component_strategy || {})) {
+    if (strat?.structured_reqs) {
+      delete strat.structured_reqs.better_than;
+      delete strat.structured_reqs.worse_than;
+    }
+  }
 
   return {
     build: selectedBuild,

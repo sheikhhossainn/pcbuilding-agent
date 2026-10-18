@@ -85,6 +85,12 @@ const CASES = [
   { m: 'the monitor should be 27 inch ips', e: { changing: only('Monitor'), budget: null } },
   { m: 'no ups needed', e: { changing: 'none-ok', budget: null } },
   { m: 'more ram, 32gb', e: { changing: only('RAM'), spec: { RAM: ['min_gb', 32] }, budget: null } },
+  { m: 'get me a better monitor', e: { changing: only('Monitor'), budget: null, direction: { Monitor: 'up' } } },
+  { m: 'faster storage please', e: { changing: only('Storage'), budget: null, direction: { Storage: 'up' } } },
+  { m: 'upgrade the ram', e: { changing: only('RAM'), budget: null, direction: { RAM: 'up' } } },
+  { m: 'a quieter, better cpu cooler', e: { changing: only('CPU Cooler'), budget: null, direction: { 'CPU Cooler': 'up' } } },
+  { m: 'something more modest for the monitor', e: { changing: only('Monitor'), budget: null, direction: { Monitor: 'down' } } },
+  { m: 'I want a higher quality psu', e: { changing: only('PSU'), budget: null, direction: { PSU: 'up' } } },
   { m: 'start over, office pc for 40k', e: { restart: true } },
   { m: 'make it better', e: { clarify: true } },
   { m: 'what is the weather today', e: { clarify: true } },
@@ -115,6 +121,11 @@ function score(c, patch, plan) {
   for (const [cat, [lo, hi]] of Object.entries(e.target || {})) {
     const t = plan.targets[cat]?.target;
     if (!(t >= lo && t <= hi)) fail(`${cat} target ${t} not in ${lo}-${hi}`);
+  }
+  for (const [cat, dir] of Object.entries(e.direction || {})) {
+    const op = patch.ops.find((o) => o.category === cat);
+    const explicit = Object.keys(op?.structured_reqs || {}).length > 0 || op?.price_target;
+    if (!op || (op.direction !== dir && !explicit)) fail(`${cat} direction ${op?.direction} != ${dir}`);
   }
   for (const cat of e.absorb || []) if (!plan.absorbers.includes(cat)) fail(`${cat} should absorb savings`);
   for (const cat of e.removed || []) if (plan.intent.component_strategy[cat].required) fail(`${cat} not removed`);

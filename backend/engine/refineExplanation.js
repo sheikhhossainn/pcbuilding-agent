@@ -7,6 +7,7 @@
  */
 
 import { buildFacts } from '../ai/explanationGenerator.js';
+import { describeDifference } from '../utils/partQuality.js';
 
 const money = (n) => `${Math.round(n).toLocaleString('en-BD')} BDT`;
 const signed = (n) => `${n > 0 ? '+' : '−'}${money(Math.abs(n))}`;
@@ -23,7 +24,7 @@ const FORCED_BY = {
 /** Why a part was swapped, in the user's terms. */
 function reasonFor(category, op, target, absorbs, changedCategories) {
   if (absorbs) return 'to put the money freed up elsewhere into it';
-  if (target) return `to land near your ${money(target.target)} target`;
+  if (target && !target.derived) return `to land near your ${money(target.target)} target`;
   if (op?.direction === 'up') return 'as the step up you asked for';
   if (op?.direction === 'down') return 'as the cheaper option you asked for';
   if (op) return 'to match what you asked for';
@@ -80,8 +81,10 @@ export function describeRefine({ build, previousBuild, locked, followUp, total, 
       }
       const why = reasonFor(category, ops[category], targets[category], absorbers.has(category), changedCategories);
       const delta = after.price - before.price;
+      // What actually differs, on the category's own terms (wattage and efficiency for a PSU, ...).
+      const what = ops[category] || absorbers.has(category) ? describeDifference(category, before, after).slice(0, 3) : [];
       parts.push(
-        `The ${label(category)} is now the ${shortName(after.name)} at ${money(after.price)} (${delta === 0 ? 'same price' : signed(delta)})${why ? `, ${why}` : ''}.`
+        `The ${label(category)} is now the ${shortName(after.name)} at ${money(after.price)} (${delta === 0 ? 'same price' : signed(delta)})${why ? `, ${why}` : ''}${what.length ? `: ${what.join(', ')}` : ''}.`
       );
     }
   }
