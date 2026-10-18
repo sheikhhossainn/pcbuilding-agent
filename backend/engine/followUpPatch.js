@@ -292,3 +292,55 @@ export function applyPatch(previousIntent, patch, previousBuild = {}, message) {
 
   return { intent, changing, targets, absorbers, notes, ops: patch.ops };
 }
+
+const baht = (n) => `\u09F3${Math.round(n).toLocaleString('en-BD')}`;
+const SPEC_TEXT = {
+  min_tb: (v) => `at least ${v}TB`,
+  min_gb: (v) => `at least ${v}GB`,
+  min_hz: (v) => `at least ${v}Hz`,
+  min_wattage: (v) => `at least ${v}W`,
+};
+const USE_LABEL = { gaming: 'gaming', editing: 'video editing', office: 'office work', general: 'general use' };
+
+/**
+ * How the request was understood, as short chips the user can check: [{ label, text }].
+ * Built from the validated patch only, so it shows what the engine will actually do.
+ *
+ * @param {Object} patch - from normalizePatch
+ * @param {Object} [previousIntent] - to leave out settings that did not change
+ * @returns {Array<{label: string, text: string}>}
+ */
+export function describePatch(patch, previousIntent = {}) {
+  const items = [];
+
+  for (const op of patch.ops) {
+    if (op.action === 'remove') { items.push({ label: op.category, text: 'remove' }); continue; }
+    const bits = [];
+    if (op.action === 'add') bits.push('add');
+    if (op.direction === 'up') bits.push('better');
+    if (op.direction === 'down') bits.push('cheaper');
+    if (op.price_target) bits.push(`around ${baht(op.price_target)}`);
+    if (op.absorb_savings) bits.push('gets the saved money');
+    for (const word of op.required_keywords) bits.push(`"${word}"`);
+    for (const word of op.exclude_keywords) bits.push(`not "${word}"`);
+    for (const [key, value] of Object.entries(op.structured_reqs)) bits.push(SPEC_TEXT[key]?.(value) || `${key} ${value}`);
+    items.push({ label: op.category, text: bits.join(', ') || 'change' });
+  }
+
+  if (patch.budget_bdt !== null && patch.budget_bdt !== Number(previousIntent.budget_bdt)) {
+    items.push({ label: 'Total budget', text: baht(patch.budget_bdt) });
+  }
+  if (patch.use_case && patch.use_case !== previousIntent.use_case) {
+    items.push({ label: 'Use', text: USE_LABEL[patch.use_case] });
+  }
+  if (patch.preferred_cpu_brand !== undefined && patch.preferred_cpu_brand !== (previousIntent.preferred_cpu_brand ?? null)) {
+    items.push({ label: 'CPU brand', text: patch.preferred_cpu_brand ? patch.preferred_cpu_brand.toUpperCase() : 'any' });
+  }
+  if (patch.preferred_gpu_brand !== undefined && patch.preferred_gpu_brand !== (previousIntent.preferred_gpu_brand ?? null)) {
+    items.push({ label: 'GPU brand', text: patch.preferred_gpu_brand ? patch.preferred_gpu_brand.toUpperCase() : 'any' });
+  }
+  if (patch.no_gpu !== null && patch.no_gpu !== Boolean(previousIntent.no_gpu)) {
+    items.push({ label: 'Graphics', text: patch.no_gpu ? 'integrated only' : 'dedicated card' });
+  }
+  return items;
+}

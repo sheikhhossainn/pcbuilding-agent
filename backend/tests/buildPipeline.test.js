@@ -178,6 +178,7 @@ test('job status exposes which parts a refine is searching again, and tags clari
         throw error;
       }
       ctx.onScope(['Monitor', 'PSU']);
+      ctx.onInterpretation([{ label: 'Monitor', text: 'around 20k' }]);
       reached();
       await gate;
       return { build: {}, total: 0, warnings: [] };
@@ -189,6 +190,7 @@ test('job status exposes which parts a refine is searching again, and tags clari
   const { jobId } = createJob({ message: 'refine', customKeys: {} });
   await scoped;
   assert.deepEqual(getJobStatus(jobId).scope, ['Monitor', 'PSU']);
+  assert.deepEqual(getJobStatus(jobId).interpretation, [{ label: 'Monitor', text: 'around 20k' }]);
   release();
   await new Promise((resolve) => setTimeout(resolve, 20));
 

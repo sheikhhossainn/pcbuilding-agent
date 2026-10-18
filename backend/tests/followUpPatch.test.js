@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  normalizePatch, applyPatch, dependencyClosure, isEmptyPatch, canonicalCategory, PATCH_CATEGORIES,
+  normalizePatch, applyPatch, describePatch, dependencyClosure, isEmptyPatch, canonicalCategory, PATCH_CATEGORIES,
 } from '../engine/followUpPatch.js';
 import { createIntentExtractor, buildPatchPrompt } from '../ai/intentExtractor.js';
 
@@ -292,4 +292,39 @@ test('extractPatch: falls back to the second model, then gives up with an error'
       /Follow-up extraction failed/,
     );
   } finally { [console.log, console.warn] = quiet; }
+});
+
+// ─── interpretation chips ───
+
+test('describePatch: shows each op in the words the user would check', () => {
+  const items = describePatch(patchOf({
+    ops: [
+      { category: 'Monitor', price_target: 20000, required_keywords: ['ips'] },
+      { category: 'PSU', direction: 'up', absorb_savings: true },
+      { category: 'Storage', structured_reqs: { min_tb: 2 } },
+      { category: 'UPS', action: 'add' },
+      { category: 'Mouse', action: 'remove' },
+    ],
+  }), previousIntent());
+  assert.deepEqual(items, [
+    { label: 'Monitor', text: 'around ৳20,000, "ips"' },
+    { label: 'PSU', text: 'better, gets the saved money' },
+    { label: 'Storage', text: 'at least 2TB' },
+    { label: 'UPS', text: 'add' },
+    { label: 'Mouse', text: 'remove' },
+  ]);
+});
+
+test('describePatch: only settings that actually change are listed', () => {
+  const prev = { ...previousIntent(), preferred_cpu_brand: 'amd' };
+  assert.deepEqual(describePatch(patchOf({ budget_bdt: 100000, use_case: 'gaming', preferred_cpu_brand: 'amd', no_gpu: false }), prev), []);
+  assert.deepEqual(describePatch(patchOf({
+    budget_bdt: 150000, use_case: 'editing', preferred_cpu_brand: 'intel', preferred_gpu_brand: 'any', no_gpu: true,
+  }), { ...prev, preferred_gpu_brand: 'nvidia' }), [
+    { label: 'Total budget', text: '৳150,000' },
+    { label: 'Use', text: 'video editing' },
+    { label: 'CPU brand', text: 'INTEL' },
+    { label: 'GPU brand', text: 'any' },
+    { label: 'Graphics', text: 'integrated only' },
+  ]);
 });

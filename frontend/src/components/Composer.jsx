@@ -15,7 +15,7 @@ export default function Composer({
   variant = 'dock',
   value, onChange, onSubmit, onStop, inputRef,
   isBusy, loadingMessage,
-  isRefining, isNarrow, onReset,
+  isRefining, isNarrow, onReset, suggestions = [],
 }) {
   const fallbackRef = useRef(null);
   const textareaRef = inputRef || fallbackRef;
@@ -138,6 +138,21 @@ export default function Composer({
               <RotateCcw size={14} aria-hidden="true" />
               Start over
             </button>
+          </div>
+        )}
+
+        {isRefining && !isBusy && value === '' && suggestions.length > 0 && (
+          <div role="group" aria-label="Refine ideas" className="flex gap-2 overflow-x-auto pb-2 px-1 -mx-1">
+            {suggestions.map((idea) => (
+              <button
+                key={idea}
+                type="button"
+                onClick={() => { onChange(idea); textareaRef.current?.focus(); }}
+                className="chip shrink-0 whitespace-nowrap min-h-9 px-3 cursor-pointer hover:border-accent-line hover:text-accent"
+              >
+                {idea}
+              </button>
+            ))}
           </div>
         )}
 

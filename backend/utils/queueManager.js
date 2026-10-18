@@ -81,6 +81,8 @@ export function getJobStatus(jobId) {
     response.stage = job.stage;
     // Refine only. Absent = not known yet; an array = the parts being searched again; null = all of them.
     if (job.scope !== undefined) response.scope = job.scope;
+    // Refine only: how the message was understood, as chips.
+    if (job.interpretation) response.interpretation = job.interpretation;
   }
   if (job.status === 'completed') response.result = job.result;
   if (job.status === 'failed') {
@@ -142,6 +144,7 @@ async function processNext(worker) {
     const result = await buildFn(job.payload, deps, {
       onStage: (stage) => { job.stage = stage; },
       onScope: (changing) => { job.scope = changing; },
+      onInterpretation: (items) => { job.interpretation = items; },
     });
     job.status = 'completed';
     job.result = result;

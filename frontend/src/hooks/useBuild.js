@@ -87,6 +87,8 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   const [scope, setScope] = useState(undefined);
   const [lastRefine, setLastRefine] = useState(null);
   const [clarify, setClarify] = useState("");
+  // How the running refine was understood, as chips: [{label, text}]. Known a couple of seconds in.
+  const [interpretation, setInterpretation] = useState(null);
   // The session as it was before the running refine, so the whole refine can be undone.
   const refineSnapshotRef = useRef(null);
 
@@ -193,6 +195,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setPreviousBuild(null);
     setRemovedCategories([]);
     setScope(undefined);
+    setInterpretation(null);
     setLastRefine(null);
     setClarify("");
     refineSnapshotRef.current = null;
@@ -205,6 +208,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setLoadingState("idle");
     setStage(null);
     setScope(undefined);
+    setInterpretation(null);
     setErrorMsg("");
     setQueuePosition(0);
     setShowTrafficWarning(false);
@@ -283,6 +287,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setLoadingState("analyzing");
     setStage(null);
     setScope(undefined);
+    setInterpretation(null);
     setErrorMsg("");
     setClarify("");
     setLastRefine(null);
@@ -342,6 +347,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
           if (data.status === 'processing') {
             setQueuePosition(0);
             if ('scope' in data) setScope(data.scope);
+            if (data.interpretation) setInterpretation(data.interpretation);
             if (data.stage) {
               setStage(data.stage);
               setLoadingState(STAGE_TO_STATE[data.stage] || "analyzing");
@@ -363,11 +369,16 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
             setPreviousBuild(result.build || null);
             if (snapshot) {
               refineSnapshotRef.current = snapshot;
-              setLastRefine({ ...diffBuilds(snapshot.build, nextBuild, Object.keys(INITIAL_BUILD)), message });
+              setLastRefine({
+                ...diffBuilds(snapshot.build, nextBuild, Object.keys(INITIAL_BUILD)),
+                message,
+                interpretation: result.interpretation || null,
+              });
             } else {
               refineSnapshotRef.current = null;
             }
             setScope(undefined);
+            setInterpretation(null);
             // The engine honored the removals; its intent now records them as not required.
             setRemovedCategories([]);
             setLoadingState("success");
@@ -381,6 +392,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
           if (data.status === 'failed') {
             stopPolling();
             setScope(undefined);
+            setInterpretation(null);
             if (data.errorCode === 'NEEDS_CLARIFICATION' && data.error) {
               // Not a failure: the message did not say what to change. The build stays as it is.
               setClarify(data.error);
@@ -426,6 +438,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     loadingState,
     stage,
     scope,
+    interpretation,
     lastRefine,
     clarify,
     isBusy,

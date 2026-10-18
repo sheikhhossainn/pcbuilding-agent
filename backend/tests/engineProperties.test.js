@@ -343,6 +343,8 @@ test('patch follow-up: "monitor around 20k, saved money to a stronger PSU" re-se
   for (const announced of scopes) assert.deepEqual(announced, ['Monitor', 'PSU']);
 
   assert.deepEqual([...second.scope.changing].sort(), ['Monitor', 'PSU']);
+  assert.deepEqual(second.interpretation.map((i) => i.label), ['Monitor', 'PSU']);
+  assert.equal(first.interpretation, null, 'a fresh build has no interpretation');
   // The story of a refine is written from the diff, not by a second LLM call (the stub would say 'ok').
   assert.notEqual(second.explanation, 'ok');
   assert.match(second.explanation, /changed 2 parts/);

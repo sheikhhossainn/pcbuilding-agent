@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { ArrowRight, RotateCcw, X } from 'lucide-react';
 import { formatDelta } from '../lib/buildDiff';
+import InterpretationChips from './InterpretationChips';
 
 const partLabel = (part) => (part ? part.name : 'none');
 
@@ -47,6 +48,8 @@ export default function RefineSummary({ refine, onUndo, onDismiss }) {
           </button>
         </div>
       </div>
+
+      <InterpretationChips items={refine.interpretation} label="You asked for" className="mt-2" />
 
       {!nothingChanged && (
         <ul className="mt-2 space-y-1.5">

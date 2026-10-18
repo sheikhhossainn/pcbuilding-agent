@@ -7,6 +7,7 @@ import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../hooks/useToast';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { computeTelemetry } from '../lib/telemetry';
+import { suggestRefines } from '../lib/suggestRefines';
 import { formatPrice } from '../lib/format';
 import { TOTAL_PARTS } from '../lib/constants';
 import { buildShareUrl, readShareFromLocation, clearShareFromLocation } from '../lib/share';
@@ -16,6 +17,7 @@ import Notice from './Notice';
 import WarningsBanner from './WarningsBanner';
 import BuildList from './BuildList';
 import RefineSummary from './RefineSummary';
+import InterpretationChips from './InterpretationChips';
 import RationaleCard from './RationaleCard';
 import SummaryRail from './SummaryRail';
 import Composer from './Composer';
@@ -81,7 +83,7 @@ function Builder({ page = null }) {
   });
   const {
     build, total, explanation, warnings, notes, power, previousIntent,
-    stage, isBusy, errorMsg, queuePosition, showTrafficWarning, scope, lastRefine, clarify,
+    stage, isBusy, errorMsg, queuePosition, showTrafficWarning, scope, interpretation, lastRefine, clarify,
   } = buildSession;
 
   // category -> what the last refine did to it, for the row badges.
@@ -97,6 +99,11 @@ function Builder({ page = null }) {
 
   // Budget the user asked for, as parsed by the engine.
   const budget = Number(previousIntent?.budget_bdt) || 0;
+
+  const refineIdeas = useMemo(
+    () => suggestRefines(build, { budget, total }),
+    [build, budget, total]
+  );
 
   // Retailer the engine actually used (it can differ from the dropdown); swap needs a real one.
   const swapSite = previousIntent?._applied_site || (site !== 'custom' ? site : null);
@@ -152,6 +159,7 @@ function Builder({ page = null }) {
     isBusy,
     loadingMessage,
     isRefining: Boolean(previousIntent),
+    suggestions: refineIdeas,
     isNarrow,
     onReset: buildSession.clear,
   };
@@ -313,6 +321,8 @@ function Builder({ page = null }) {
             <AnimatePresence>
               {isBusy && <BuildProgress key="progress" stage={stage} message={loadingMessage} />}
             </AnimatePresence>
+
+            {isBusy && <InterpretationChips items={interpretation} label="Understood" live />}
 
             {!isBusy && lastRefine && (
               <RefineSummary

@@ -7,7 +7,7 @@
 import { BUDGET } from '../config/budget.js';
 import { API } from '../config/thresholds.js';
 import { collectBuildWarnings, estimatePower } from './buildValidator.js';
-import { applyPatch, isEmptyPatch } from './followUpPatch.js';
+import { applyPatch, describePatch, isEmptyPatch } from './followUpPatch.js';
 import { describeRefine } from './refineExplanation.js';
 
 // A build cannot be assembled without these, so "remove" never applies to them.
@@ -123,6 +123,7 @@ const upgradeCapFor = (category, budget) => {
  * @param {Object} deps - injected dependencies
  * @param {Object} [ctx]
  * @param {(stage: string) => void} [ctx.onStage] - progress hook: intent | planning | selecting | optimizing | checking | explaining
+ * @param {(items: Array<{label: string, text: string}>) => void} [ctx.onInterpretation] - refine only: how the message was understood
  * @param {(changing: string[]|null) => void} [ctx.onScope] - refine only: the parts being searched again (null = all of them)
  * @returns {Object} { build, total, budget, explanation, intent, warnings, notes, power }
  */
@@ -146,6 +147,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
     try { ctx.onStage?.(stage); } catch { /* progress reporting must never break a build */ }
   };
   setStage('intent');
+  const setInterpretation = (items) => {
+    try { ctx.onInterpretation?.(items); } catch { /* progress reporting must never break a build */ }
+  };
   const setScope = (changing) => {
     try { ctx.onScope?.(changing); } catch { /* progress reporting must never break a build */ }
   };
@@ -169,6 +173,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
       intent = JSON.parse(JSON.stringify(payload._intent));
       // A re-plan keeps what the user said about price and where freed money goes.
       if (payload._followUp) followUp = { ...payload._followUp, changing: new Set(payload._followUp.changing || []) };
+      if (followUp?.interpretation) setInterpretation(followUp.interpretation);
     } else {
       let patch = null;
       if (prevIntent && prevBuild && deps.intentExtractor.extractPatch) {
@@ -186,6 +191,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
         const plan = applyPatch(prevIntent, patch, prevBuild, message);
         intent = plan.intent;
         followUp = plan;
+        plan.interpretation = describePatch(patch, prevIntent);
+        setInterpretation(plan.interpretation);
         setScope([...plan.changing]);
         console.log(`[orchestrator] Follow-up patch: re-search ${[...plan.changing].join(', ') || 'nothing'}`);
       } else {
@@ -799,7 +806,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
             {
               ...payload, _intent: intentSnapshot, _release: give, _shrink: shrink,
               _followUp: {
-                targets: followUp.targets, absorbers: followUp.absorbers, ops: followUp.ops,
+                targets: followUp.targets, absorbers: followUp.absorbers, ops: followUp.ops, interpretation: followUp.interpretation,
                 changing: [...followUp.changing, ...give],
               },
             },
@@ -823,7 +830,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
       const rebuilt = await executeBuild(
         {
           ...payload, previousBuild: null, previousIntent: null, _intent: intentSnapshot,
-          _followUp: followUp && { targets: followUp.targets, absorbers: followUp.absorbers, ops: followUp.ops },
+          _followUp: followUp && { targets: followUp.targets, absorbers: followUp.absorbers, ops: followUp.ops, interpretation: followUp.interpretation },
         },
         deps,
         ctx
@@ -1051,6 +1058,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
     warnings: buildWarnings,
     notes,
     power: estimatePower(selectedBuild, intent, deps),
+    interpretation: prevBuild && !restarting ? followUp?.interpretation || null : null,
     scope: prevBuild && !restarting ? {
       locked: Array.from(lockedCategories),
       changing: Object.keys(selectedBuild).filter((c) => !lockedCategories.has(c) && (selectedBuild[c] || prevBuild[c])),
