@@ -47,5 +47,9 @@
   "45": "graphify.md",
   "46": "build.js",
   "47": "useSettings.js",
-  "48": "patchEval.mjs"
+  "48": "patchEval.mjs",
+  "49": "intentExtractor.js",
+  "50": "refineProperties.test.js",
+  "51": "Notice.jsx",
+  "52": "useSettings.js"
 }
