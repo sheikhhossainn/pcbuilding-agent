@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import catalog from './fixtures/miniCatalog.js';
 import { createEngine, build } from './engineHarness.js';
-import { SITES, VALID_SITES, siteLabel, siteTracks, untrackedCategories } from '../config/sites.js';
+import { SITES, VALID_SITES, siteLabel, siteNotice, siteTracks, untrackedCategories } from '../config/sites.js';
 import { API } from '../config/thresholds.js';
 import { ERROR_INVALID_SITE } from '../utils/errors.js';
 import { INTENT_PROMPT } from '../ai/intentPrompt.js';
@@ -69,4 +69,17 @@ test('a store that lacks peripherals still says so, by its display name', async 
   assert.ok(note, 'expected an untracked-categories warning');
   assert.match(note, /CompMania BD/);
   assert.equal(result.build.Monitor ?? null, null);
+});
+
+test('a build at a store with a notice fails with that notice', async () => {
+  assert.equal(siteNotice('ryans'), null);
+  assert.match(siteNotice('computermania'), /laptops and accessories/);
+
+  // Only peripherals at CompMania, like its real stock: no core parts to build from.
+  const peripherals = asSite('computermania').filter((r) => ['Mouse', 'Keyboard'].includes(r.category));
+  const eng = createEngine([...catalog, ...peripherals]);
+  await assert.rejects(
+    build({ budget: 60000 }, { site: 'computermania', eng }),
+    (err) => err.message.includes('CompMania BD') && err.message.includes(siteNotice('computermania')),
+  );
 });

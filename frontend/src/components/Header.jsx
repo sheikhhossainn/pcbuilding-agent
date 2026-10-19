@@ -43,6 +43,7 @@ export default function Header({
               customUrl={customSiteUrl}
               onCustomUrlChange={onCustomSiteUrlChange}
               disabled={siteDisabled}
+              showNotice={false}
               className="mr-1"
             />
           )}

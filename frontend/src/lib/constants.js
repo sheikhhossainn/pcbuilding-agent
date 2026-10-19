@@ -58,11 +58,18 @@ export const PROMPT_MODIFIERS = [
   { label: "+ 32GB RAM", append: ", must have 32GB RAM" },
 ];
 
-// `short` is the two-letter badge shown next to the store name.
+// `short` is the two-letter badge shown next to the store name. `notice` is shown under the
+// picker when that store can't supply a full build.
 export const SITE_OPTIONS = [
   { value: "startech", label: "StarTech BD", short: "ST" },
   { value: "techland", label: "TechLand BD", short: "TL" },
-  { value: "computermania", label: "CompMania BD", short: "CM" },
+  {
+    value: "computermania",
+    label: "CompMania BD",
+    short: "CM",
+    // Keep in sync with backend/config/sites.js.
+    notice: "CompMania BD only sells laptops and accessories right now, so it has no processors, motherboards or power supplies to build a PC from. Pick StarTech, TechLand or Ryans for a full build.",
+  },
   { value: "ryans", label: "Ryans BD", short: "RY" },
   { value: "custom", label: "Custom Site..." },
 ];

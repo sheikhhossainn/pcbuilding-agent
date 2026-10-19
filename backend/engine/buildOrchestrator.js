@@ -6,7 +6,7 @@
 
 import { BUDGET } from '../config/budget.js';
 import { API } from '../config/thresholds.js';
-import { siteLabel, untrackedCategories } from '../config/sites.js';
+import { siteLabel, siteNotice, untrackedCategories } from '../config/sites.js';
 import { collectBuildWarnings, estimatePower } from './buildValidator.js';
 import { applyPatch, describePatch, isEmptyPatch } from './followUpPatch.js';
 import { describeRefine } from './refineExplanation.js';
@@ -286,7 +286,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
   });
 
   if (floorResult.error) {
-    throw new BuildError(400, floorResult.error, 'BUDGET_FLOOR_EXCEEDED');
+    // A store that can't supply a build says why, so the user knows to pick another one.
+    throw new BuildError(400, [floorResult.error, siteNotice(site)].filter(Boolean).join(' '), 'BUDGET_FLOOR_EXCEEDED');
   }
 
   if (floorResult.updatedBlueprint) {
@@ -1029,7 +1030,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
     
     // Provide diagnostic info about inventory at chosen site
     const diagnosticMsg = `Could not assemble a complete build at **${siteLabel(site)}**. Missing: ${missing.join(', ')}. `
-      + `Try adjusting your budget or selecting a different retailer.`;
+      + (siteNotice(site) || 'Try adjusting your budget or selecting a different retailer.');
     
     console.error(`[orchestrator] Build validation failed at ${site}:`, missing);
     throw new BuildError(400, diagnosticMsg, 'INVENTORY_INSUFFICIENT');
