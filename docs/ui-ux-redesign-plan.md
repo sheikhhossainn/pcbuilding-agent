@@ -24,7 +24,7 @@ The base is solid. This is a refinement pass, not a rewrite.
 | Feedback | `.btn:active scale(.97)`, toasts, row flash, `AnimatedPrice` count-up | No sound, no haptics. Only one toast is shown at a time (`useToast` replaces it). A finished build has no "moment". |
 | Loading | `BuildProgress` stepper and `animate-pulse` skeletons | Pulse looks cheap next to a shimmer. Parts pop in all at once when the job completes. |
 | Surfaces | Opaque `--surface` cards, one shadow token (`--shadow-float`) | No translucency or vibrancy. The header is blurred only on mobile. |
-| Navigation | Mouse and touch only | No keyboard shortcuts and no command palette. Mac power users expect ⌘K. |
+| Navigation | Mouse and touch only | No keyboard shortcuts or command palette. Decided against both (see Phase 4). |
 | Accessibility | Focus rings, `useDialogFocus`, global `prefers-reduced-motion` kill-switch | The kill-switch also removes useful feedback such as opacity fades. It should fall back to cross-fades instead. |
 | Theme | Dark only | macOS users expect it to follow the system theme. |
 
@@ -119,32 +119,29 @@ These are the moments users remember.
 7. **Compare stores reveal.** Each store column fills in as its result arrives (this already streams through `progress`). The "Best price" chip lands with a `snappy` spring, and the saving counts up, with the reward sound when the saving is greater than 0.
 8. **Toasts as a stack.** `useToast` keeps a queue of up to 3, stacked like macOS notifications: newer on top, older scaled to .95 and dimmed. Swipe to dismiss. Undo actions stay.
 
-### Phase 4: Interaction UX (power and comfort)
+### Phase 4: Interaction UX (dropped)
 
-1. **Command palette (⌘K / Ctrl+K)**: `CommandPalette.jsx`.
-   - Actions: New build, Compare stores, Share, Copy spec, Export, Switch store → X, Swap <category>, Undo, Settings, Toggle sound.
-   - Fuzzy search, keyboard navigation, and a spring pop from the centre.
-   - On mobile, a "⌘" button in the header menu.
-2. **Shortcuts**:
-   - `/` focuses the composer.
-   - `⌘Z` undoes, using the existing `undoRefine` and versions.
-   - `⌘⇧C` opens Compare stores. `Esc` closes the topmost layer.
-   - The palette shows each shortcut as a `kbd` chip. A `?` sheet lists them all.
-3. **Optimistic actions**: remove and swap update at once with an Undo toast, so there's no waiting state. Swap already returns quickly, so drop the drawer's close delay.
-4. **Smarter empty states**: animated illustration lines (SVG trace like `AmbientBackground`) and one clear next action.
-5. **Scroll polish**: scroll-linked header shrink, `scroll-margin` on rows (already in place), and a "jump to total" pill on mobile that springs in after scrolling past the rail.
-6. **Hover intent**: preview part specs in a popover after hovering for 400 ms (desktop only), using the existing `getSpecChips`.
+Decision: no keyboard shortcuts, so no command palette either (it only earns its place as the ⌘K
+entry point; every action already has a header button). What was left in the phase is already
+covered by earlier work:
+
+- **Optimistic actions**: remove, swap and store-switch already update at once with an Undo toast.
+- **Scroll polish**: the header rises on scroll (Phase 2), rows keep `scroll-margin`, and the phone
+  summary bar is already sticky with the total, so a "jump to total" pill would repeat it.
+- **Hover spec preview**: spec chips are already shown on every desktop row.
+- **Empty states**: the start screen already has the animated blueprint background and one clear action.
+
+Nothing from this phase is built. Revisit only if testing shows a real gap.
 
 ### Phase 5: Performance, accessibility and verification
 
 1. **Budgets**:
-   - Main JS ≤ +15 KB gzip over the current size (sound and palette are small, and LazyMotion offsets them).
+   - Main JS ≤ +15 KB gzip over the pre-redesign size (sound engine and theme code are small; LazyMotion offsets them).
    - INP < 200 ms. CLS 0 during the build reveal, because rows reserve their height.
    - 60 fps during the reveal on a CPU throttled 4× (Chrome performance panel).
 2. **Accessibility**:
    - Every animation has a reduced-motion path.
    - Sounds are never the only signal (aria-live text stays).
-   - The palette is a `role="dialog"` combobox with `aria-activedescendant`.
    - Drag-to-dismiss sheets keep a close button.
 3. **Checks per phase**:
    - `npm run lint`, `npm test`, `npm run build`.
@@ -158,8 +155,6 @@ New:
 - `src/lib/motion.js`
 - `src/lib/sound.js` (+ test)
 - `src/hooks/useFeedback.js`
-- `src/hooks/useShortcuts.js`
-- `src/components/CommandPalette.jsx`
 - `src/components/Sheet.jsx` (shared dialog/sheet shell with drag-to-dismiss, used by Settings, Swap and CrossCheck)
 - `src/components/ToastStack.jsx`
 
@@ -174,7 +169,7 @@ Changed:
 - `PartRow.jsx` and `BuildList.jsx` (assembly, flip)
 - `BuildProgress.jsx`
 - `SwapDrawer.jsx`, `CrossCheckDialog.jsx`, `SettingsDialog.jsx` (moved onto `Sheet`)
-- `Header.jsx` (material, sound toggle, palette entry)
+- `Header.jsx` (material, sound toggle)
 
 No backend changes.
 
@@ -193,4 +188,3 @@ No backend changes.
 
 1. **Sound default**: on (quiet) or off with a hint? The recommendation is on, quiet, and only after the first click.
 2. **Light theme**: this time, or later? The recommendation is to include it in Phase 2, since it's cheap once the tokens exist.
-3. **Command palette scope**: actions only, or also a search over parts in the DB? The recommendation is actions only for now.
