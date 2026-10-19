@@ -373,8 +373,8 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
                 if (o && o !== strat) o.required_keywords = (o.required_keywords || []).filter(k => k.toLowerCase() !== dropped.toLowerCase());
               }
             }
-            console.warn(`[Floor] Emergency: Dropping required_keyword '${dropped}' from ${cat} to fit budget`);
-            degradations.push(`Emergency: Dropped keyword "${dropped}" from ${cat} to fit budget ceiling.`);
+            console.warn(`[Floor] Dropping required_keyword '${dropped}' from ${cat} to fit budget`);
+            degradations.push(`Dropped keyword "${dropped}" from ${cat} to fit your budget.`);
             return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
           }
 
@@ -385,8 +385,12 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
             if (keys.length > 0) {
               const dropped = keys[0];
               delete strat.structured_reqs[dropped];
-              console.warn(`[Floor] Emergency: Dropping structured_req '${dropped}' from ${cat} to fit budget`);
-              degradations.push(`Emergency: Relaxed specification "${dropped}" on ${cat} to fit budget ceiling.`);
+              console.warn(`[Floor] Dropping structured_req '${dropped}' from ${cat} to fit budget`);
+              const specLabel = dropped === 'min_gb' ? 'minimum capacity'
+                : dropped === 'min_tb' ? 'minimum storage capacity'
+                : dropped === 'min_hz' ? 'refresh rate'
+                : dropped;
+              degradations.push(`Relaxed ${cat} ${specLabel} requirement to fit your budget.`);
               return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
             }
           }
@@ -394,8 +398,8 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
           // 3. Try dropping exclude_keywords
           if (strat.exclude_keywords && strat.exclude_keywords.length > 0) {
             const dropped = strat.exclude_keywords.shift();
-            console.warn(`[Floor] Emergency: Dropping exclude_keyword '${dropped}' from ${cat} to fit budget`);
-            degradations.push(`Emergency: Relaxed excluded keyword "${dropped}" on ${cat} to fit budget ceiling.`);
+            console.warn(`[Floor] Dropping exclude_keyword '${dropped}' from ${cat} to fit budget`);
+            degradations.push(`Relaxed excluded keyword "${dropped}" on ${cat} to fit your budget.`);
             return calculateFloorPrices({ site, blueprint, budgetCeiling, _depth: _depth + 1, degradations });
           }
         }

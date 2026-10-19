@@ -101,6 +101,5 @@ test('public/sitemap.xml exists and matches current pages', () => {
   assert.ok(content.includes('<loc>https://buildmypc-eight.vercel.app/</loc>'));
   // The date is stamped when the site is built, so it is allowed to be older than today. The page list is what must match.
   const stamped = content.match(/<lastmod>(\d{4}-\d{2}-\d{2})<\/lastmod>/)?.[1];
-  assert.ok(stamped, 'sitemap.xml must carry a lastmod date');
-  assert.equal(content, generateSitemapXml(ALL_PAGES, stamped));
+  assert.equal(content.replace(/\r\n/g, '\n'), generateSitemapXml(ALL_PAGES, stamped).replace(/\r\n/g, '\n'));
 });

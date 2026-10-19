@@ -440,7 +440,7 @@ function Builder({ page = null }) {
               />
             )}
 
-            {!isBusy && <WarningsBanner warnings={warnings} />}
+            {!isBusy && <WarningsBanner warnings={warnings} onFocusPart={focusPart} />}
 
             <BuildList
               build={build}

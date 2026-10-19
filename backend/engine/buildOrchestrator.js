@@ -109,6 +109,61 @@ const COUPLED_TO_PLATFORM = new Set(['Motherboard', 'RAM']);
 const releaseScore = (category, build, intent) =>
   (build[category]?.price || 0) / Math.max(intent.component_strategy?.[category]?.weight || 0, 0.5);
 
+/**
+ * Consolidates warnings for parts left out or adjusted:
+ * - Drops redundant degradation warnings for categories that were left out entirely.
+ * - Combines multiple "Left out the X to stay within your budget" lines into a clean summary.
+ * - Removes developer jargon ("Emergency:", "fit budget ceiling").
+ */
+export function consolidateBuildWarnings(warnings, selectedBuild) {
+  const omitted = new Set(Object.keys(selectedBuild).filter((cat) => !selectedBuild[cat]));
+  const leftOut = [];
+  const other = [];
+
+  for (const w of warnings) {
+    const leftOutMatch = w.match(/^Left out the (.+?) to stay within your budget/i);
+    if (leftOutMatch) {
+      leftOut.push(leftOutMatch[1]);
+      continue;
+    }
+
+    // Suppress keyword/spec degradation warnings for categories that were omitted from the build
+    const isDegradationForOmitted = Array.from(omitted).some((cat) => {
+      const re = new RegExp(`\\b${cat}\\b`, 'i');
+      return re.test(w) && (/dropped/i.test(w) || /reduced/i.test(w) || /relaxed/i.test(w) || /preference/i.test(w)) && !/left out/i.test(w);
+    });
+
+    if (isDegradationForOmitted) continue;
+
+    const cleaned = w
+      .replace(/^Emergency:\s*/i, '')
+      .replace(/fit budget ceiling/gi, 'fit your budget')
+      .replace(/specification "min_gb"/gi, 'minimum capacity requirement');
+
+    other.push(cleaned);
+  }
+
+  const result = [];
+  if (leftOut.length > 0) {
+    const unique = Array.from(new Set(leftOut));
+    if (unique.length === 1) {
+      result.push(`Left out the ${unique[0]} to stay within your budget. You can add one back with a higher budget.`);
+    } else {
+      const listStr = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(unique);
+      result.push(`Left out ${listStr} to stay within your budget. You can add them back with a higher budget.`);
+    }
+  }
+
+  const seen = new Set();
+  for (const w of other) {
+    if (!seen.has(w)) {
+      seen.add(w);
+      result.push(w);
+    }
+  }
+  return result;
+}
+
 const absorbCapFor = (category, budget) => {
   const cap = ABSORB_CAPS[category];
   return cap ? Math.max(cap.floor, Math.round(budget * cap.share)) : Infinity;
@@ -1224,7 +1279,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
   // Warnings produced while selecting parts (degradations, missing parts, retailer notes).
   // Kept separate so the UI can re-run only the validator after the user edits the build.
-  const notes = [...buildWarnings];
+  const notes = consolidateBuildWarnings(buildWarnings, selectedBuild);
+  buildWarnings.length = 0;
+  buildWarnings.push(...notes);
 
   setStage('checking');
   const validationWarnings = collectBuildWarnings({ build: selectedBuild, intent }, deps);
