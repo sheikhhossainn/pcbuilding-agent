@@ -1,6 +1,15 @@
-from DrissionPage import ChromiumPage, ChromiumOptions
-import re
+import os
 import time
+from pathlib import Path
+from DrissionPage import ChromiumPage, ChromiumOptions
+
+try:
+    from scrapers._common import clean_price
+except ImportError:
+    from _common import clean_price
+
+PORT = 9222
+PROFILE_DIR = Path(__file__).resolve().parent.parent / ".profiles" / "computermania"
 
 # ComputerMania BD — WooCommerce / Woodmart theme
 # Uses DrissionPage (Chrome DevTools Protocol) to bypass Cloudflare JS challenge
@@ -20,18 +29,6 @@ URL_MAP = {
 
 # HDD products are listed under a separate URL but belong to storage
 STORAGE_HDD_URL = "https://computermania.com.bd/product-category/desktop-components/hard-disk-drive/"
-
-
-import os
-from pathlib import Path
-
-try:
-    from scrapers._common import clean_price
-except ImportError:
-    from _common import clean_price
-
-PORT = 9222
-PROFILE_DIR = Path(__file__).resolve().parent.parent / ".profiles" / "computermania"
 
 
 def wait_for_cloudflare(page, timeout=300):

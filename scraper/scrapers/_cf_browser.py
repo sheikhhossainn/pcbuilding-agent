@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 from pathlib import Path
 from DrissionPage import ChromiumPage, ChromiumOptions
@@ -13,9 +12,11 @@ class CloudflareBrowser:
     - Lazy browser launching on first navigation.
     - Cloudflare detection handling both 'Just a moment...' and Turnstile 'Performing security verification'.
     - Stale element retry helper for recovering from Cloudflare page reloads.
+    - Automatically brings window on screen if challenge is stuck after ~10s so a human can solve it,
+      then restores it off-screen once cleared.
     """
 
-    def __init__(self, site: str, port: int = 9222, profile_dir=None):
+    def __init__(self, site: str, port: int, profile_dir=None):
         self.site = site
         self.port = port
         if profile_dir is None:
@@ -66,16 +67,45 @@ class CloudflareBrowser:
         return True
 
     def wait_for_cloudflare(self, timeout: int = 300) -> bool:
-        """Wait for Cloudflare challenge to clear (up to timeout seconds)."""
+        """Wait for Cloudflare challenge to clear (up to timeout seconds).
+        
+        If not cleared after ~10 seconds, moves window on-screen so a human can interact
+        with any Cloudflare/Turnstile prompt, then moves it back off-screen once cleared.
+        """
+        window_moved_on_screen = False
         for i in range(timeout):
             if self.is_cloudflare_cleared():
+                if window_moved_on_screen:
+                    try:
+                        self.page.set.window.location(-2000, -2000)
+                    except Exception:
+                        pass
                 if i > 0:
                     print(f"    Cloudflare cleared after {i}s")
                 return True
-            if i > 0 and (i == 5 or i % 15 == 0):
+
+            if i >= 10 and not window_moved_on_screen:
+                try:
+                    self.page.set.window.location(50, 50)
+                    self.page.set.window.size(1280, 850)
+                    self.page.set.window.normal()
+                    window_moved_on_screen = True
+                    print("    Cloudflare challenge not cleared after 10s — moved window on screen (50, 50). "
+                          "Please click the verification checkbox in Chrome if prompted.")
+                except Exception as e:
+                    print(f"    Note: Could not move window on screen: {e}")
+            elif i > 0 and i % 15 == 0:
                 print(f"    Waiting for Cloudflare verification ({i}s elapsed)... "
                       f"If an interaction/checkbox is shown in the Chrome window, please click it.")
+
             time.sleep(1)
+
+        if window_moved_on_screen:
+            try:
+                self.page.set.window.location(-2000, -2000)
+            except Exception:
+                pass
+
         print(f"    Cloudflare timeout after {timeout}s - page may not have loaded or cleared challenge")
         return False
 
