@@ -1,18 +1,19 @@
 import StoreSearchIcon from '../icons/StoreSearchIcon';
 import { Trophy, ChevronRight, Loader2 } from 'lucide-react';
 import { formatPrice } from '../../lib/format';
-import { bestStore } from '../../lib/crossCheck';
+import { bestStore, otherStoresText } from '../../lib/crossCheck';
+import { SITE_OPTIONS } from '../../lib/constants';
 
 /**
  * Entry point to "Compare stores" in the summary rail. Once a check has run for this build it
  * shows the answer (where it is cheapest) so the user does not have to open the dialog again.
  */
-export default function CrossCheckCard({ check, onOpen, disabled, disabledReason, highlight = false }) {
+export default function CrossCheckCard({ check, onOpen, disabled, disabledReason, highlight = false, site }) {
   const fresh = check.status === 'done' && !check.stale ? check.data : null;
   const { cheapest, saving } = bestStore(fresh);
   const running = check.status === 'running';
 
-  let detail = 'See this build at StarTech, TechLand, CompMania and Ryans.';
+  let detail = `See this build at ${otherStoresText(SITE_OPTIONS, site)}.`;
   if (disabled && disabledReason) detail = disabledReason;
   else if (running) detail = 'Checking the other stores…';
   else if (fresh && cheapest && saving > 0) detail = `${formatPrice(saving)} less at ${cheapest.label}.`;

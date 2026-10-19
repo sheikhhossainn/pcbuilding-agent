@@ -10,7 +10,7 @@ export default function SummaryRail({
   telemetry, total, budget, onCopy, onShare, onExport,
   versions, currentVersionId, onRestoreVersion, busy = false,
   crossCheck, onCrossCheck, crossCheckDisabledReason = '',
-  crossCheckHighlight = false,
+  crossCheckHighlight = false, crossCheckSite,
 }) {
   return (
     <div id="summary-rail" className="lg:col-span-4 space-y-4 lg:sticky lg:top-24 scroll-mt-40">
@@ -22,6 +22,7 @@ export default function SummaryRail({
           disabled={busy || Boolean(crossCheckDisabledReason)}
           disabledReason={crossCheckDisabledReason}
           highlight={crossCheckHighlight}
+          site={crossCheckSite}
         />
       )}
       <CompatCard

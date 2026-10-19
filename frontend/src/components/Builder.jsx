@@ -503,6 +503,7 @@ function Builder({ page = null }) {
             onCrossCheck={openCrossCheck}
             crossCheckDisabledReason={crossCheckDisabledReason}
             crossCheckHighlight={crossCheckHighlight}
+            crossCheckSite={swapSite}
           />
         </m.div>
         )}

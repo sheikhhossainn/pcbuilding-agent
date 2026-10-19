@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  canCrossCheck, crossCheckSignature, toCrossCheckBuild, bestStore, crossCheckHeadline, adoptedExplanation,
+  canCrossCheck, crossCheckSignature, toCrossCheckBuild, bestStore, crossCheckHeadline, adoptedExplanation, otherStoresText,
 } from './crossCheck.js';
 
 const part = (name, price) => ({ name, price, url: `https://shop.test/${name}`, specs: { socket: 'AM4' } });
@@ -62,4 +62,16 @@ test('switching explains how the new build relates to the old one', () => {
     adoptedExplanation({ label: 'Ryans BD', counts: { exact: 5, equivalent: 1, substitute: 0, missing: 1 } }),
     'Your build, priced at Ryans BD: 5 parts are the same model, 1 is an equivalent, and 1 is not in stock there.',
   );
+});
+
+test('otherStoresText names every store except the one the build came from', () => {
+  const options = [
+    { value: 'startech', label: 'StarTech BD' },
+    { value: 'techland', label: 'TechLand BD' },
+    { value: 'computermania', label: 'CompMania BD' },
+    { value: 'ryans', label: 'Ryans BD' },
+  ];
+  assert.equal(otherStoresText(options, 'startech'), 'TechLand, CompMania, and Ryans');
+  assert.equal(otherStoresText(options, 'ryans'), 'StarTech, TechLand, and CompMania');
+  assert.equal(otherStoresText(options, 'computermania'), 'StarTech, TechLand, and Ryans');
 });

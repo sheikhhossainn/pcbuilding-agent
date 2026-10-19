@@ -6,6 +6,12 @@ export const CROSS_CHECK_REQUIRED = ['Processor', 'Motherboard', 'RAM', 'PSU'];
 
 export const canCrossCheck = (build) => CROSS_CHECK_REQUIRED.every((c) => Boolean(build?.[c]));
 
+/** "StarTech, TechLand and Ryans": the stores a check covers, never the one the build came from. */
+export function otherStoresText(options, site) {
+  const names = (options || []).filter((o) => o.value !== site).map((o) => o.label.replace(/ BD$/, ''));
+  return new Intl.ListFormat('en', { type: 'conjunction' }).format(names);
+}
+
 /** What the server needs: names, prices and links only (specs are worked out server-side). */
 export const toCrossCheckBuild = (build) => Object.fromEntries(
   Object.entries(build || {})
