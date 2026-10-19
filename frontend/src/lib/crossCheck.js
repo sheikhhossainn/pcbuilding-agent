@@ -45,13 +45,25 @@ export const partCount = (result) => {
 
 /**
  * The store to point at: the cheapest one that can supply the whole build.
- * @returns {{ cheapest: object|null, saving: number }} saving > 0 when it beats the user's store
+ * @returns {{ cheapest: object|null, saving: number, bestSite: string|null }} saving > 0 when it beats the user's store
  */
 export function bestStore(data) {
-  if (!data?.results) return { cheapest: null, saving: 0 };
+  if (!data?.results) return { cheapest: null, saving: 0, bestSite: null };
   const complete = data.results.filter((r) => r.status === 'ok');
   const cheapest = complete.reduce((best, r) => (!best || r.total < best.total ? r : best), null);
-  return { cheapest, saving: cheapest ? data.reference.total - cheapest.total : 0 };
+  const saving = cheapest ? data.reference.total - cheapest.total : 0;
+
+  // Determine which store actually has the lowest price overall:
+  // If an external store beats the current store (saving > 0), it is the best site.
+  // Otherwise, if the reference store has all parts in stock, the reference store itself is the best site.
+  const refComplete = (data.reference?.outOfStock?.length || 0) === 0;
+  const bestSite = (cheapest && saving > 0)
+    ? cheapest.site
+    : refComplete
+    ? (data.reference?.site || null)
+    : (cheapest?.site || null);
+
+  return { cheapest, saving, bestSite };
 }
 
 /** One sentence that answers "should I buy this elsewhere?". */

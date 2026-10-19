@@ -80,9 +80,9 @@ function useColumns({ check, referenceSite, build }) {
         ready: Boolean(result),
       };
     });
-    const { cheapest } = bestStore(data);
+    const { bestSite } = bestStore(data);
     const rows = CATEGORIES.filter((c) => refBuild[c] || stores.some((s) => s.build?.[c]));
-    return { columns: [reference, ...stores], rows, bestSite: cheapest?.site || null, data };
+    return { columns: [reference, ...stores], rows, bestSite, data };
   }, [check.status, check.data, check.progress, referenceSite, build]);
 }
 

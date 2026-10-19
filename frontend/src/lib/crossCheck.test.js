@@ -38,18 +38,23 @@ test('the best store is the cheapest that has the whole build', () => {
     result('techland', 'TechLand BD', 28500, { exact: 4 }),
     result('computermania', 'CompMania BD', 0, {}, 'unavailable'),
   ]);
-  const { cheapest, saving } = bestStore(d);
+  const { cheapest, saving, bestSite } = bestStore(d);
   assert.equal(cheapest.site, 'techland');
   assert.equal(saving, 1500);
+  assert.equal(bestSite, 'techland');
   assert.match(crossCheckHeadline(d), /TechLand BD has this build for ৳1,500 less, and every part is the same model/);
 });
 
 test('the headline says when the user is already at the cheapest store, or nobody else has it all', () => {
+  const dMoreExpensive = data([result('ryans', 'Ryans BD', 31000, { exact: 2, equivalent: 2 })]);
+  assert.equal(bestStore(dMoreExpensive).bestSite, 'startech');
   assert.match(
-    crossCheckHeadline(data([result('ryans', 'Ryans BD', 31000, { exact: 2, equivalent: 2 })])),
+    crossCheckHeadline(dMoreExpensive),
     /StarTech BD is already the cheapest. Next best is Ryans BD, ৳1,000 more/,
   );
-  assert.match(crossCheckHeadline(data([result('ryans', 'Ryans BD', 0, {}, 'unavailable')])), /No other store has every part/);
+  const dNone = data([result('ryans', 'Ryans BD', 0, {}, 'unavailable')]);
+  assert.equal(bestStore(dNone).bestSite, 'startech');
+  assert.match(crossCheckHeadline(dNone), /No other store has every part/);
 });
 
 test('switching explains how the new build relates to the old one', () => {
