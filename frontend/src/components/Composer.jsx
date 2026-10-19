@@ -3,7 +3,6 @@ import { m } from 'framer-motion';
 import { spring } from '../lib/motion';
 import { Send, RefreshCw } from 'lucide-react';
 import ModifiersMenu from './ModifiersMenu';
-import { LogoMark } from './Logo';
 
 const MAX_HEIGHT_NARROW = 120;
 const MAX_HEIGHT_WIDE = 200;
@@ -132,7 +131,6 @@ export default function Composer({
           <m.div {...morph} layoutDependency={layoutDependency} className="composer card surface-float relative">
             {isBusy ? (
               <m.div layout="position" layoutDependency={layoutDependency} className="flex items-center gap-2.5 px-3.5 pt-2.5 text-sm text-fg-2 min-w-0">
-                <LogoMark size={18} animated className="shrink-0" />
                 <span className="truncate">{loadingMessage}</span>
               </m.div>
             ) : isRefining && (

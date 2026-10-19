@@ -126,6 +126,9 @@ function Builder({ page = null }) {
   const crossCheck = useCrossCheck({ build, intent: previousIntent, site: swapSite });
   const crossCheckReady = canCrossCheck(build);
   const crossCheckDisabledReason = crossCheckReady ? '' : 'Needs a CPU, motherboard, RAM and PSU first.';
+  // Nudge toward Compare stores once a build is ready and hasn't been priced elsewhere yet.
+  const crossCheckHighlight = crossCheckReady && !isBusy
+    && (crossCheck.status === 'idle' || crossCheck.stale);
   const openCrossCheck = () => {
     if (!crossCheckReady) {
       showToast('Add a CPU, motherboard, RAM and PSU before comparing stores', null, { tone: 'info' });
@@ -327,12 +330,12 @@ function Builder({ page = null }) {
         onClear={startOver}
         onCrossCheck={openCrossCheck}
         crossCheckDisabled={isBusy || !crossCheckReady}
+        crossCheckHighlight={crossCheckHighlight}
         onOpenSettings={openSettings}
         soundOn={settings.sound}
         onToggleSound={toggleSound}
         settingsHighlighted={showTrafficWarning}
         hideStore={showHero}
-        busy={isBusy}
       >
         <MobileSummaryBar
           total={total}
@@ -499,6 +502,7 @@ function Builder({ page = null }) {
             crossCheck={crossCheck}
             onCrossCheck={openCrossCheck}
             crossCheckDisabledReason={crossCheckDisabledReason}
+            crossCheckHighlight={crossCheckHighlight}
           />
         </m.div>
         )}

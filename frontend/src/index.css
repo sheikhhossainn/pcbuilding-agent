@@ -433,6 +433,29 @@ h1 {
   70% { transform: translateX(1.5px); opacity: 1; }
 }
 
+/* "Try this next" highlight: accent tint plus a ring that softly breathes outward. Only
+   transform and opacity animate, so it stays on the compositor. */
+.nudge {
+  position: relative;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.nudge::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: nudge-ring 3.6s ease-out infinite;
+}
+@keyframes nudge-ring {
+  0% { transform: scale(1); opacity: 0.55; }
+  75%, 100% { transform: scale(1.1, 1.3); opacity: 0; }
+}
+
 /* Honor the OS "reduce motion" setting: stop movement, keep feedback.
    Keyframe animations (traces, pulses, spinners) stop. Transitions keep fading colour and
    opacity, so hover and state changes still read, but nothing slides or scales. */

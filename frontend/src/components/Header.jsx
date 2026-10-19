@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { menu } from '../lib/motion';
-import { Copy, Key, FileDown, Plus, Menu, X, Link2, Columns3, Volume2, VolumeX } from 'lucide-react';
+import { Copy, Key, FileDown, Plus, Menu, X, Link2, Volume2, VolumeX } from 'lucide-react';
 import { LogoMark } from './Logo';
+import StoreSearchIcon from './icons/StoreSearchIcon';
 import StoreSelect from './StoreSelect';
 
 /** True once the page has scrolled away from the very top. */
@@ -28,9 +29,9 @@ function useScrolled() {
 export default function Header({
   site, onSiteChange, siteDisabled,
   onCopy, onShare, onExport, onClear, onOpenSettings, settingsHighlighted,
-  onCrossCheck, crossCheckDisabled = false,
+  onCrossCheck, crossCheckDisabled = false, crossCheckHighlight = false,
   soundOn = true, onToggleSound,
-  hideStore = false, busy = false,
+  hideStore = false,
   children,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -50,11 +51,11 @@ export default function Header({
         className="header-island material relative max-w-7xl mx-auto border border-line rounded-2xl px-4 sm:px-5 py-2 sm:py-2.5 flex items-center justify-between gap-4"
       >
         <div className="flex items-center gap-3 shrink-0">
-          <LogoMark size={38} animated={busy} className="shrink-0" />
+          <LogoMark size={38} className="shrink-0" />
           <div className="leading-tight">
             <p className="text-lg font-semibold tracking-tight text-fg flex items-center gap-2">
               <span>Build<span className="text-accent">MyPC</span></span>
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-accent-soft text-accent border border-accent-line">BD</span>
+              <span className="hidden sm:inline text-xs font-medium px-1.5 py-0.5 rounded bg-accent-soft text-accent border border-accent-line">BD</span>
             </p>
             <p className="text-xs text-fg-3 hidden sm:block">AI PC builder for Bangladesh</p>
           </div>
@@ -80,21 +81,19 @@ export default function Header({
               onClick={onCrossCheck}
               disabled={crossCheckDisabled}
               aria-haspopup="dialog"
-              className="btn"
+              aria-label="Compare stores"
+              className={`btn btn-icon-sm ${crossCheckHighlight ? 'nudge' : ''}`}
               title="Price this build at every store"
             >
-              <Columns3 size={14} strokeWidth={1.75} aria-hidden="true" />
-              <span>Compare stores</span>
-            </button>
+              <StoreSearchIcon size={16} strokeWidth={1.75} aria-hidden="true" />
+                          </button>
           )}
-          <button type="button" onClick={onShare} className="btn" title="Copy a link to this build">
-            <Link2 size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span>Share</span>
+          <button type="button" onClick={onShare} className="btn btn-icon-sm" title="Copy a link to this build" aria-label="Share link">
+            <Link2 size={16} strokeWidth={1.75} aria-hidden="true" />
           </button>
-          {/* Secondary actions drop their labels on narrower desktops so the header never overflows. */}
-          <button type="button" onClick={onCopy} className="btn" title="Copy formatted spec sheet" aria-label="Copy spec">
-            <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span className="hidden xl:inline">Copy spec</span>
+          {/* Icon-only: every button has a tooltip and an accessible name. */}
+          <button type="button" onClick={onCopy} className="btn btn-icon-sm" title="Copy formatted spec sheet" aria-label="Copy spec">
+            <Copy size={16} strokeWidth={1.75} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -102,10 +101,9 @@ export default function Header({
             aria-haspopup="dialog"
             aria-label="API key"
             title="Use your own API key"
-            className={`btn ${settingsHighlighted ? 'bg-warn-soft border-warn-line text-warn' : ''}`}
+            className={`btn btn-icon-sm ${settingsHighlighted ? 'bg-warn-soft border-warn-line text-warn' : ''}`}
           >
-            <Key size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span className="hidden xl:inline">API key</span>
+            <Key size={16} strokeWidth={1.75} aria-hidden="true" />
           </button>
           {onToggleSound && (
             <button
@@ -116,31 +114,56 @@ export default function Header({
               aria-label="Sound effects"
               title={soundLabel}
             >
-              <SoundIcon size={15} strokeWidth={1.75} aria-hidden="true" />
+              <SoundIcon size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
           )}
-          <button type="button" onClick={onExport} className="btn" title="Print or save as PDF" aria-label="Export">
-            <FileDown size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span className="hidden xl:inline">Export</span>
+          <button type="button" onClick={onExport} className="btn btn-icon-sm" title="Print or save as PDF" aria-label="Export">
+            <FileDown size={16} strokeWidth={1.75} aria-hidden="true" />
           </button>
           {!hideStore && (
-            <button type="button" onClick={onClear} className="btn border-line-strong text-fg" title="Clear this build and start a new one">
-              <Plus size={14} strokeWidth={2} aria-hidden="true" />
-              <span>New build</span>
+            <button type="button" onClick={onClear} className="btn btn-icon-sm border-line-strong text-fg" title="New build: clear this one and start over" aria-label="New build">
+              <Plus size={16} strokeWidth={2} aria-hidden="true" />
             </button>
           )}
         </div>
 
-        {/* Mobile menu toggle */}
-        <button
-          type="button"
-          onClick={() => setMenuOpen((open) => !open)}
-          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-          aria-expanded={menuOpen}
-          className="lg:hidden btn btn-icon"
-        >
-          {menuOpen ? <X size={20} strokeWidth={1.75} aria-hidden="true" /> : <Menu size={20} strokeWidth={1.75} aria-hidden="true" />}
-        </button>
+        {/* Phones: Compare stores sits next to the menu so it is one tap away, and it is
+            highlighted until the user opens it. */}
+        <div className="lg:hidden flex items-center gap-1.5 sm:gap-2">
+          {!hideStore && (
+            <button
+              type="button"
+              onClick={onClear}
+              aria-label="New build"
+              title="Clear this build and start a new one"
+              className="btn btn-icon"
+            >
+              <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          )}
+          {!hideStore && onCrossCheck && (
+            <button
+              type="button"
+              onClick={onCrossCheck}
+              disabled={crossCheckDisabled}
+              aria-haspopup="dialog"
+              aria-label="Compare stores"
+              title="Price this build at every store"
+              className={`btn btn-icon ${crossCheckHighlight ? 'nudge' : ''}`}
+            >
+              <StoreSearchIcon size={20} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            className="btn btn-icon"
+          >
+            {menuOpen ? <X size={20} strokeWidth={1.75} aria-hidden="true" /> : <Menu size={20} strokeWidth={1.75} aria-hidden="true" />}
+          </button>
+        </div>
       </header>
 
       <AnimatePresence>
@@ -158,18 +181,6 @@ export default function Header({
               disabled={siteDisabled}
             />
             <div className="grid grid-cols-2 gap-2">
-              {!hideStore && onCrossCheck && (
-                <button
-                  type="button"
-                  onClick={closeThen(onCrossCheck)}
-                  disabled={crossCheckDisabled}
-                  aria-haspopup="dialog"
-                  className="btn btn-touch col-span-2"
-                >
-                  <Columns3 size={16} aria-hidden="true" />
-                  <span>Compare stores</span>
-                </button>
-              )}
               <button type="button" onClick={closeThen(onShare)} className="btn btn-touch">
                 <Link2 size={16} aria-hidden="true" />
                 <span>Share link</span>
@@ -187,15 +198,11 @@ export default function Header({
                 <span>Export PDF</span>
               </button>
               {onToggleSound && (
-                <button type="button" onClick={onToggleSound} aria-pressed={soundOn} className="btn btn-touch">
+                <button type="button" onClick={onToggleSound} aria-pressed={soundOn} className="btn btn-touch col-span-2">
                   <SoundIcon size={16} aria-hidden="true" />
                   <span>{soundOn ? 'Sound on' : 'Sound off'}</span>
                 </button>
               )}
-              <button type="button" onClick={closeThen(onClear)} className={`btn btn-touch border-line-strong text-fg ${onToggleSound ? '' : 'col-span-2'}`}>
-                <Plus size={16} aria-hidden="true" />
-                <span>New build</span>
-              </button>
             </div>
           </m.div>
         )}

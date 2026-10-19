@@ -1,8 +1,9 @@
+import StoreSearchIcon from './icons/StoreSearchIcon';
 import { useMemo, useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { backdrop, dialog, sheet, spring } from '../lib/motion';
 import {
-  X, Columns3, RefreshCw, ExternalLink, Check, Equal, Shuffle, Ban, Plus, Loader2, Trophy, AlertTriangle, Box,
+  X, RefreshCw, ExternalLink, Check, Equal, Shuffle, Ban, Plus, Loader2, Trophy, AlertTriangle, Box,
   ArrowRight, ChevronDown,
 } from 'lucide-react';
 import { CATEGORY_ICONS, INITIAL_BUILD, SITE_OPTIONS } from '../lib/constants';
@@ -537,7 +538,7 @@ export default function CrossCheckDialog({ open, onClose, isNarrow, check, refer
             <div {...handleProps} className="flex items-center justify-between gap-3 px-4 sm:px-5 pt-1 sm:pt-4 pb-3 border-b border-line">
               <div className="min-w-0">
                 <h2 id="cross-check-title" className="flex items-center gap-2 text-lg font-semibold text-fg">
-                  <Columns3 size={18} className="text-accent" aria-hidden="true" />
+                  <StoreSearchIcon size={18} className="text-accent" aria-hidden="true" />
                   Compare stores
                 </h2>
                 <p id="cross-check-lead" className="text-xs text-fg-3 mt-0.5">
