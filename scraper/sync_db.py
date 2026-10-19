@@ -23,6 +23,12 @@ except ImportError:
     computermania = None
     print("Warning: DrissionPage not installed — ComputerMania scraper disabled")
 
+try:
+    import scrapers.ryans as ryans
+except ImportError:
+    ryans = None
+    print("Warning: DrissionPage or lxml not installed — Ryans scraper disabled")
+
 # Load environment variables (from the backend folder)
 env_path = Path(__file__).resolve().parent.parent / 'backend' / '.env'
 load_dotenv(dotenv_path=env_path)
@@ -115,6 +121,11 @@ COMPUTERMANIA_CATEGORIES = [
     "psu", "casing", "cpu-cooler", "monitor", "mouse", "keyboard"
 ]
 
+RYANS_CATEGORIES = [
+    "cpu", "motherboard", "ram", "storage", "gpu",
+    "psu", "casing", "cpu-cooler", "monitor", "mouse", "keyboard", "ups"
+]
+
 # All sites with their scraper modules and category lists
 SITES = [
     {"name": "startech", "module": startech, "categories": CATEGORIES},
@@ -122,6 +133,8 @@ SITES = [
 ]
 if computermania:
     SITES.append({"name": "computermania", "module": computermania, "categories": COMPUTERMANIA_CATEGORIES})
+if ryans:
+    SITES.append({"name": "ryans", "module": ryans, "categories": RYANS_CATEGORIES})
 
 state_lock = threading.Lock()
 
@@ -140,12 +153,16 @@ MIN_CATEGORY_PRICES = {
     "mouse": 80
 }
 
+def fresh_state():
+    """Progress state with every site at its first category."""
+    return {s["name"]: 0 for s in SITES}
+
 def load_state():
     with state_lock:
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, "r") as f:
                 return json.load(f)
-    return {"startech": 0, "techland": 0, "computermania": 0}
+    return fresh_state()
 
 def save_state(state):
     with state_lock:
@@ -315,7 +332,23 @@ def mark_stale_out_of_stock(site, category, scraped_urls):
 
 
 def _scrape_site(site_info, state, log, progress, stop_event):
-    """Scrape all categories for a single site. Returns True if fully completed."""
+    """Scrape all categories for a single site. Returns True if fully completed.
+
+    Scrapers that keep a browser open across categories expose close(); it runs however the
+    site ends (finished, stop requested, or an error).
+    """
+    try:
+        return _scrape_site_categories(site_info, state, log, progress, stop_event)
+    finally:
+        close = getattr(site_info["module"], "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception as e:
+                log(f"  Failed to close {site_info['name']} scraper: {e}")
+
+
+def _scrape_site_categories(site_info, state, log, progress, stop_event):
     site_name = site_info["name"]
     module = site_info["module"]
     categories = site_info["categories"]
@@ -403,13 +436,15 @@ def _scrape_site(site_info, state, log, progress, stop_event):
     return True  # All categories completed
 
 
-def run_sync(stop_event=None, log_callback=None, progress_callback=None):
+def run_sync(stop_event=None, log_callback=None, progress_callback=None, sites=None):
     """Run the full scraper sync.
-    
+
     Args:
         stop_event: threading.Event — if set, scraper will stop after current category
         log_callback: Callable[[str], None] — receives log messages (replaces print)
         progress_callback: Callable[[dict], None] — receives structured progress updates
+        sites: optional list of site names to sync. Only their state entries are read and reset;
+            other sites' progress is left as it is. None means every site.
     """
     def log(msg):
         if log_callback:
@@ -420,19 +455,24 @@ def run_sync(stop_event=None, log_callback=None, progress_callback=None):
         if progress_callback:
             progress_callback(data)
 
+    selected = SITES if sites is None else [s for s in SITES if s["name"] in sites]
+    if not selected:
+        log(f"No matching sites to sync: {sites}")
+        return
+
     log("Starting sync...")
     state = load_state()
 
-    # Calculate total categories across all sites for overall progress
-    total_all = sum(len(s["categories"]) for s in SITES)
-    completed_before = sum(state.get(s["name"], 0) for s in SITES)
+    def reset_selected():
+        for s in selected:
+            state[s["name"]] = 0
+        save_state(state)
 
-    active_sites = [s for s in SITES if state.get(s["name"], 0) < len(s["categories"])]
+    active_sites = [s for s in selected if state.get(s["name"], 0) < len(s["categories"])]
     if not active_sites:
         log("All sites are already complete. Resetting state for fresh sync...")
-        state = {"startech": 0, "techland": 0, "computermania": 0}
-        save_state(state)
-        active_sites = SITES
+        reset_selected()
+        active_sites = selected
 
     log(f"Starting parallel sync for {len(active_sites)} site(s): {', '.join(s['name'].capitalize() for s in active_sites)}")
 
@@ -450,11 +490,11 @@ def run_sync(stop_event=None, log_callback=None, progress_callback=None):
 
     # Check if everything is done
     all_done = all(
-        state.get(s["name"], 0) >= len(s["categories"]) for s in SITES
+        state.get(s["name"], 0) >= len(s["categories"]) for s in selected
     )
     if all_done:
         log("✓ Sync fully completed across all sites. Resetting state for next run.")
-        save_state({"startech": 0, "techland": 0, "computermania": 0})
+        reset_selected()
         progress({"status": "completed"})
     else:
         progress({"status": "stopped"})
@@ -488,5 +528,25 @@ def get_turso_stats():
         return []
 
 
+def parse_sites_arg(value):
+    """Turn 'ryans,startech' into a list of known site names; raises ValueError on an unknown one."""
+    names = [n.strip().lower() for n in value.split(",") if n.strip()]
+    known = {s["name"] for s in SITES}
+    unknown = [n for n in names if n not in known]
+    if unknown or not names:
+        given = ", ".join(unknown) if unknown else repr(value)
+        raise ValueError(f"Unknown site(s): {given}. Choose from: {', '.join(sorted(known))}")
+    return names
+
+
 if __name__ == "__main__":
-    run_sync()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Scrape retailer sites into Turso.")
+    parser.add_argument("--sites", help="Comma-separated sites to sync (default: all), e.g. --sites ryans")
+    args = parser.parse_args()
+    try:
+        selected_sites = parse_sites_arg(args.sites) if args.sites else None
+    except ValueError as e:
+        parser.error(str(e))
+    run_sync(sites=selected_sites)
