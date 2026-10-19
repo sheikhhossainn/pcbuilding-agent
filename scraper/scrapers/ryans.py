@@ -1,5 +1,7 @@
 import json
+import random
 import re
+import time
 from lxml import html
 
 try:
@@ -25,6 +27,32 @@ URL_MAP = {
     "keyboard":    ["https://www.ryans.com/category/desktop-component-keyboard"],
     "ups":         ["https://www.ryans.com/category/desktop-component-ups"],
 }
+
+_browser = None
+
+
+def _get_browser():
+    """Lazily instantiate and return the shared CloudflareBrowser instance for Ryans."""
+    global _browser
+    if _browser is None:
+        try:
+            from scrapers._cf_browser import CloudflareBrowser
+        except ImportError:
+            from _cf_browser import CloudflareBrowser
+        _browser = CloudflareBrowser(site="ryans", port=9333)
+    return _browser
+
+
+def close():
+    """Quit and reset the shared CloudflareBrowser instance."""
+    global _browser
+    if _browser is not None:
+        try:
+            _browser.close()
+        except Exception:
+            pass
+        finally:
+            _browser = None
 
 
 def parse_listing(html_content: str) -> list[dict]:
@@ -150,14 +178,125 @@ def last_page(html_content: str) -> int:
     links = pag_container[0].cssselect("a[href]")
     for a in links:
         href = a.attrib.get("href", "")
-        # Find page=N in query parameters
         match = re.search(r'[?&]page=(\d+)', href)
         if match:
             nums.append(int(match.group(1)))
         else:
-            # Check link text if purely numeric
             txt = (a.text_content() or "").strip()
             if txt.isdigit():
                 nums.append(int(txt))
 
     return max(nums) if nums else 1
+
+
+def scrape(category: str, price_min=None, price_max=None, sort_order=None) -> list[dict]:
+    """Scrape product listings for a category from Ryans Computers.
+    
+    Walks all pages for each URL mapped to the category using ?limit=100.
+    Stops a URL early when a page's products are all out of stock (since Ryans lists in-stock first).
+    Applies client-side price bounds, de-duplicates by URL, and returns {name, price, image, url, in_stock}.
+    """
+    if category not in URL_MAP:
+        raise ValueError(f"Category '{category}' not mapped for ryans")
+
+    browser = _get_browser()
+    all_products = []
+    seen_urls = set()
+
+    for base_url in URL_MAP[category]:
+        sep = "&" if "?" in base_url else "?"
+        page_num = 1
+        total_pages = 1
+
+        while page_num <= total_pages:
+            url = f"{base_url}{sep}limit=100" if page_num == 1 else f"{base_url}{sep}limit=100&page={page_num}"
+            print(f"    Page {page_num}/{total_pages}...", end=" ", flush=True)
+
+            try:
+                cleared = browser.open(url)
+                if not cleared or not browser.is_cloudflare_cleared():
+                    print("Cloudflare challenge not cleared, skipping page")
+                    page_num += 1
+                    time.sleep(random.uniform(1.5, 3.0))
+                    continue
+
+                page_html = browser.page.html
+                if page_num == 1:
+                    total_pages = last_page(page_html)
+
+                page_products = parse_listing(page_html)
+
+                # Warn if 0 products found on a page within bounds
+                if not page_products and browser.is_cloudflare_cleared():
+                    title = browser.page.title or ""
+                    print(f"0 items — possible selector drift (title: '{title}')")
+                else:
+                    in_stock_count = sum(1 for p in page_products if p.get("in_stock"))
+                    print(f"{len(page_products)} items ({in_stock_count} in stock)")
+
+                # De-duplicate across pages and URLs
+                for p in page_products:
+                    p_url = p.get("url")
+                    if p_url and p_url not in seen_urls:
+                        seen_urls.add(p_url)
+                        all_products.append(p)
+
+                # Early stop: Ryans lists in-stock items first. If all items on this page are out of stock,
+                # stop pagination for this URL and return what we have so far.
+                if page_products and all(not p.get("in_stock") for p in page_products):
+                    print(f"    stopped at page {page_num}/{total_pages} (rest out of stock)")
+                    break
+
+            except Exception as e:
+                print(f"Error on page {page_num}: {e}")
+
+            page_num += 1
+            if page_num <= total_pages:
+                time.sleep(random.uniform(1.5, 3.0))
+
+    # Apply client-side price filters
+    if price_min is not None:
+        all_products = [p for p in all_products if p.get("price") is not None and p["price"] >= int(price_min)]
+    if price_max is not None:
+        all_products = [p for p in all_products if p.get("price") is not None and p["price"] <= int(price_max)]
+
+    # Drop debugging status_code before returning to caller
+    results = []
+    for p in all_products:
+        item = {
+            "name": p["name"],
+            "price": p["price"],
+            "image": p["image"],
+            "url": p["url"],
+            "in_stock": p["in_stock"],
+        }
+        results.append(item)
+
+    return results
+
+
+if __name__ == "__main__":
+    import sys
+    cat = sys.argv[1] if len(sys.argv) > 1 else "cpu"
+    print(f"\n--- Scraping Ryans: {cat} ---")
+
+    b = _get_browser()
+    for endpoint in URL_MAP.get(cat, []):
+        test_url = f"{endpoint}?limit=100"
+        b.open(test_url)
+        lp = last_page(b.page.html) if b.page else 1
+        print(f"Endpoint: {endpoint}")
+        print(f"  Title: '{b.page.title if b.page else ''}'")
+        print(f"  Detected last page: {lp}")
+
+    results = scrape(cat)
+    in_stock_total = sum(1 for p in results if p.get("in_stock"))
+    print(f"\nResults for {cat}:")
+    print(f"  Total items: {len(results)}")
+    print(f"  In-stock items: {in_stock_total}")
+    print(f"  Out-of-stock items: {len(results) - in_stock_total}")
+    print(f"\nFirst 3 items:")
+    for idx, p in enumerate(results[:3], start=1):
+        print(f"  {idx}. {p['name']} | Tk {p['price']} | In-stock: {p['in_stock']}")
+        print(f"     URL: {p['url']}")
+    close()
