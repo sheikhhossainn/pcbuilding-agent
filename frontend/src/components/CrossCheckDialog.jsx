@@ -8,6 +8,10 @@ import { CATEGORY_ICONS, INITIAL_BUILD, SITE_OPTIONS } from '../lib/constants';
 import { formatPrice, sumBuild } from '../lib/format';
 import { MATCH_META, MATCH_HELP, bestStore, crossCheckHeadline, partCount } from '../lib/crossCheck';
 import { useDialogFocus } from '../hooks/useDialogFocus';
+import { useSheetDrag } from '../hooks/useSheetDrag';
+import SheetGrabber from './SheetGrabber';
+import AnimatedPrice from './AnimatedPrice';
+import { spring, tween } from '../lib/motion';
 import StatusChip from './StatusChip';
 
 const MATCH_ICONS = { exact: Check, equivalent: Equal, substitute: Shuffle, missing: Ban, added: Plus };
@@ -102,7 +106,11 @@ function ColumnHeader({ col, best, budget }) {
 
       {(col.isReference || (result && result.status !== 'unavailable')) && (
         <div>
-          <div className="num text-xl font-bold text-fg tracking-tight">{formatPrice(col.total)}</div>
+          <AnimatedPrice
+            value={col.total}
+            from={col.isReference ? undefined : 0}
+            className="block num text-xl font-bold text-fg tracking-tight"
+          />
           <div className="text-xs text-fg-3 flex flex-wrap gap-x-2">
             {col.isReference ? <span>Your build</span> : (
               <>
@@ -115,7 +123,16 @@ function ColumnHeader({ col, best, budget }) {
       )}
 
       <div className="flex flex-wrap gap-1.5">
-        {best && <StatusChip tone="ok" icon={Trophy} className="!px-2 !py-0.5">Best price</StatusChip>}
+        {best && (
+          // Lands last, with a little bounce: this is the answer the user came for.
+          <m.span
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ ...spring.snappy, damping: 18, delay: 0.35, opacity: tween.fast }}
+          >
+            <StatusChip tone="ok" icon={Trophy} className="!px-2 !py-0.5">Best price</StatusChip>
+          </m.span>
+        )}
         {result?.status === 'partial' && (
           <StatusChip tone="warn" icon={AlertTriangle} className="!px-2 !py-0.5">{result.counts.missing} not in stock</StatusChip>
         )}
@@ -150,7 +167,13 @@ function PartCell({ col, category, refPart, lowest }) {
   const soldOut = col.isReference && col.outOfStock.includes(category);
   const diff = !col.isReference && refPart ? part.price - refPart.price : 0;
   return (
-    <div className="flex flex-col gap-1.5 min-w-0">
+    // A store's parts settle in as its result arrives, in place of the skeleton.
+    <m.div
+      className="flex flex-col gap-1.5 min-w-0"
+      initial={col.isReference ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...spring.smooth, opacity: tween.base }}
+    >
       {part.url ? (
         <a
           href={part.url}
@@ -171,7 +194,7 @@ function PartCell({ col, category, refPart, lowest }) {
         {soldOut && <span className="text-xs text-warn">Sold out</span>}
       </div>
       {match && <div><MatchChip match={match} /></div>}
-    </div>
+    </m.div>
   );
 }
 
@@ -377,6 +400,7 @@ function CompareTabs({ columns, rows, bestSite, budget, stale, onAdopt }) {
  */
 export default function CrossCheckDialog({ open, onClose, isNarrow, check, referenceSite, build, budget, onRun, onAdopt }) {
   const dialogRef = useDialogFocus(open, onClose);
+  const { sheetProps, handleProps } = useSheetDrag(isNarrow, onClose);
   const { columns, rows, bestSite, data } = useColumns({ check, referenceSite, build });
   const headline = data && !check.stale ? crossCheckHeadline(data) : '';
   const saving = data ? bestStore(data).saving : 0;
@@ -401,10 +425,12 @@ export default function CrossCheckDialog({ open, onClose, isNarrow, check, refer
             aria-describedby="cross-check-lead"
             tabIndex={-1}
             {...(isNarrow ? sheet(true) : dialog)}
+            {...sheetProps}
             className="surface-float bg-surface border border-line flex flex-col w-full
               max-h-[92vh] rounded-t-2xl sm:rounded-2xl sm:max-w-6xl sm:max-h-[88vh]"
           >
-            <div className="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 sm:pt-5 pb-3 border-b border-line">
+            <SheetGrabber {...handleProps} />
+            <div {...handleProps} className="flex items-start justify-between gap-3 px-4 sm:px-5 pt-1 sm:pt-5 pb-3 border-b border-line">
               <div className="min-w-0">
                 <h2 id="cross-check-title" className="flex items-center gap-2 text-lg font-semibold text-fg">
                   <Columns3 size={18} className="text-accent" aria-hidden="true" />
@@ -440,7 +466,10 @@ export default function CrossCheckDialog({ open, onClose, isNarrow, check, refer
               )}
 
               {headline && (
-                <p
+                <m.p
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ ...spring.smooth, opacity: tween.base }}
                   className={`flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm font-medium text-fg ${
                     saving > 0 ? 'border-ok-line bg-ok-soft' : 'border-line bg-surface-2'
                   }`}
@@ -450,7 +479,7 @@ export default function CrossCheckDialog({ open, onClose, isNarrow, check, refer
                     ? <Trophy size={16} className="text-ok shrink-0 mt-0.5" aria-hidden="true" />
                     : <Check size={16} className="text-fg-2 shrink-0 mt-0.5" aria-hidden="true" />}
                   {headline}
-                </p>
+                </m.p>
               )}
 
               {check.status !== 'error' && (isNarrow ? (

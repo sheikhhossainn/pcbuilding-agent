@@ -8,6 +8,8 @@ import { formatPrice } from '../lib/format';
 import { getSpecChips } from '../lib/telemetry';
 import { describeFreshness } from '../lib/time';
 import { useDialogFocus } from '../hooks/useDialogFocus';
+import { useSheetDrag } from '../hooks/useSheetDrag';
+import SheetGrabber from './SheetGrabber';
 import PartImage from './PartImage';
 
 const EMPTY = { key: null, items: [], error: '' };
@@ -37,6 +39,7 @@ function DeltaLabel({ delta }) {
 export default function SwapDrawer({ category, current, site, build, intent, isNarrow, onClose, onPick }) {
   const open = Boolean(category);
   const dialogRef = useDialogFocus(open, onClose);
+  const { sheetProps, handleProps } = useSheetDrag(isNarrow, onClose);
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState(EMPTY);
 
@@ -95,11 +98,13 @@ export default function SwapDrawer({ category, current, site, build, intent, isN
             aria-labelledby="swap-title"
             tabIndex={-1}
             {...sheet(isNarrow)}
+            {...sheetProps}
             className="surface-float absolute bg-surface border-line flex flex-col
               inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t
               sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none sm:border-t-0 sm:border-l"
           >
-            <div className="flex items-start justify-between gap-3 p-5 border-b border-line">
+            <SheetGrabber {...handleProps} />
+            <div {...handleProps} className="flex items-start justify-between gap-3 px-5 pb-5 pt-2 sm:pt-5 border-b border-line">
               <div className="min-w-0">
                 <h2 id="swap-title" className="flex items-center gap-2 text-lg font-semibold text-fg">
                   <Icon size={18} className="text-fg-3" aria-hidden="true" />

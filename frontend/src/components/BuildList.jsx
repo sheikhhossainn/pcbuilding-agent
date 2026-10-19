@@ -19,7 +19,7 @@ const SECTIONS = [
  *   null = all of them. Only those rows show loading; the rest stay on screen as kept.
  * @param {Object} [changes] - category -> {before, after, delta} from the last refine
  */
-export default function BuildList({ build, hideEmpty, isBusy, refining = false, changing, changes, onRemove, onSwap }) {
+export default function BuildList({ build, hideEmpty, isBusy, refining = false, changing, changes, onRemove, onSwap, activeCategory = null }) {
   // Optional group: collapsed until something in it is chosen, unless the user toggles it.
   const [optionalOpen, setOptionalOpen] = useState(null);
 
@@ -96,6 +96,7 @@ export default function BuildList({ build, hideEmpty, isBusy, refining = false, 
                         index={index}
                         onRemove={onRemove}
                         onSwap={onSwap}
+                        active={activeCategory === category}
                       />
                     );
                   })}

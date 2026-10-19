@@ -122,7 +122,7 @@ function RemovedRow({ category, part, delta, index, Icon }) {
  */
 export default function PartRow({
   category, item, isRequired, dependency, isCore, index = 0, onRemove, onSwap,
-  kept = false, change = null,
+  kept = false, change = null, active = false,
 }) {
   const Icon = CATEGORY_ICONS[category] || Box;
 
@@ -161,9 +161,9 @@ export default function PartRow({
     <m.div
       {...rowMotion(index)}
       id={partRowId(category)}
-      className={`part-row card relative overflow-hidden px-3 sm:px-4 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 scroll-mt-40 transition-opacity duration-300 ${
+      className={`part-row card relative overflow-hidden px-3 sm:px-4 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 scroll-mt-40 transition-[opacity,border-color,box-shadow] duration-300 ${
         kept ? 'opacity-60' : ''
-      }`}
+      } ${active ? 'is-active' : ''}`}
     >
       {change && (
         <span
@@ -198,7 +198,14 @@ export default function PartRow({
           {change && (
             <span className="inline-flex items-center gap-1.5">
               <ChangeBadge kind={change.before ? 'changed' : 'added'} />
-              <span className={`num text-xs font-medium ${deltaTone(change.delta)}`}>{formatDelta(change.delta)}</span>
+              <m.span
+                className={`num text-xs font-medium ${deltaTone(change.delta)}`}
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ ...spring.snappy, delay: 0.25 + stagger(index, 0.04) }}
+              >
+                {formatDelta(change.delta)}
+              </m.span>
             </span>
           )}
           <AnimatedPrice value={item.price} from={0} delay={stagger(index, 0.04)} className="num text-sm font-semibold text-fg sm:hidden" />
@@ -210,14 +217,28 @@ export default function PartRow({
             </span>
           )}
         </div>
-        <div className="text-sm sm:text-[15px] font-medium text-fg leading-snug line-clamp-2 sm:truncate" title={item.name}>
+        {/* A replaced part flips in: the new name rises into place, the old one settles below it. */}
+        <m.div
+          key={item.name}
+          className="text-sm sm:text-[15px] font-medium text-fg leading-snug line-clamp-2 sm:truncate"
+          title={item.name}
+          initial={change?.before ? { opacity: 0, y: 10 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...spring.smooth, opacity: tween.base, delay: 0.15 + stagger(index, 0.04) }}
+        >
           {item.name}
-        </div>
+        </m.div>
         {change?.before && (
-          <div className="text-xs text-fg-3 truncate" title={change.before.name}>
+          <m.div
+            className="text-xs text-fg-3 truncate"
+            title={change.before.name}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...spring.smooth, opacity: tween.base, delay: 0.3 + stagger(index, 0.04) }}
+          >
             Was {change.before.name}{' '}
             <span className="num line-through">{formatPrice(change.before.price)}</span>
-          </div>
+          </m.div>
         )}
         {chips.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-1 sm:hidden">

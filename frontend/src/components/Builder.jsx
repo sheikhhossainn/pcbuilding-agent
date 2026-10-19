@@ -45,7 +45,7 @@ const STAGE_MESSAGES = {
 };
 
 function Builder({ page = null }) {
-  const { toast, showToast, dismissToast } = useToast();
+  const { toasts, showToast, dismissToast } = useToast();
   const settings = useSettings();
   const isNarrow = useMediaQuery('(max-width: 639px)');
 
@@ -170,8 +170,11 @@ function Builder({ page = null }) {
     : STAGE_MESSAGES[stage] || "Building your PC...";
 
   const handlePickAlternative = (part) => {
-    buildSession.swapPart(swapCategory, part);
+    const category = swapCategory;
+    buildSession.swapPart(category, part);
     setSwapCategory(null);
+    // Once the sheet is away, ring the row that changed so the eye lands on the new part.
+    setTimeout(() => flashRow(category), 220);
   };
 
   const handleShare = () => {
@@ -232,12 +235,18 @@ function Builder({ page = null }) {
     if (!el) return;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+    flashRow(category);
+  };
+
+  function flashRow(category) {
+    const el = document.getElementById(partRowId(category));
+    if (!el) return;
     el.classList.remove('is-flashing');
     // Restart the animation when the same row is picked twice.
     void el.offsetWidth;
     el.classList.add('is-flashing');
     setTimeout(() => el.classList.remove('is-flashing'), 1500);
-  };
+  }
 
   const pickPreset = (prompt) => {
     setChatInput(prompt);
@@ -442,6 +451,7 @@ function Builder({ page = null }) {
               changes={changesByCategory}
               onRemove={buildSession.removePart}
               onSwap={swapSite ? setSwapCategory : undefined}
+              activeCategory={swapCategory}
             />
 
             <RationaleCard explanation={explanation} />
@@ -511,7 +521,7 @@ function Builder({ page = null }) {
         onThemeChange={settings.setTheme}
       />
 
-      <Toast toast={toast} />
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

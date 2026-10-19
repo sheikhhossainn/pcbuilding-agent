@@ -552,6 +552,12 @@ h1 {
   }
 }
 
+/* The row whose swap sheet is open stays marked, so it's clear what is being replaced. */
+.part-row.is-active {
+  border-color: var(--accent-line);
+  box-shadow: var(--highlight), 0 0 0 3px var(--accent-soft);
+}
+
 /* A part row the change summary pointed at: a brief accent ring so the eye lands on it */
 .part-row.is-flashing {
   animation: row-flash 1.4s var(--motion-ease-out);
