@@ -56,6 +56,8 @@ export default function Composer({
   }
 
   const canSubmit = value.trim() !== '' && !isBusy;
+  // Re-measure for the morph only when the box's shape can change, not on every keystroke or poll.
+  const layoutDependency = `${isHero}|${isBusy}|${isRefining}|${value === ''}|${suggestions.length}`;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -104,9 +106,9 @@ export default function Composer({
 
   if (isHero) {
     return (
-      <m.form {...morph} onSubmit={handleSubmit} className="composer card surface-float p-3 sm:p-4">
-        <m.div layout="position">{textarea}</m.div>
-        <m.div layout="position" className="flex items-center justify-between gap-2 pt-3 mt-1 border-t border-line">
+      <m.form {...morph} layoutDependency={layoutDependency} onSubmit={handleSubmit} className="composer card surface-float p-3 sm:p-4">
+        <m.div layout="position" layoutDependency={layoutDependency}>{textarea}</m.div>
+        <m.div layout="position" layoutDependency={layoutDependency} className="flex items-center justify-between gap-2 pt-3 mt-1 border-t border-line">
           <ModifiersMenu onPick={addModifier} disabled={isBusy} />
           {sendOrStop || (
             <button type="submit" disabled={!canSubmit} className="btn btn-primary btn-touch px-5 gap-2">
@@ -127,14 +129,14 @@ export default function Composer({
         <div className="relative lg:col-span-8 max-w-2xl lg:max-w-none mx-auto w-full pointer-events-auto">
           {/* Desktop: the fade stays over the parts column and leaves the summary rail readable. */}
           <div className="hidden lg:block absolute inset-x-0 -top-10 -bottom-3 bg-gradient-to-t from-bg via-bg/90 to-transparent pointer-events-none" aria-hidden="true" />
-          <m.div {...morph} className="composer card surface-float relative">
+          <m.div {...morph} layoutDependency={layoutDependency} className="composer card surface-float relative">
             {isBusy ? (
-              <m.div layout="position" className="flex items-center gap-2.5 px-3.5 pt-2.5 text-sm text-fg-2 min-w-0">
+              <m.div layout="position" layoutDependency={layoutDependency} className="flex items-center gap-2.5 px-3.5 pt-2.5 text-sm text-fg-2 min-w-0">
                 <LogoMark size={18} animated className="shrink-0" />
                 <span className="truncate">{loadingMessage}</span>
               </m.div>
             ) : isRefining && (
-              <m.div layout="position" className="flex items-center gap-2 pl-3.5 pt-2 min-w-0">
+              <m.div layout="position" layoutDependency={layoutDependency} className="flex items-center gap-2 pl-3.5 pt-2 min-w-0">
                 <span className="flex items-center gap-1.5 text-xs font-medium text-accent shrink-0">
                   <RefreshCw size={12} aria-hidden="true" />
                   {versionNumber > 1 ? `Refining version ${versionNumber}` : 'Refining'}
@@ -160,7 +162,7 @@ export default function Composer({
               </m.div>
             )}
 
-            <m.form layout="position" onSubmit={handleSubmit} className="p-1.5 flex items-end gap-1">
+            <m.form layout="position" layoutDependency={layoutDependency} onSubmit={handleSubmit} className="p-1.5 flex items-end gap-1">
               <ModifiersMenu onPick={addModifier} disabled={isBusy} />
               {textarea}
               {sendOrStop || (

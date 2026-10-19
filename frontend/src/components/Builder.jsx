@@ -215,6 +215,15 @@ function Builder({ page = null }) {
     wasHero.current = showHero;
   }, [showHero]);
 
+  // Framer measures `layout` elements on every render (forced reflow). The page renders for many
+  // things that can't move these blocks (store-check progress, typing), so they only re-measure
+  // when something that changes their size or order does.
+  const layoutKey = [
+    isBusy, scope, lastRefine?.changed?.length ?? -1, warnings.length, Boolean(explanation), hideEmpty,
+    Boolean(errorMsg), Boolean(clarify), showTrafficWarning,
+    Object.keys(build).filter((c) => build[c]).join(','),
+  ].join('|');
+
   const composerProps = {
     value: chatInput,
     onChange: setChatInput,
@@ -389,6 +398,7 @@ function Builder({ page = null }) {
         <m.div
           key="builder"
           layout="position"
+          layoutDependency={layoutKey}
           {...fadeIn(10, spring.gentle)}
           className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start"
         >
@@ -431,7 +441,7 @@ function Builder({ page = null }) {
             </AnimatePresence>
 
             {!isBusy && lastRefine && (
-              <m.div layout="position" transition={spring.smooth}>
+              <m.div layout="position" layoutDependency={layoutKey} transition={spring.smooth}>
               <RefineSummary
                 refine={lastRefine}
                 total={total}
@@ -449,12 +459,12 @@ function Builder({ page = null }) {
             )}
 
             {!isBusy && warnings.length > 0 && (
-              <m.div layout="position" transition={spring.smooth}>
+              <m.div layout="position" layoutDependency={layoutKey} transition={spring.smooth}>
                 <WarningsBanner warnings={warnings} onFocusPart={focusPart} />
               </m.div>
             )}
 
-            <m.div layout="position" transition={spring.smooth} className="space-y-6">
+            <m.div layout="position" layoutDependency={layoutKey} transition={spring.smooth} className="space-y-6">
             <BuildList
               build={build}
               hideEmpty={hideEmpty}
@@ -469,7 +479,7 @@ function Builder({ page = null }) {
             </m.div>
 
             {explanation && (
-              <m.div layout="position" transition={spring.smooth}>
+              <m.div layout="position" layoutDependency={layoutKey} transition={spring.smooth}>
                 <RationaleCard explanation={explanation} />
               </m.div>
             )}

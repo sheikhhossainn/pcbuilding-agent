@@ -6,6 +6,12 @@ import { feedback } from '../lib/feedback';
 
 const IDLE = { status: 'idle', progress: {}, data: null, error: '', signature: null };
 
+const sameProgress = (a, b) => {
+  const ka = Object.keys(a || {});
+  const kb = Object.keys(b || {});
+  return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
+};
+
 /**
  * Prices the working build at every other store (POST /api/build/cross-check, then polls).
  * Results remember which build they were made for: when the build or store changes they are
@@ -43,8 +49,11 @@ export function useCrossCheck({ build, intent, site }) {
       const final = await pollJob(fetchStatus, {
         signal: controller.signal,
         intervalMs: 500,
+        // Polls return a fresh object every time; only a real change may re-render the page.
         onUpdate: (data) => {
-          if (data.progress) setState((prev) => ({ ...prev, progress: data.progress }));
+          if (data.progress) {
+            setState((prev) => (sameProgress(prev.progress, data.progress) ? prev : { ...prev, progress: data.progress }));
+          }
         },
       });
       if (!final || controller.signal.aborted) return;

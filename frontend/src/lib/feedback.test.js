@@ -88,6 +88,18 @@ test('unlock reports whether the context is running, so a refused resume is retr
   assert.equal(await fb.unlock(), true);
 });
 
+test('prepare creates the context ahead of any gesture, and not at all when sound is off', () => {
+  const on = setup();
+  on.fb.prepare();
+  assert.equal(on.created(), 1);
+  assert.equal(on.fb.play('copy'), false, 'still silent until a gesture unlocks it');
+
+  const off = setup();
+  off.fb.setPrefs({ sound: false });
+  off.fb.prepare();
+  assert.equal(off.created(), 0);
+});
+
 test('stays silent when muted or when the tab is hidden', () => {
   const muted = setup();
   muted.fb.setPrefs({ sound: false });

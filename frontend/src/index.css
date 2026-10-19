@@ -484,17 +484,35 @@ h1 {
   box-shadow: var(--highlight), var(--elev-2);
 }
 
-/* Skeletons: a soft sweep instead of a blink. Blocks inside share one gradient
-   (fixed attachment), so the light passes across the whole row at once. */
+/* Skeletons: a soft sweep instead of a blink. The light is a pseudo-element moved with a
+   transform, so it runs on the compositor: no repaint per frame, nothing on the main thread.
+   (Animating background-position, especially with fixed attachment, repaints every block
+   every frame and stutters as soon as many skeletons are on screen.) */
 .skeleton :where(.bg-surface-2) {
-  background-image: linear-gradient(100deg, var(--surface-2) 30%, var(--shimmer) 50%, var(--surface-2) 70%);
-  background-size: 200vw 100%;
-  background-attachment: fixed;
-  animation: shimmer 1.6s linear infinite;
+  position: relative;
+  overflow: hidden;
+}
+.skeleton :where(.bg-surface-2)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, var(--shimmer) 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: shimmer 1.5s var(--motion-ease-in-out) infinite;
+  will-change: transform;
 }
 @keyframes shimmer {
-  from { background-position: 100vw 0; }
-  to { background-position: -100vw 0; }
+  to { transform: translateX(100%); }
+}
+
+/* One-shot entrance for content that arrives in bulk (compare-stores cells and cards): pure CSS,
+   so dozens of elements can land in the same frame without a JS animation each. */
+.cc-in {
+  animation: cc-in 380ms var(--motion-ease-out) both;
+}
+@keyframes cc-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* Minimalist custom scrollbar */

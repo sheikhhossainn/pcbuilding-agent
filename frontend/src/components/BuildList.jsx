@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Flame, Layers, Monitor, ChevronRight } from 'lucide-react';
 import {
@@ -19,7 +19,7 @@ const SECTIONS = [
  *   null = all of them. Only those rows show loading; the rest stay on screen as kept.
  * @param {Object} [changes] - category -> {before, after, delta} from the last refine
  */
-export default function BuildList({ build, hideEmpty, isBusy, refining = false, changing, changes, onRemove, onSwap, activeCategory = null }) {
+function BuildList({ build, hideEmpty, isBusy, refining = false, changing, changes, onRemove, onSwap, activeCategory = null }) {
   // Optional group: collapsed until something in it is chosen, unless the user toggles it.
   const [optionalOpen, setOptionalOpen] = useState(null);
 
@@ -109,3 +109,7 @@ export default function BuildList({ build, hideEmpty, isBusy, refining = false, 
     </>
   );
 }
+
+// Memoized: the page re-renders for things that don't touch the list (store check progress, the
+// composer's text), and every row is a framer `layout` element that re-measures when it renders.
+export default memo(BuildList);

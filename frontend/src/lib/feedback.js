@@ -102,6 +102,16 @@ export function createFeedback({
     }
   }
 
+  /**
+   * Creates the context ahead of time, before any gesture, so it starts suspended. That is cheap;
+   * creating one after a gesture is not, because the browser then opens the audio device right
+   * there on the main thread (measured at ~400 ms in Chrome, a visible freeze on whatever the
+   * click opened). A suspended context is later started with resume(), which is asynchronous.
+   */
+  function prepare() {
+    if (prefs.sound) ensureContext();
+  }
+
   /** Called from a user gesture. Creates (or resumes) the audio context. */
   function unlock() {
     unlocked = true;
@@ -161,7 +171,7 @@ export function createFeedback({
     if (prefs.sound && unlocked) unlock();
   }
 
-  return { play, unlock, setPrefs, getPrefs: () => ({ ...prefs }) };
+  return { play, unlock, prepare, setPrefs, getPrefs: () => ({ ...prefs }) };
 }
 
 function defaultContext() {
@@ -187,11 +197,16 @@ export const unlockFeedback = () => engine.unlock();
 export const setFeedbackPrefs = (prefs) => engine.setPrefs(prefs);
 
 /**
- * Creates the audio context on a user gesture. The listeners stay until the context is actually
- * running (a touch's pointerdown cannot start it, but its pointerup can), then remove themselves.
+ * Gets audio ready without ever blocking an interaction: the context is created while the page is
+ * idle after load (suspended, cheap), and each gesture only resumes it until it is running. The
+ * gesture listeners then remove themselves. A touch's pointerdown cannot start audio, its
+ * pointerup can, hence the long list.
  */
 export function installFeedbackUnlock() {
   if (typeof window === 'undefined') return;
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+  idle(() => engine.prepare(), { timeout: 3000 });
+
   const events = ['pointerdown', 'pointerup', 'touchend', 'mousedown', 'click', 'keydown'];
   const opts = { capture: true, passive: true };
   const onGesture = () => {
