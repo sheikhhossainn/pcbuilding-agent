@@ -5,7 +5,7 @@ Features:
 - Opens ryans.com with CloudflareBrowser (dedicated port 9333, profile scraper/.profiles/ryans).
 - Positions Chrome visibly on screen so Turnstile challenge can be solved by human if prompted.
 - Validates every page navigation: skips saving and records to a failed list if Cloudflare is not cleared.
-- Performs strict category resolution with exclusions and specificity ranking.
+- Performs strict segment-based category resolution with brand exclusions and shortest-slug ranking.
 - Saves raw probe fixtures under scraper/tests/fixtures/ryans/raw/ (home.html, page1/page2 per category).
 - Captures XHR and Fetch JSON product responses to raw/xhr/<category>_<n>.json with index.jsonl.
 - Examines pagination strictly within container selectors.
@@ -48,6 +48,15 @@ CANDIDATE_CATEGORIES = {
     "ups": "https://www.ryans.com/category/ups",
 }
 
+BRAND_EXCLUSIONS = {
+    "intel", "amd", "nvidia", "asus", "msi", "gigabyte", "asrock", "biostar",
+    "colorful", "zotac", "pny", "sapphire", "corsair", "kingston", "gskill",
+    "adata", "team", "lexar", "transcend", "samsung", "crucial", "western-digital",
+    "seagate", "toshiba", "deepcool", "antec", "thermaltake", "cooler-master",
+    "montech", "lian-li", "nzxt", "gamdias", "viewsonic", "benq", "dell", "hp",
+    "acer", "lg", "lenovo", "philips", "logitech", "razer", "fantech", "a4tech"
+}
+
 CATEGORY_RULES = {
     "cpu": {
         "keywords": ["desktop-component-processor", "processor", "cpu"],
@@ -86,19 +95,19 @@ CATEGORY_RULES = {
         "exclusions": ["case-fan", "casing-fan", "laptop", "water-cooling-custom"],
     },
     "monitor": {
-        "keywords": ["/category/monitor", "monitor"],
+        "keywords": ["monitor"],
         "exclusions": ["arm", "stand", "mount", "bracket", "accessory", "accessories", "cable", "cleaner"],
     },
     "mouse": {
-        "keywords": ["accessories-mouse", "/category/mouse", "mouse"],
+        "keywords": ["accessories-mouse", "mouse"],
         "exclusions": ["pad", "mat", "feet", "bungee", "keyboard", "combo"],
     },
     "keyboard": {
-        "keywords": ["accessories-keyboard", "/category/keyboard", "keyboard"],
+        "keywords": ["accessories-keyboard", "keyboard"],
         "exclusions": ["mouse", "combo", "wrist", "cover", "switch", "keycap"],
     },
     "ups": {
-        "keywords": ["/category/ups", "ups"],
+        "keywords": ["ups"],
         "exclusions": ["battery", "stabilizer", "surge"],
     },
 }
@@ -112,6 +121,163 @@ PAGINATION_CONTAINER_SELECTORS = [
     "css:[aria-label*='pagination' i]",
     "css:.pager",
 ]
+
+
+def get_slug_segments(url_or_slug: str) -> tuple[str, list[str]]:
+    """Extract slug and split into lowercase segment tokens by hyphen."""
+    if not url_or_slug:
+        return "", []
+    path = url_or_slug.split("?")[0].split("#")[0].rstrip("/")
+    slug = path.split("/")[-1].lower()
+    segments = [s for s in slug.split("-") if s]
+    return slug, segments
+
+
+def has_consecutive_segments(segments: list[str], target_parts: list[str]) -> bool:
+    """Check if target_parts appears as a consecutive sequence in segments."""
+    if not target_parts or len(target_parts) > len(segments):
+        return False
+    n = len(target_parts)
+    for i in range(len(segments) - n + 1):
+        if segments[i:i + n] == target_parts:
+            return True
+    return False
+
+
+def is_slug_excluded(segments: list[str], custom_exclusions: list[str], allowed_words: set[str] = None) -> bool:
+    """Check if any custom exclusions or brand sub-categories match consecutive segments."""
+    allowed = allowed_words or set()
+
+    for excl in custom_exclusions:
+        excl_parts = excl.lower().split("-")
+        if has_consecutive_segments(segments, excl_parts):
+            return True
+
+    for brand in BRAND_EXCLUSIONS:
+        brand_parts = brand.lower().split("-")
+        if brand in allowed:
+            continue
+        if has_consecutive_segments(segments, brand_parts):
+            return True
+
+    return False
+
+
+def match_slug_keyword_tier(segments: list[str], keywords: list[str], candidate_slug: str) -> tuple[int, str]:
+    """Determine keyword match tier:
+    - Tier 3: Full candidate slug match (e.g. desktop-component-processor)
+    - Tier 2: Multi-word keyword match (e.g. graphics-card)
+    - Tier 1: Single-word keyword match (e.g. processor)
+    - Tier 0: No match
+    Returns (tier, matching_keyword).
+    """
+    candidate_parts = candidate_slug.lower().split("-")
+    if candidate_parts and has_consecutive_segments(segments, candidate_parts):
+        return 3, candidate_slug
+
+    best_tier = 0
+    best_kw = ""
+    for kw in keywords:
+        kw_parts = kw.lower().split("-")
+        if has_consecutive_segments(segments, kw_parts):
+            tier = 2 if len(kw_parts) > 1 else 1
+            if tier > best_tier:
+                best_tier = tier
+                best_kw = kw
+
+    return best_tier, best_kw
+
+
+def resolve_category_urls_strict(discovered_menu: dict[str, dict], candidates: dict[str, str] = None) -> dict[str, dict]:
+    """Resolve category URLs strictly according to rules:
+    - Keep candidate URL if it appears among discovered links.
+    - Match keywords on whole slug segments (split on "-"), not raw substrings (avoids 'ram' matching 'frame').
+    - Rank by (strongest keyword matched > shorter slug first).
+    - Exclude brand sub-categories (intel, amd, etc.) unless keyword contains them.
+    - Record source: 'candidate (verified in menu)', 'menu match', or 'candidate fallback'.
+    """
+    if candidates is None:
+        candidates = CANDIDATE_CATEGORIES
+
+    resolutions = {}
+
+    for cat, candidate_url in candidates.items():
+        candidate_slug, _ = get_slug_segments(candidate_url)
+        candidate_clean = candidate_url.split("?")[0].rstrip("/").lower()
+
+        # 1. Exact candidate match in discovered menu
+        exact_match = None
+        for disc_key, info in discovered_menu.items():
+            if info["url"].split("?")[0].rstrip("/").lower() == candidate_clean:
+                exact_match = info
+                break
+
+        if exact_match:
+            resolutions[cat] = {
+                "url": exact_match["url"],
+                "source": "candidate (verified in menu)",
+                "matched_text": exact_match.get("text", "")
+            }
+            continue
+
+        # 2. Strict slug matching against discovered URLs
+        rules = CATEGORY_RULES.get(cat, {})
+        keywords = rules.get("keywords", [])
+        exclusions = rules.get("exclusions", [])
+
+        valid_matches = []
+        for disc_key, info in discovered_menu.items():
+            slug, segments = get_slug_segments(info["url"])
+            if not segments:
+                continue
+
+            if is_slug_excluded(segments, exclusions):
+                continue
+
+            tier, matching_kw = match_slug_keyword_tier(segments, keywords, candidate_slug)
+            if tier > 0:
+                valid_matches.append({
+                    "tier": tier,
+                    "slug_len": len(slug),
+                    "url": info["url"],
+                    "text": info.get("text", ""),
+                    "matching_kw": matching_kw
+                })
+
+        if valid_matches:
+            # Sort: highest tier first, then shortest slug_len first
+            valid_matches.sort(key=lambda x: (-x["tier"], x["slug_len"]))
+            best = valid_matches[0]
+            resolutions[cat] = {
+                "url": best["url"],
+                "source": "menu match",
+                "matched_text": best["text"]
+            }
+        else:
+            resolutions[cat] = {
+                "url": candidate_url,
+                "source": "candidate fallback",
+                "matched_text": ""
+            }
+
+    return resolutions
+
+
+def print_resolution_table(resolutions):
+    """Print category resolution table to stdout and save to raw/category_resolution.txt."""
+    lines = []
+    header = f"{'Category':<14} | {'Source':<30} | {'Resolved URL'}"
+    separator = "-" * 14 + "-+-" + "-" * 30 + "-+-" + "-" * 60
+    lines.append(header)
+    lines.append(separator)
+    for cat, info in resolutions.items():
+        lines.append(f"{cat:<14} | {info['source']:<30} | {info['url']}")
+
+    table_text = "\n".join(lines)
+    print("\n" + table_text + "\n")
+
+    with open(RAW_DIR / "category_resolution.txt", "w", encoding="utf-8") as f:
+        f.write(table_text + "\n")
 
 
 def is_challenge_active(browser):
@@ -156,78 +322,6 @@ def extract_menu_links(browser):
         print(f"Warning scanning menu links: {e}")
 
     return discovered
-
-
-def resolve_category_urls_strict(discovered_menu):
-    """Resolve category URLs strictly according to rules:
-    - Keep candidate URL if it appears among discovered links.
-    - Otherwise match by slug with exclusions (avoid laptop, cooler for cpu, mounts for monitor).
-    - Prefer the longest, most specific match.
-    - Track source and print a structured table.
-    """
-    resolutions = {}
-
-    for cat, candidate_url in CANDIDATE_CATEGORIES.items():
-        candidate_clean = candidate_url.split("?")[0].rstrip("/").lower()
-
-        # 1. Exact candidate match in discovered menu
-        if candidate_clean in discovered_menu:
-            resolutions[cat] = {
-                "url": candidate_url,
-                "source": "candidate (verified in menu)",
-                "matched_text": discovered_menu[candidate_clean].get("text", "")
-            }
-            continue
-
-        # 2. Strict slug matching against discovered URLs
-        rules = CATEGORY_RULES.get(cat, {})
-        keywords = rules.get("keywords", [])
-        exclusions = rules.get("exclusions", [])
-
-        valid_matches = []
-        for norm_url, info in discovered_menu.items():
-            slug = norm_url.lower()
-            if any(excl in slug for excl in exclusions):
-                continue
-            matching_kw = [kw for kw in keywords if kw in slug]
-            if matching_kw:
-                # Specificity: max length of matching keyword + length of slug
-                specificity = max(len(kw) for kw in matching_kw) + len(slug)
-                valid_matches.append((specificity, len(slug), info["url"], info.get("text", "")))
-
-        if valid_matches:
-            valid_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
-            best_match = valid_matches[0]
-            resolutions[cat] = {
-                "url": best_match[2],
-                "source": "menu match",
-                "matched_text": best_match[3]
-            }
-        else:
-            resolutions[cat] = {
-                "url": candidate_url,
-                "source": "candidate fallback",
-                "matched_text": ""
-            }
-
-    return resolutions
-
-
-def print_resolution_table(resolutions):
-    """Print category resolution table to stdout and save to raw/category_resolution.txt."""
-    lines = []
-    header = f"{'Category':<14} | {'Source':<30} | {'Resolved URL'}"
-    separator = "-" * 14 + "-+-" + "-" * 30 + "-+-" + "-" * 60
-    lines.append(header)
-    lines.append(separator)
-    for cat, info in resolutions.items():
-        lines.append(f"{cat:<14} | {info['source']:<30} | {info['url']}")
-
-    table_text = "\n".join(lines)
-    print("\n" + table_text + "\n")
-
-    with open(RAW_DIR / "category_resolution.txt", "w", encoding="utf-8") as f:
-        f.write(table_text + "\n")
 
 
 def find_page_2_url(browser, base_url):
@@ -321,7 +415,6 @@ def harvest_xhr(browser, category, xhr_summary, counter):
                     "size": len(body_str)
                 }
                 xhr_summary.append(entry)
-                # Append to index.jsonl
                 with open(XHR_DIR / "index.jsonl", "a", encoding="utf-8") as idx:
                     idx.write(json.dumps(entry) + "\n")
                 print(f"    [XHR/Fetch] Captured product JSON -> xhr/{filename} ({entry['size']} bytes, status {status})")
@@ -332,6 +425,11 @@ def harvest_xhr(browser, category, xhr_summary, counter):
 def run_probe():
     os.makedirs(RAW_DIR, exist_ok=True)
     os.makedirs(XHR_DIR, exist_ok=True)
+
+    # Truncate index.jsonl at the start of each run (Requirement 3)
+    index_file = XHR_DIR / "index.jsonl"
+    with open(index_file, "w", encoding="utf-8") as f:
+        pass
 
     print("=" * 70)
     print("Starting Ryans Computers Discovery Probe")
@@ -347,7 +445,6 @@ def run_probe():
     try:
         browser.launch()
 
-        # Bring window onto visible screen area so human can solve Turnstile if prompted
         try:
             browser.page.set.window.location(50, 50)
             browser.page.set.window.size(1280, 850)
@@ -356,7 +453,6 @@ def run_probe():
         except Exception as e:
             print(f"Note: Could not set window position: {e}")
 
-        # Start network listener for both XHR and Fetch
         try:
             browser.page.listen.start(res_type=("XHR", "Fetch"))
             print("Network listener started for (XHR, Fetch) traffic.")
@@ -377,6 +473,9 @@ def run_probe():
             f.write(home_html)
         print(f"✓ Saved homepage HTML ({len(home_html)} bytes) -> raw/home.html")
         time.sleep(2)
+
+        # Harvest any XHR/Fetch triggered on homepage (Requirement 4)
+        harvest_xhr(browser, "home", xhr_summary, xhr_counter)
 
         # 2. Extract and resolve category links strictly
         discovered_menu = extract_menu_links(browser)

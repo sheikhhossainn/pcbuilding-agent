@@ -42,7 +42,6 @@ env/
 # Scraper State & Generated Data
 scraper/sync_state.json
 scraper/.profiles/
-scraper/tests/fixtures/ryans/raw/
 backend/parts.json
 *.json
 !package.json
@@ -50,6 +49,7 @@ backend/parts.json
 !jsconfig.json
 !.vscode/extensions.json
 !scraper/tests/fixtures/ryans/**
+scraper/tests/fixtures/ryans/raw/
 
 !frontend/vercel.json
 !graphify-out/*.json
