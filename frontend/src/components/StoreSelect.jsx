@@ -1,5 +1,6 @@
 import { useRef, useState, useId } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
+import { menu } from '../lib/motion';
 import { AlertTriangle, Check, ChevronDown } from 'lucide-react';
 import { SITE_OPTIONS } from '../lib/constants';
 import { useDismiss } from '../hooks/useDismiss';
@@ -86,14 +87,11 @@ export default function StoreSelect({
 
           <AnimatePresence>
             {open && (
-              <motion.ul
+              <m.ul
                 id={listId}
                 role="listbox"
                 aria-label={label}
-                initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                transition={{ duration: 0.14, ease: [0.23, 1, 0.32, 1] }}
+                {...menu}
                 style={{ transformOrigin: 'top' }}
                 className="absolute left-0 right-0 top-full mt-2 z-50 min-w-[14rem] card surface-float p-1.5 m-0 list-none"
               >
@@ -117,7 +115,7 @@ export default function StoreSelect({
                     </li>
                   );
                 })}
-              </motion.ul>
+              </m.ul>
             )}
           </AnimatePresence>
         </div>

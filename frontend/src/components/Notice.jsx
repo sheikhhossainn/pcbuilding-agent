@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
+import { fadeIn } from '../lib/motion';
 import { AlertCircle, AlertTriangle, HelpCircle, X } from 'lucide-react';
 
 const TONES = {
@@ -11,12 +12,9 @@ const TONES = {
 export default function Notice({ tone = 'warn', role, onDismiss, children }) {
   const { box, icon, Icon } = TONES[tone];
   return (
-    <motion.div
+    <m.div
       role={role}
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+      {...fadeIn(-6)}
       className={`mb-6 flex items-start gap-3 rounded-xl border p-4 text-sm leading-relaxed ${box}`}
     >
       <Icon className={`mt-0.5 shrink-0 ${icon}`} size={18} aria-hidden="true" />
@@ -31,6 +29,6 @@ export default function Notice({ tone = 'warn', role, onDismiss, children }) {
           <X size={16} aria-hidden="true" />
         </button>
       )}
-    </motion.div>
+    </m.div>
   );
 }

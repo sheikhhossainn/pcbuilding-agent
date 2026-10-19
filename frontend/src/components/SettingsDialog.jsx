@@ -1,4 +1,5 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
+import { backdrop, dialog } from '../lib/motion';
 import { Key, X } from 'lucide-react';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 
@@ -20,25 +21,19 @@ export default function SettingsDialog({
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
           key="settings-backdrop"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          {...backdrop}
           className="fixed inset-0 bg-[var(--scrim)] z-50 flex items-center justify-center p-4 print:hidden"
           onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
-          <motion.div
+          <m.div
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="settings-title"
             tabIndex={-1}
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+            {...dialog}
             className="card surface-float max-w-md w-full overflow-hidden"
           >
             <div className="flex items-center justify-between p-5 border-b border-line">
@@ -148,8 +143,8 @@ export default function SettingsDialog({
                 Save &amp; close
               </button>
             </div>
-          </motion.div>
-        </motion.div>
+          </m.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

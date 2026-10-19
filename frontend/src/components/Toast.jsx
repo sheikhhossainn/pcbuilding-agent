@@ -1,4 +1,5 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
+import { fadeIn, spring } from '../lib/motion';
 import { CheckCircle2 } from 'lucide-react';
 
 export default function Toast({ toast }) {
@@ -10,12 +11,9 @@ export default function Toast({ toast }) {
     >
       <AnimatePresence>
         {toast && (
-          <motion.div
+          <m.div
             key={toast.message}
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+            {...fadeIn(-12, spring.snappy)}
           >
             <div className={`surface-float pointer-events-auto flex items-center gap-2.5 rounded-full bg-fg text-bg pl-4 text-sm ${toast.action ? 'pr-1 py-1' : 'pr-5 py-2.5'}`}>
               <CheckCircle2 size={16} className="shrink-0" aria-hidden="true" />
@@ -30,7 +28,7 @@ export default function Toast({ toast }) {
                 </button>
               )}
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

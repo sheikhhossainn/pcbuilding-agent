@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
+import { menu } from '../lib/motion';
 import { Copy, Key, FileDown, Plus, Menu, X, Link2, Columns3 } from 'lucide-react';
 import { LogoMark } from './Logo';
 import StoreSelect from './StoreSelect';
@@ -105,11 +106,8 @@ export default function Header({
 
       <AnimatePresence>
         {menuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+          <m.div
+            {...menu}
             className="max-w-7xl mx-auto mt-2 card surface-float p-4 lg:hidden flex flex-col gap-3"
           >
             <StoreSelect
@@ -154,7 +152,7 @@ export default function Header({
                 <span>New build</span>
               </button>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
+import { fadeIn, collapse } from '../lib/motion';
 import { ArrowRight, ChevronDown, RotateCcw, Sparkles, X } from 'lucide-react';
 import { formatDelta, deltaTone } from '../lib/buildDiff';
 import { formatPrice } from '../lib/format';
@@ -38,11 +39,9 @@ export default function RefineSummary({
   }
 
   return (
-    <motion.section
+    <m.section
       aria-label="What changed"
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+      {...fadeIn(-6)}
       className="card overflow-hidden"
     >
       <div className="px-4 pt-3.5 pb-3 flex items-start gap-3">
@@ -104,12 +103,9 @@ export default function RefineSummary({
 
       <AnimatePresence initial={false}>
         {open && !nothingChanged && (
-          <motion.ul
+          <m.ul
             id="refine-details"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            {...collapse}
             className="border-t border-line bg-bg/40 divide-y divide-line overflow-hidden"
           >
             {changed.map(({ category, before, after, delta }) => (
@@ -125,7 +121,7 @@ export default function RefineSummary({
                 <span className={`num font-semibold self-center ${deltaTone(delta)}`}>{formatDelta(delta)}</span>
               </li>
             ))}
-          </motion.ul>
+          </m.ul>
         )}
       </AnimatePresence>
 
@@ -155,6 +151,6 @@ export default function RefineSummary({
           </button>
         )}
       </div>
-    </motion.section>
+    </m.section>
   );
 }

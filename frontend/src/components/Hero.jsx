@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
+import { fadeIn, spring } from '../lib/motion';
 import { PRESET_WORKLOADS } from '../lib/constants';
 import Composer from './Composer';
 import StoreSelect from './StoreSelect';
@@ -11,11 +12,9 @@ export default function Hero({
   lead = 'Describe what you need. We match live prices from Bangladeshi retailers and check compatibility.',
 }) {
   return (
-    <motion.section
+    <m.section
       aria-label="Start a new build"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+      {...fadeIn(8, spring.gentle)}
       className="max-w-2xl mx-auto pt-4 sm:pt-12"
     >
       <div className="text-center">
@@ -65,6 +64,6 @@ export default function Hero({
           })}
         </div>
       </div>
-    </motion.section>
+    </m.section>
   );
 }

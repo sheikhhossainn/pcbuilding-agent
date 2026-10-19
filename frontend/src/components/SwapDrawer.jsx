@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
+import { backdrop, sheet } from '../lib/motion';
 import { X, Box, RefreshCw } from 'lucide-react';
 import { CATEGORY_ICONS, SITE_OPTIONS } from '../lib/constants';
 import { formatPrice } from '../lib/format';
@@ -81,25 +82,19 @@ export default function SwapDrawer({ category, current, site, build, intent, isN
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
           key="swap-backdrop"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          {...backdrop}
           className="fixed inset-0 z-50 bg-[var(--scrim)] print:hidden"
           onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
-          <motion.aside
+          <m.aside
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="swap-title"
             tabIndex={-1}
-            initial={isNarrow ? { y: '100%' } : { x: '100%' }}
-            animate={{ x: 0, y: 0 }}
-            exit={isNarrow ? { y: '100%' } : { x: '100%' }}
-            transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
+            {...sheet(isNarrow)}
             className="surface-float absolute bg-surface border-line flex flex-col
               inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t
               sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none sm:border-t-0 sm:border-l"
@@ -201,8 +196,8 @@ export default function SwapDrawer({ category, current, site, build, intent, isN
             <p className="px-5 py-3 border-t border-line text-xs text-fg-3">
               In stock at {siteLabel} and compatible with your CPU, board, memory and PSU.
             </p>
-          </motion.aside>
-        </motion.div>
+          </m.aside>
+        </m.div>
       )}
     </AnimatePresence>
   );

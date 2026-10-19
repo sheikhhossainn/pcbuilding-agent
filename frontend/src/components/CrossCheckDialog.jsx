@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
+import { backdrop, dialog, sheet } from '../lib/motion';
 import {
   X, Columns3, RefreshCw, ExternalLink, Check, Equal, Shuffle, Ban, Plus, Loader2, Trophy, AlertTriangle, Box,
 } from 'lucide-react';
@@ -386,26 +387,20 @@ export default function CrossCheckDialog({ open, onClose, isNarrow, check, refer
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
           key="cross-check-backdrop"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          {...backdrop}
           className="fixed inset-0 z-50 bg-[var(--scrim)] flex items-end sm:items-center justify-center sm:p-6 print:hidden"
           onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
-          <motion.section
+          <m.section
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="cross-check-title"
             aria-describedby="cross-check-lead"
             tabIndex={-1}
-            initial={isNarrow ? { y: '100%' } : { opacity: 0, y: 12, scale: 0.98 }}
-            animate={isNarrow ? { y: 0 } : { opacity: 1, y: 0, scale: 1 }}
-            exit={isNarrow ? { y: '100%' } : { opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
+            {...(isNarrow ? sheet(true) : dialog)}
             className="surface-float bg-surface border border-line flex flex-col w-full
               max-h-[92vh] rounded-t-2xl sm:rounded-2xl sm:max-w-6xl sm:max-h-[88vh]"
           >
@@ -476,8 +471,8 @@ export default function CrossCheckDialog({ open, onClose, isNarrow, check, refer
                 )}
               </div>
             </div>
-          </motion.section>
-        </motion.div>
+          </m.section>
+        </m.div>
       )}
     </AnimatePresence>
   );

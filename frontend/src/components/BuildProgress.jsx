@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
+import { fadeIn } from '../lib/motion';
 import { LogoMark } from './Logo';
 import InterpretationChips from './InterpretationChips';
 
@@ -23,11 +24,8 @@ export default function BuildProgress({ stage, message, request = '', interpreta
   const current = STEPS.findIndex((s) => s.stage === stage);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
+    <m.div
+      {...fadeIn(6)}
       className="card p-4 sm:p-5 border-accent-line"
     >
       <div className="flex items-center gap-4">
@@ -70,6 +68,6 @@ export default function BuildProgress({ stage, message, request = '', interpreta
       </ol>
 
       <InterpretationChips items={interpretation} label="Understood as" live className="mt-3 pt-3 border-t border-line" />
-    </motion.div>
+    </m.div>
   );
 }

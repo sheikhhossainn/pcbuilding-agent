@@ -1,4 +1,5 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { m } from 'framer-motion';
+import { spring, tween, stagger } from '../lib/motion';
 import { Box, ExternalLink, Trash2, ArrowLeftRight, Lock } from 'lucide-react';
 import { CATEGORY_ICONS, partRowId } from '../lib/constants';
 import { formatPrice } from '../lib/format';
@@ -29,8 +30,8 @@ const rowMotion = (index) => ({
   layout: true,
   initial: { opacity: 0, y: 6 },
   animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0 },
-  transition: { duration: 0.2, ease: [0.23, 1, 0.32, 1], delay: Math.min(index, 8) * 0.03 },
+  exit: { opacity: 0, transition: tween.exit },
+  transition: { ...spring.smooth, opacity: tween.base, delay: stagger(index) },
 });
 
 const BADGE = {
@@ -54,17 +55,15 @@ function ChangeBadge({ kind }) {
  * through as the row settles, and what removing it saved.
  */
 function RemovedRow({ category, part, delta, index, Icon }) {
-  const reduceMotion = useReducedMotion();
-  const delay = 0.12 + Math.min(index, 8) * 0.05;
-  const settle = { duration: reduceMotion ? 0 : 0.35, ease: [0.23, 1, 0.32, 1], delay: reduceMotion ? 0 : delay };
+  const settle = { ...tween.slow, delay: 0.12 + stagger(index, 0.05) };
 
   return (
-    <motion.div
+    <m.div
       {...rowMotion(index)}
       id={partRowId(category)}
       className="part-row relative overflow-hidden rounded-xl border border-dashed border-line-strong px-3 sm:px-4 py-2.5 min-h-14 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 scroll-mt-40"
     >
-      <motion.div
+      <m.div
         className="w-10 h-10 rounded-lg shrink-0 overflow-hidden"
         initial={{ opacity: 1, filter: 'grayscale(0)' }}
         animate={{ opacity: 0.45, filter: 'grayscale(1)' }}
@@ -80,7 +79,7 @@ function RemovedRow({ category, part, delta, index, Icon }) {
             </div>
           )}
         />
-      </motion.div>
+      </m.div>
 
       <div className="min-w-0">
         <div className="flex items-center gap-2">
@@ -88,7 +87,7 @@ function RemovedRow({ category, part, delta, index, Icon }) {
           <ChangeBadge kind="removed" />
         </div>
         <div className="relative max-w-full w-fit">
-          <motion.p
+          <m.p
             className="text-sm text-fg-2 truncate"
             initial={{ opacity: 1 }}
             animate={{ opacity: 0.75 }}
@@ -96,8 +95,8 @@ function RemovedRow({ category, part, delta, index, Icon }) {
             title={part.name}
           >
             {part.name}
-          </motion.p>
-          <motion.span
+          </m.p>
+          <m.span
             className="absolute left-0 right-0 top-1/2 h-px bg-fg-3 origin-left"
             initial={{ scaleX: 0 }}
             animate={{ scaleX: 1 }}
@@ -111,7 +110,7 @@ function RemovedRow({ category, part, delta, index, Icon }) {
         <div className={`num text-sm font-semibold ${deltaTone(delta)}`}>{formatDelta(delta)}</div>
         <div className="text-xs text-fg-3">saved</div>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -131,7 +130,7 @@ export default function PartRow({
 
   if (!item) {
     return (
-      <motion.div
+      <m.div
         {...rowMotion(index)}
         id={partRowId(category)}
         className="part-row flex items-center gap-3 rounded-xl border border-dashed border-line-strong px-3 sm:px-4 py-2 min-h-14 scroll-mt-40"
@@ -149,7 +148,7 @@ export default function PartRow({
           {dependency && <span className="text-xs text-fg-3">Must match {dependency}</span>}
         </div>
         <span className="text-sm text-fg-3 shrink-0">Not selected</span>
-      </motion.div>
+      </m.div>
     );
   }
 
@@ -157,7 +156,7 @@ export default function PartRow({
   const freshness = describeFreshness(item.updatedAt);
 
   return (
-    <motion.div
+    <m.div
       {...rowMotion(index)}
       id={partRowId(category)}
       className={`part-row card relative overflow-hidden px-3 sm:px-4 py-3 grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 scroll-mt-40 transition-opacity duration-300 ${
@@ -275,6 +274,6 @@ export default function PartRow({
       </div>
 
       <RowMenu category={category} url={item.url} onRemove={onRemove} onSwap={onSwap} />
-    </motion.div>
+    </m.div>
   );
 }
