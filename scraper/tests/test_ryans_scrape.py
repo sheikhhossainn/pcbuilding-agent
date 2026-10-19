@@ -52,6 +52,47 @@ class MockBrowser:
         self._current_page = None
 
 
+class SequenceBrowser(MockBrowser):
+    """MockBrowser whose route values may be lists: each open() of that URL takes the next entry.
+
+    An entry is (cleared, title, html), or an exception instance to raise from open().
+    """
+
+    def open(self, url, timeout=300):
+        route = self.routes.get(url)
+        if not isinstance(route, list):
+            return super().open(url, timeout)
+        self.opened_urls.append(url)
+        entry = route.pop(0)
+        if isinstance(entry, Exception):
+            raise entry
+        cleared, title, html_content = entry
+        self._current_page = MockPage(title, html_content)
+        return cleared
+
+
+CPU_URL = "https://www.ryans.com/category/desktop-component-processor?limit=100"
+CHALLENGE = (False, "Just a moment...", "<html><body>Challenge</body></html>")
+
+
+def _card(slug, price):
+    return (
+        '<div class="category-single-product">'
+        f'<div class="image-box"><a href="https://www.ryans.com/{slug}"><img src="{slug}.jpg"></a></div>'
+        f'<button data-item=\'{{"product_name": "{slug}", "product_price2": {price}, "product_is_upcoming": "0"}}\'>Add to Cart</button>'
+        '</div>'
+    )
+
+
+def _page(cards, last=None):
+    pagination = ""
+    if last:
+        pagination = '<ul class="pagination">' + "".join(
+            f'<a href="?page={n}">{n}</a>' for n in range(2, last + 1)
+        ) + "</ul>"
+    return f"<html><body>{''.join(cards)}{pagination}</body></html>"
+
+
 class TestRyansScrape(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -146,43 +187,63 @@ class TestRyansScrape(unittest.TestCase):
         dup_items = [p for p in results if p["url"] == "https://www.ryans.com/duplicate-item"]
         self.assertEqual(len(dup_items), 1)
 
-    @patch("time.sleep")
-    def test_skipped_page_when_challenge_not_cleared(self, _mock_sleep):
-        """scrape() skips a page when Cloudflare challenge fails to clear and proceeds to the next page."""
-        p1 = (
-            '<html><body>'
-            '<div class="category-single-product">'
-            '<div class="image-box"><a href="https://www.ryans.com/item-1"><img src="1.jpg"></a></div>'
-            '<button data-item=\'{"product_name": "Item 1", "product_price2": 1000, "product_is_upcoming": "0"}\'>Add to Cart</button>'
-            '</div>'
-            '<ul class="pagination"><a href="?page=2">2</a><a href="?page=3">3</a></ul>'
-            '</body></html>'
-        )
-        p2_cf_challenge = '<html><head><title>Just a moment...</title></head><body>Challenge</body></html>'
-        p3 = (
-            '<html><body>'
-            '<div class="category-single-product">'
-            '<div class="image-box"><a href="https://www.ryans.com/item-3"><img src="3.jpg"></a></div>'
-            '<button data-item=\'{"product_name": "Item 3", "product_price2": 3000, "product_is_upcoming": "0"}\'>Add to Cart</button>'
-            '</div>'
-            '</body></html>'
-        )
-
-        routes = {
-            "https://www.ryans.com/category/desktop-component-processor?limit=100": (True, "Processors", p1),
-            "https://www.ryans.com/category/desktop-component-processor?limit=100&page=2": (False, "Just a moment...", p2_cf_challenge),
-            "https://www.ryans.com/category/desktop-component-processor?limit=100&page=3": (True, "Processors", p3),
+    def _three_page_routes(self, page2):
+        """CPU routes where page 1 says there are 3 pages; page2 is the route value for page 2."""
+        return {
+            CPU_URL: (True, "Processors", _page([_card("item-1", 1000)], last=3)),
+            CPU_URL + "&page=2": page2,
+            CPU_URL + "&page=3": (True, "Processors", _page([_card("item-3", 3000)])),
         }
 
-        mock_browser = MockBrowser(routes)
+    @patch("time.sleep")
+    def test_page_retried_once_then_succeeds(self, _mock_sleep):
+        """A page that fails once and loads on the retry is kept: every page's items come back."""
+        routes = self._three_page_routes([
+            CHALLENGE,
+            (True, "Processors", _page([_card("item-2", 2000)])),
+        ])
+        mock_browser = SequenceBrowser(routes)
         with patch.object(ryans, "_get_browser", return_value=mock_browser):
             results = ryans.scrape("cpu")
 
-        # Page 2 was skipped; results contain Item 1 and Item 3
-        urls = [p["url"] for p in results]
-        self.assertIn("https://www.ryans.com/item-1", urls)
-        self.assertIn("https://www.ryans.com/item-3", urls)
-        self.assertEqual(len(results), 2)
+        self.assertEqual(mock_browser.opened_urls.count(CPU_URL + "&page=2"), 2)
+        self.assertEqual(
+            [p["url"] for p in results],
+            ["https://www.ryans.com/item-1", "https://www.ryans.com/item-2", "https://www.ryans.com/item-3"],
+        )
+
+    @patch("time.sleep")
+    def test_page_failing_twice_raises(self, _mock_sleep):
+        """A page whose challenge never clears raises instead of returning the other pages' items."""
+        mock_browser = SequenceBrowser(self._three_page_routes([CHALLENGE, CHALLENGE]))
+        with patch.object(ryans, "_get_browser", return_value=mock_browser):
+            with self.assertRaises(RuntimeError) as ctx:
+                ryans.scrape("cpu")
+
+        self.assertIn("page 2", str(ctx.exception))
+        self.assertNotIn(CPU_URL + "&page=3", mock_browser.opened_urls)
+
+    @patch("time.sleep")
+    def test_open_raising_twice_raises(self, _mock_sleep):
+        """An exception from the browser on both tries raises RuntimeError."""
+        error = RuntimeError("tab crashed")
+        mock_browser = SequenceBrowser(self._three_page_routes([error, error]))
+        with patch.object(ryans, "_get_browser", return_value=mock_browser):
+            with self.assertRaises(RuntimeError) as ctx:
+                ryans.scrape("cpu")
+
+        self.assertIn("tab crashed", str(ctx.exception))
+
+    @patch("time.sleep")
+    def test_empty_first_page_raises(self, _mock_sleep):
+        """Page 1 loading with a normal title but no products means a wrong URL or changed markup."""
+        routes = {CPU_URL: (True, "Page Not Found | RYANS", "<html><body><p>Nothing here</p></body></html>")}
+        mock_browser = MockBrowser(routes)
+        with patch.object(ryans, "_get_browser", return_value=mock_browser):
+            with self.assertRaises(RuntimeError) as ctx:
+                ryans.scrape("cpu")
+
+        self.assertIn("0 items on page 1", str(ctx.exception))
 
     @patch("time.sleep")
     def test_storage_walks_both_urls(self, _mock_sleep):

@@ -189,12 +189,39 @@ def last_page(html_content: str) -> int:
     return max(nums) if nums else 1
 
 
+PAGE_ATTEMPTS = 2
+RETRY_DELAY_S = 5
+
+
+def _load_page(browser, url: str, label: str) -> str:
+    """Open a listing page and return its HTML, trying twice before giving up.
+
+    Raises RuntimeError instead of skipping: a missing page would drop its products from the
+    scrape, and sync_db would then mark them out of stock. On an error sync_db pauses at this
+    category and leaves stock flags alone.
+    """
+    reason = ""
+    for attempt in range(1, PAGE_ATTEMPTS + 1):
+        try:
+            if browser.open(url) and browser.is_cloudflare_cleared():
+                return browser.page.html
+            reason = f"challenge not cleared (title: '{browser.page.title if browser.page else ''}')"
+        except Exception as e:
+            reason = f"{type(e).__name__}: {e}"
+        if attempt < PAGE_ATTEMPTS:
+            print(f"{reason}, retrying...", end=" ", flush=True)
+            time.sleep(RETRY_DELAY_S)
+    raise RuntimeError(f"ryans {label} failed after {PAGE_ATTEMPTS} attempts: {reason}")
+
+
 def scrape(category: str, price_min=None, price_max=None, sort_order=None) -> list[dict]:
     """Scrape product listings for a category from Ryans Computers.
     
     Walks all pages for each URL mapped to the category using ?limit=100.
     Stops a URL early when a page's products are all out of stock (since Ryans lists in-stock first).
     Applies client-side price bounds, de-duplicates by URL, and returns {name, price, image, url, in_stock}.
+    Raises RuntimeError when a page can't be loaded, or when page 1 has no products, rather than
+    returning a partial list.
     """
     if category not in URL_MAP:
         raise ValueError(f"Category '{category}' not mapped for ryans")
@@ -212,43 +239,35 @@ def scrape(category: str, price_min=None, price_max=None, sort_order=None) -> li
             url = f"{base_url}{sep}limit=100" if page_num == 1 else f"{base_url}{sep}limit=100&page={page_num}"
             print(f"    Page {page_num}/{total_pages}...", end=" ", flush=True)
 
-            try:
-                cleared = browser.open(url)
-                if not cleared or not browser.is_cloudflare_cleared():
-                    print("Cloudflare challenge not cleared, skipping page")
-                    page_num += 1
-                    time.sleep(random.uniform(1.5, 3.0))
-                    continue
+            page_html = _load_page(browser, url, f"{category} page {page_num} ({url})")
+            if page_num == 1:
+                total_pages = last_page(page_html)
 
-                page_html = browser.page.html
+            page_products = parse_listing(page_html)
+
+            if not page_products:
+                title = browser.page.title or ""
+                # An empty first page means a wrong URL or changed markup, not an empty category.
                 if page_num == 1:
-                    total_pages = last_page(page_html)
+                    raise RuntimeError(f"ryans {category}: 0 items on page 1 of {url} "
+                                       f"(title: '{title}'), possible selector drift or wrong URL")
+                print(f"0 items — possible selector drift (title: '{title}')")
+            else:
+                in_stock_count = sum(1 for p in page_products if p.get("in_stock"))
+                print(f"{len(page_products)} items ({in_stock_count} in stock)")
 
-                page_products = parse_listing(page_html)
+            # De-duplicate across pages and URLs
+            for p in page_products:
+                p_url = p.get("url")
+                if p_url and p_url not in seen_urls:
+                    seen_urls.add(p_url)
+                    all_products.append(p)
 
-                # Warn if 0 products found on a page within bounds
-                if not page_products and browser.is_cloudflare_cleared():
-                    title = browser.page.title or ""
-                    print(f"0 items — possible selector drift (title: '{title}')")
-                else:
-                    in_stock_count = sum(1 for p in page_products if p.get("in_stock"))
-                    print(f"{len(page_products)} items ({in_stock_count} in stock)")
-
-                # De-duplicate across pages and URLs
-                for p in page_products:
-                    p_url = p.get("url")
-                    if p_url and p_url not in seen_urls:
-                        seen_urls.add(p_url)
-                        all_products.append(p)
-
-                # Early stop: Ryans lists in-stock items first. If all items on this page are out of stock,
-                # stop pagination for this URL and return what we have so far.
-                if page_products and all(not p.get("in_stock") for p in page_products):
-                    print(f"    stopped at page {page_num}/{total_pages} (rest out of stock)")
-                    break
-
-            except Exception as e:
-                print(f"Error on page {page_num}: {e}")
+            # Early stop: Ryans lists in-stock items first. If all items on this page are out of stock,
+            # stop pagination for this URL and return what we have so far.
+            if page_products and all(not p.get("in_stock") for p in page_products):
+                print(f"    stopped at page {page_num}/{total_pages} (rest out of stock)")
+                break
 
             page_num += 1
             if page_num <= total_pages:
@@ -280,23 +299,25 @@ if __name__ == "__main__":
     cat = sys.argv[1] if len(sys.argv) > 1 else "cpu"
     print(f"\n--- Scraping Ryans: {cat} ---")
 
-    b = _get_browser()
-    for endpoint in URL_MAP.get(cat, []):
-        test_url = f"{endpoint}?limit=100"
-        b.open(test_url)
-        lp = last_page(b.page.html) if b.page else 1
-        print(f"Endpoint: {endpoint}")
-        print(f"  Title: '{b.page.title if b.page else ''}'")
-        print(f"  Detected last page: {lp}")
+    try:
+        b = _get_browser()
+        for endpoint in URL_MAP.get(cat, []):
+            test_url = f"{endpoint}?limit=100"
+            b.open(test_url)
+            lp = last_page(b.page.html) if b.page else 1
+            print(f"Endpoint: {endpoint}")
+            print(f"  Title: '{b.page.title if b.page else ''}'")
+            print(f"  Detected last page: {lp}")
 
-    results = scrape(cat)
-    in_stock_total = sum(1 for p in results if p.get("in_stock"))
-    print(f"\nResults for {cat}:")
-    print(f"  Total items: {len(results)}")
-    print(f"  In-stock items: {in_stock_total}")
-    print(f"  Out-of-stock items: {len(results) - in_stock_total}")
-    print(f"\nFirst 3 items:")
-    for idx, p in enumerate(results[:3], start=1):
-        print(f"  {idx}. {p['name']} | Tk {p['price']} | In-stock: {p['in_stock']}")
-        print(f"     URL: {p['url']}")
-    close()
+        results = scrape(cat)
+        in_stock_total = sum(1 for p in results if p.get("in_stock"))
+        print(f"\nResults for {cat}:")
+        print(f"  Total items: {len(results)}")
+        print(f"  In-stock items: {in_stock_total}")
+        print(f"  Out-of-stock items: {len(results) - in_stock_total}")
+        print(f"\nFirst 3 items:")
+        for idx, p in enumerate(results[:3], start=1):
+            print(f"  {idx}. {p['name']} | Tk {p['price']} | In-stock: {p['in_stock']}")
+            print(f"     URL: {p['url']}")
+    finally:
+        close()
