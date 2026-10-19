@@ -315,7 +315,13 @@ function Builder({ page = null }) {
     );
   };
 
-  const handleExport = () => window.print();
+  const handleExport = () => {
+    if (telemetry.configuredCount === 0) {
+      showToast("Build a PC first", null, { tone: 'info' });
+      return;
+    }
+    window.print();
+  };
 
   return (
     <div className="min-h-screen pb-44 sm:pb-36 text-fg">
