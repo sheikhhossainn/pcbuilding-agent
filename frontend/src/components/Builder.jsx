@@ -482,6 +482,8 @@ function Builder({ page = null }) {
         onSoundChange={changeSound}
         haptics={settings.haptics}
         onHapticsChange={settings.setHaptics}
+        theme={settings.theme}
+        onThemeChange={settings.setTheme}
       />
 
       <Toast toast={toast} />

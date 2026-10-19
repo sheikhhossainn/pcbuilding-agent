@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { setFeedbackPrefs } from '../lib/feedback';
+import { applyTheme, normalizeTheme } from '../lib/theme';
 
 const read = (key, fallback) => {
   try {
@@ -23,6 +24,7 @@ export function useSettings() {
   const [provider, setProvider] = useState(() => read('aiProvider', 'ollama'));
   const [sound, setSound] = useState(() => readFlag('soundEnabled', true));
   const [haptics, setHaptics] = useState(() => readFlag('hapticsEnabled', true));
+  const [theme, setTheme] = useState(() => normalizeTheme(read('theme', 'system')));
 
   useEffect(() => {
     try {
@@ -31,10 +33,15 @@ export function useSettings() {
       localStorage.setItem('aiProvider', provider);
       localStorage.setItem('soundEnabled', sound ? '1' : '0');
       localStorage.setItem('hapticsEnabled', haptics ? '1' : '0');
+      localStorage.setItem('theme', theme);
     } catch {
       // storage unavailable — settings just won't persist
     }
-  }, [groqKey, ollamaKey, provider, sound, haptics]);
+  }, [groqKey, ollamaKey, provider, sound, haptics, theme]);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     setFeedbackPrefs({ sound, haptics });
@@ -43,5 +50,6 @@ export function useSettings() {
   return {
     groqKey, setGroqKey, ollamaKey, setOllamaKey, provider, setProvider,
     sound, setSound, haptics, setHaptics,
+    theme, setTheme,
   };
 }

@@ -13,7 +13,7 @@ import PartImage from './PartImage';
 export function SkeletonRow({ label }) {
   return (
     <div
-      className={`card px-4 py-3 flex items-center gap-3 animate-pulse min-h-16 ${label ? 'border-accent-line' : ''}`}
+      className={`skeleton card px-4 py-3 flex items-center gap-3 min-h-16 ${label ? 'border-accent-line' : ''}`}
       aria-hidden="true"
     >
       <div className="w-10 h-10 bg-surface-2 rounded-lg shrink-0" />

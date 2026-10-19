@@ -1,6 +1,6 @@
 import { m, AnimatePresence } from 'framer-motion';
 import { backdrop, dialog } from '../lib/motion';
-import { Key, X, Volume2, Vibrate } from 'lucide-react';
+import { Key, X, Volume2, Vibrate, Monitor, Sun, Moon } from 'lucide-react';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 
 // Desktop Chrome has navigator.vibrate but no motor; only offer the switch on touch devices.
@@ -34,6 +34,12 @@ function Switch({ id, icon: Icon, label, hint, checked, onChange }) {
   );
 }
 
+const APPEARANCE = [
+  { value: 'system', label: 'System', Icon: Monitor },
+  { value: 'light', label: 'Light', Icon: Sun },
+  { value: 'dark', label: 'Dark', Icon: Moon },
+];
+
 const PROVIDERS = [
   { value: 'ollama', label: 'Ollama Cloud' },
   { value: 'groq', label: 'Groq Cloud' },
@@ -45,6 +51,7 @@ export default function SettingsDialog({
   groqKey, onGroqKeyChange,
   ollamaKey, onOllamaKeyChange,
   sound, onSoundChange, haptics, onHapticsChange,
+  theme, onThemeChange,
 }) {
   const dialogRef = useDialogFocus(open, onClose);
 
@@ -164,6 +171,26 @@ export default function SettingsDialog({
                   </p>
                 </div>
               )}
+
+              <div className="pt-4 border-t border-line">
+                <h4 id="appearance-label" className="text-sm font-semibold text-fg mb-2">Appearance</h4>
+                <div role="group" aria-labelledby="appearance-label" className="flex p-1 bg-surface-2 rounded-xl border border-line gap-1">
+                  {APPEARANCE.map(({ value, label, Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => onThemeChange(value)}
+                      aria-pressed={theme === value}
+                      className={`flex-1 min-h-10 inline-flex items-center justify-center gap-1.5 text-sm font-medium rounded-lg transition-colors ${
+                        theme === value ? 'bg-surface text-fg shadow-elev-1' : 'text-fg-2 hover:text-fg'
+                      }`}
+                    >
+                      <Icon size={14} aria-hidden="true" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="pt-4 border-t border-line space-y-1">
                 <h4 className="text-sm font-semibold text-fg mb-1">Sound &amp; haptics</h4>

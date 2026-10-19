@@ -1,9 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { menu } from '../lib/motion';
 import { Copy, Key, FileDown, Plus, Menu, X, Link2, Columns3, Volume2, VolumeX } from 'lucide-react';
 import { LogoMark } from './Logo';
 import StoreSelect from './StoreSelect';
+
+/** True once the page has scrolled away from the very top. */
+function useScrolled() {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    // A 1px marker at the top of the document: when it leaves the viewport, content is under the header.
+    const marker = document.createElement('div');
+    marker.setAttribute('aria-hidden', 'true');
+    marker.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;pointer-events:none;';
+    document.body.prepend(marker);
+    const observer = new IntersectionObserver(([entry]) => setScrolled(!entry.isIntersecting));
+    observer.observe(marker);
+    return () => { observer.disconnect(); marker.remove(); };
+  }, []);
+  return scrolled;
+}
 
 /**
  * Sticky app header. `children` render inside the sticky wrapper beneath the
@@ -18,13 +34,21 @@ export default function Header({
   children,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const scrolled = useScrolled();
   const closeThen = (fn) => () => { fn(); setMenuOpen(false); };
   const SoundIcon = soundOn ? Volume2 : VolumeX;
   const soundLabel = soundOn ? 'Mute sounds' : 'Turn sounds on';
 
   return (
-    <div className="sticky top-0 z-40 pt-2 pb-2 sm:pt-4 sm:pb-0 px-3 sm:px-6 bg-bg/95 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none print:hidden">
-      <header className="max-w-7xl mx-auto card px-4 sm:px-5 py-2 sm:py-2.5 flex items-center justify-between gap-4">
+    <div className="sticky top-0 z-40 pt-2 pb-2 sm:pt-4 sm:pb-0 px-3 sm:px-6 print:hidden">
+      {/* Phones: a frosted strip behind the header and summary bar, so the gap between them stays
+          readable. Desktop: content just fades out as it slides under the floating island. */}
+      <div className="lg:hidden absolute inset-0 bg-bg/80 backdrop-blur-xl pointer-events-none" aria-hidden="true" />
+      <div className="hidden lg:block absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-bg to-transparent pointer-events-none" aria-hidden="true" />
+      <header
+        data-scrolled={scrolled}
+        className="header-island material relative max-w-7xl mx-auto border border-line rounded-2xl px-4 sm:px-5 py-2 sm:py-2.5 flex items-center justify-between gap-4"
+      >
         <div className="flex items-center gap-3 shrink-0">
           <LogoMark size={38} animated={busy} className="shrink-0" />
           <div className="leading-tight">
@@ -123,7 +147,7 @@ export default function Header({
         {menuOpen && (
           <m.div
             {...menu}
-            className="max-w-7xl mx-auto mt-2 card surface-float p-4 lg:hidden flex flex-col gap-3"
+            className="relative max-w-7xl mx-auto mt-2 material border border-line rounded-2xl p-4 lg:hidden flex flex-col gap-3"
           >
             <StoreSelect
               id="store-select-mobile"
@@ -177,7 +201,7 @@ export default function Header({
         )}
       </AnimatePresence>
 
-      {children}
+      <div className="relative">{children}</div>
     </div>
   );
 }

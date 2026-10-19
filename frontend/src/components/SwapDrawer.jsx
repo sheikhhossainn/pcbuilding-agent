@@ -120,7 +120,7 @@ export default function SwapDrawer({ category, current, site, build, intent, isN
               {loading && (
                 <div className="space-y-2" aria-busy="true" aria-label="Loading alternatives">
                   {[0, 1, 2].map((i) => (
-                    <div key={i} className="card p-3 flex gap-3 animate-pulse">
+                    <div key={i} className="skeleton card p-3 flex gap-3">
                       <div className="w-11 h-11 rounded-lg bg-surface-2 shrink-0" />
                       <div className="flex-1 space-y-2">
                         <div className="h-4 w-3/4 rounded bg-surface-2" />

@@ -134,7 +134,7 @@ function ColumnHeader({ col, best, budget }) {
 function PartCell({ col, category, refPart, lowest }) {
   if (!col.isReference && !col.ready) {
     return (
-      <div className="space-y-1.5 animate-pulse motion-reduce:animate-none" aria-hidden="true">
+      <div className="skeleton space-y-1.5" aria-hidden="true">
         <div className="h-3.5 w-full rounded bg-surface-2" />
         <div className="h-3.5 w-2/3 rounded bg-surface-2" />
         <div className="h-5 w-20 rounded-full bg-surface-2" />
