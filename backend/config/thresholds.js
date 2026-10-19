@@ -59,6 +59,8 @@ export const RATE_LIMITING = {
 
   // Refines of an existing build (one short AI call each) per window, counted separately from builds
   MAX_REFINES_PER_WINDOW: 20,
+  // Cross-checks: no AI call, but up to ~50 catalog reads each on a cold cache
+  MAX_CROSS_CHECKS_PER_WINDOW: 20,
 
   // Message to display when limit exceeded
   LIMIT_MESSAGE: "You've reached the free limit of 10 builds per 15 minutes. Please wait, or enter your own API key in the settings to continue immediately.",

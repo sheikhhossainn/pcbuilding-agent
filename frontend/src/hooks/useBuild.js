@@ -4,9 +4,9 @@ import { INITIAL_BUILD, BUSY_STATES } from '../lib/constants';
 import { sumBuild } from '../lib/format';
 import { diffBuilds } from '../lib/buildDiff';
 import { keepLastingNotes } from '../lib/staleNotes';
+import { pollJob } from '../lib/pollJob';
 
 const SESSION_KEY = 'buildmypc.session.v1';
-const POLL_INTERVAL_MS = 800;
 const REVALIDATE_DEBOUNCE_MS = 400;
 // Versions kept for the "Versions" list; the oldest drop off first.
 const MAX_VERSIONS = 10;
@@ -61,7 +61,7 @@ const toValidationIntent = (intent) => ({
  * persistence across refresh, remove/swap/undo, and re-validation after edits.
  *
  * @param {object} opts
- * @param {string} opts.site - retailer key or custom URL
+ * @param {string} opts.site - retailer key (startech, techland, computermania, ryans)
  * @param {{groq: string, ollama: string, provider: string}} opts.customKeys
  * @param {(message: string, action?: {label: string, onClick: () => void}) => void} opts.showToast
  * @param {() => void} opts.dismissToast
@@ -105,7 +105,6 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   const [queuePosition, setQueuePosition] = useState(0);
   const [showTrafficWarning, setShowTrafficWarning] = useState(false);
 
-  const pollRef = useRef(null);
   const abortControllerRef = useRef(null);
   const requestIdRef = useRef(0);
   const validateRequestRef = useRef(0);
@@ -119,23 +118,16 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   const signature = useMemo(() => buildSignature(build), [build]);
   const isBusy = BUSY_STATES.includes(loadingState);
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
   const cancelInFlight = useCallback(() => {
+    // Aborting also stops the job's polling (see pollJob).
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    stopPolling();
     // Invalidate any request that is still resolving.
     requestIdRef.current += 1;
     validateRequestRef.current += 1;
-  }, [stopPolling]);
+  }, []);
 
   // Stop timers/requests if the component goes away.
   useEffect(() => cancelInFlight, [cancelInFlight]);
@@ -339,6 +331,88 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   }, [versions, isBusy, cancelInFlight, showToast]);
 
   /**
+   * Make a build that was made elsewhere (a store from the cross-check) the working build. It is
+   * added as a new version, so it can be undone from the toast or restored from the list later.
+   * @param {{ build: object, warnings?: string[], notes?: string[], power?: object, intent?: object, explanation?: string }} next
+   * @param {string} label - version label and toast, e.g. "Switched to Ryans BD"
+   */
+  const adoptBuild = useCallback((next, label) => {
+    if (isBusy || !next?.build) return;
+    const parts = Object.fromEntries(Object.entries(next.build).filter(([, item]) => item));
+    const nextBuild = { ...INITIAL_BUILD, ...parts };
+    const before = {
+      build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories,
+      versionId: currentVersionId, validatedSignature: validatedSignatureRef.current,
+    };
+    const session = {
+      build: parts,
+      explanation: next.explanation || '',
+      warnings: next.warnings || [],
+      notes: next.notes || [],
+      power: next.power || null,
+      previousIntent: next.intent || null,
+      previousBuild: parts,
+    };
+
+    cancelInFlight();
+    setBuild(nextBuild);
+    setExplanation(session.explanation);
+    setWarnings(session.warnings);
+    setNotes(session.notes);
+    setPower(session.power);
+    setPreviousIntent(session.previousIntent);
+    setPreviousBuild(parts);
+    setRemovedCategories([]);
+    // The server checked this exact build when it priced it.
+    validatedSignatureRef.current = buildSignature(nextBuild);
+    setLastRefine(null);
+    setErrorMsg("");
+    setClarify("");
+    refineSnapshotRef.current = null;
+
+    const version = { id: Date.now(), label, total: sumBuild(nextBuild), at: new Date().toISOString(), session };
+    setVersions((prev) => {
+      const base = prev.length > 0 ? prev : [{
+        id: version.id - 1,
+        label: 'Your build before switching',
+        total: sumBuild(before.build),
+        at: version.at,
+        session: {
+          build: Object.fromEntries(Object.entries(before.build).filter(([, item]) => item)),
+          explanation: before.explanation,
+          warnings: before.warnings,
+          notes: before.notes,
+          power: before.power,
+          previousIntent: before.previousIntent,
+          previousBuild: before.previousBuild,
+        },
+      }];
+      return [...base, version].slice(-MAX_VERSIONS);
+    });
+    setCurrentVersionId(version.id);
+
+    showToast(label, {
+      label: 'Undo',
+      onClick: () => {
+        setBuild(before.build);
+        setExplanation(before.explanation);
+        setWarnings(before.warnings);
+        setNotes(before.notes);
+        setPower(before.power);
+        setPreviousIntent(before.previousIntent);
+        setPreviousBuild(before.previousBuild);
+        setRemovedCategories(before.removedCategories);
+        setCurrentVersionId(before.versionId);
+        validatedSignatureRef.current = before.validatedSignature;
+        dismissToast();
+      },
+    });
+  }, [
+    isBusy, build, explanation, warnings, notes, power, previousIntent, previousBuild, removedCategories,
+    currentVersionId, cancelInFlight, showToast, dismissToast,
+  ]);
+
+  /**
    * @param {string} message - the user's prompt
    * @param {() => void} [onSuccess] - called when the build completes
    */
@@ -393,13 +467,10 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
       setQueuePosition(position);
       if (position > 3) setShowTrafficWarning(true);
 
-      pollRef.current = setInterval(async () => {
-        if (currentRequestId !== requestIdRef.current) {
-          stopPolling();
-          return;
-        }
-        try {
-          const { data } = await axios.get(`${apiBaseUrl}/api/build/${jobId}`);
+      const fetchStatus = () => axios.get(`${apiBaseUrl}/api/build/${jobId}`, { signal: controller.signal }).then((r) => r.data);
+      await pollJob(fetchStatus, {
+        signal: controller.signal,
+        onUpdate: (data) => {
           if (currentRequestId !== requestIdRef.current) return;
 
           if (data.status === 'queued') {
@@ -420,7 +491,6 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
           if (data.status === 'completed' && data.result) {
             const result = data.result;
             const nextBuild = { ...INITIAL_BUILD, ...result.build };
-            stopPolling();
             // The server just validated exactly this build.
             validatedSignatureRef.current = buildSignature(nextBuild);
             setBuild(nextBuild);
@@ -490,7 +560,6 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
           }
 
           if (data.status === 'failed') {
-            stopPolling();
             setScope(undefined);
             setInterpretation(null);
             if (data.errorCode === 'NEEDS_CLARIFICATION' && data.error) {
@@ -504,11 +573,8 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
             setStage(null);
             setQueuePosition(0);
           }
-        } catch (pollErr) {
-          if (axios.isCancel(pollErr)) stopPolling();
-          // transient network errors: keep polling
-        }
-      }, POLL_INTERVAL_MS);
+        },
+      });
     } catch (err) {
       if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || axios.isCancel(err)) {
         setLoadingState("idle");
@@ -524,7 +590,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
   }, [
     apiBaseUrl, site, customKeys, previousIntent, previousBuild, removedCategories, isBusy,
     build, explanation, warnings, notes, power, currentVersionId,
-    cancelInFlight, stopPolling, showToast,
+    cancelInFlight, showToast,
   ]);
 
   return {
@@ -557,5 +623,6 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     dismissClarify,
     undoRefine,
     restoreVersion,
+    adoptBuild,
   };
 }

@@ -4,14 +4,24 @@ import PowerCard from './summary/PowerCard';
 import BudgetSplitCard from './summary/BudgetSplitCard';
 import CompatCard from './summary/CompatCard';
 import VersionsCard from './summary/VersionsCard';
+import CrossCheckCard from './summary/CrossCheckCard';
 
 export default function SummaryRail({
   telemetry, total, budget, onCopy, onShare, onExport,
   versions, currentVersionId, onRestoreVersion, busy = false,
+  crossCheck, onCrossCheck, crossCheckDisabledReason = '',
 }) {
   return (
     <div id="summary-rail" className="lg:col-span-4 space-y-4 lg:sticky lg:top-24 scroll-mt-40">
       <TotalCard total={total} configuredCount={telemetry.configuredCount} budget={budget} />
+      {telemetry.configuredCount > 0 && crossCheck && (
+        <CrossCheckCard
+          check={crossCheck}
+          onOpen={onCrossCheck}
+          disabled={busy || Boolean(crossCheckDisabledReason)}
+          disabledReason={crossCheckDisabledReason}
+        />
+      )}
       <CompatCard
         configuredCount={telemetry.configuredCount}
         incompatibleCount={telemetry.incompatibleCount}

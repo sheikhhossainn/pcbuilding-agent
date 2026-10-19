@@ -330,8 +330,15 @@ export const createPartRepository = ({ db, specInference, cache }) => {
     return found;
   };
 
+  /**
+   * Every in-stock part of a category at a site, cheapest first. Same cache entry as the swap
+   * drawer's list, so cross-checks and swaps share one read per store and category.
+   */
+  const listInStock = (site, category) => query(site, category, { min: 0, max: null }, 'price_asc');
+
   return {
     query,
+    listInStock,
     findCheapest,
     matchesStrategy,
     getAvailableSockets,

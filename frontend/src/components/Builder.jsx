@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import AmbientBackground from './AmbientBackground';
 import BuildProgress from './BuildProgress';
 import { useBuild } from '../hooks/useBuild';
+import { useCrossCheck } from '../hooks/useCrossCheck';
 import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../hooks/useToast';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -11,6 +12,7 @@ import { suggestRefines } from '../lib/suggestRefines';
 import { formatPrice } from '../lib/format';
 import { TOTAL_PARTS, partRowId } from '../lib/constants';
 import { buildShareUrl, readShareFromLocation, clearShareFromLocation } from '../lib/share';
+import { canCrossCheck, adoptedExplanation } from '../lib/crossCheck';
 import Header from './Header';
 import MobileSummaryBar from './MobileSummaryBar';
 import Notice from './Notice';
@@ -24,6 +26,7 @@ import Hero from './Hero';
 import SeoContent from './SeoContent';
 import SettingsDialog from './SettingsDialog';
 import SwapDrawer from './SwapDrawer';
+import CrossCheckDialog from './CrossCheckDialog';
 import Toast from './Toast';
 
 // Pipeline steps reported by the API while a job is processing.
@@ -58,11 +61,11 @@ function Builder({ page = null }) {
   } : null), [sharedBuild]);
 
   const [site, setSite] = useState(sharedBuild?.site || "startech");
-  const [customSiteUrl, setCustomSiteUrl] = useState("");
   const [chatInput, setChatInput] = useState(page?.prompt || "");
   const [hideEmpty, setHideEmpty] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [swapCategory, setSwapCategory] = useState(null);
+  const [crossCheckOpen, setCrossCheckOpen] = useState(false);
 
   useEffect(() => {
     if (!sharedBuild) return;
@@ -78,10 +81,8 @@ function Builder({ page = null }) {
     provider: settings.provider,
   }), [settings.groqKey, settings.ollamaKey, settings.provider]);
 
-  const effectiveSite = site === 'custom' ? customSiteUrl : site;
-
   const buildSession = useBuild({
-    site: effectiveSite, customKeys, showToast, dismissToast, initialSession,
+    site, customKeys, showToast, dismissToast, initialSession,
   });
   const {
     build, total, explanation, warnings, notes, power, previousIntent,
@@ -117,7 +118,27 @@ function Builder({ page = null }) {
   );
 
   // Retailer the engine actually used (it can differ from the dropdown); swap needs a real one.
-  const swapSite = previousIntent?._applied_site || (site !== 'custom' ? site : null);
+  const swapSite = previousIntent?._applied_site || site;
+
+  // "Compare stores": the working build priced at every other store.
+  const crossCheck = useCrossCheck({ build, intent: previousIntent, site: swapSite });
+  const crossCheckReady = canCrossCheck(build);
+  const crossCheckDisabledReason = crossCheckReady ? '' : 'Needs a CPU, motherboard, RAM and PSU first.';
+  const openCrossCheck = () => {
+    if (!crossCheckReady) {
+      showToast('Add a CPU, motherboard, RAM and PSU before comparing stores');
+      return;
+    }
+    setCrossCheckOpen(true);
+    // Reopening shows the last answer; a changed build or a failed run is checked again.
+    if (crossCheck.status === 'idle' || crossCheck.status === 'error' || crossCheck.stale) crossCheck.run();
+  };
+  const closeCrossCheck = useCallback(() => setCrossCheckOpen(false), []);
+  const handleAdoptStore = (result) => {
+    buildSession.adoptBuild({ ...result, explanation: adoptedExplanation(result) }, `Switched to ${result.label}`);
+    setSite(result.site);
+    setCrossCheckOpen(false);
+  };
 
   const closeSettings = useCallback(() => setShowSettings(false), []);
   const openSettings = useCallback(() => setShowSettings(true), []);
@@ -251,13 +272,13 @@ function Builder({ page = null }) {
       <Header
         site={site}
         onSiteChange={setSite}
-        customSiteUrl={customSiteUrl}
-        onCustomSiteUrlChange={setCustomSiteUrl}
         siteDisabled={isBusy}
         onCopy={handleCopySpecSheet}
         onShare={handleShare}
         onExport={handleExport}
         onClear={buildSession.clear}
+        onCrossCheck={openCrossCheck}
+        crossCheckDisabled={isBusy || !crossCheckReady}
         onOpenSettings={openSettings}
         settingsHighlighted={showTrafficWarning}
         hideStore={showHero}
@@ -314,8 +335,6 @@ function Builder({ page = null }) {
             onPickPreset={pickPreset}
             site={site}
             onSiteChange={setSite}
-            customSiteUrl={customSiteUrl}
-            onCustomSiteUrlChange={setCustomSiteUrl}
             heading={page?.h1}
             lead={page?.lead}
           />
@@ -399,6 +418,9 @@ function Builder({ page = null }) {
             currentVersionId={currentVersionId}
             onRestoreVersion={buildSession.restoreVersion}
             busy={isBusy}
+            crossCheck={crossCheck}
+            onCrossCheck={openCrossCheck}
+            crossCheckDisabledReason={crossCheckDisabledReason}
           />
         </div>
         )}
@@ -416,6 +438,18 @@ function Builder({ page = null }) {
         isNarrow={isNarrow}
         onClose={closeSwap}
         onPick={handlePickAlternative}
+      />
+
+      <CrossCheckDialog
+        open={crossCheckOpen}
+        onClose={closeCrossCheck}
+        isNarrow={isNarrow}
+        check={crossCheck}
+        referenceSite={swapSite}
+        build={build}
+        budget={budget}
+        onRun={crossCheck.run}
+        onAdopt={handleAdoptStore}
       />
 
       <SettingsDialog

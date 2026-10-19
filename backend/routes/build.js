@@ -1,7 +1,8 @@
 /**
  * Build Route Handler
  * POST /api/build  → enqueue job, return { jobId, position, estimatedWait }
- * GET  /api/build/:jobId → poll for job status / result
+ * POST /api/build/cross-check → enqueue a cross-check of a finished build, return { jobId }
+ * GET  /api/build/:jobId → poll for job status / result (both kinds of job)
  */
 
 import { createJob, getJobStatus } from '../utils/queueManager.js';
@@ -180,6 +181,38 @@ export const createStatusHandler = () => {
     }
 
     res.json(status);
+  };
+};
+
+// A cross-check needs a bootable build to compare.
+const CROSS_CHECK_REQUIRED = ['Processor', 'Motherboard', 'RAM', 'PSU'];
+
+/**
+ * Create the POST /api/build/cross-check handler. Body: { build, intent, site }.
+ * The build is priced at every other store; no AI is involved.
+ * @returns {Function} Express route handler
+ */
+export const createCrossCheckHandler = () => {
+  return (req, res) => {
+    try {
+      const { build: rawBuild, intent: rawIntent, site } = req.body || {};
+      if (!site || !API.VALID_SITES.includes(site)) {
+        return sendError(res, ERROR_INVALID_SITE);
+      }
+      const build = sanitizePreviousBuild(rawBuild);
+      const missing = CROSS_CHECK_REQUIRED.filter((c) => !build?.[c]);
+      if (missing.length > 0) {
+        return res.status(400).json({ error: `Add a ${missing.join(', ')} to this build before cross-checking it.` });
+      }
+      const { jobId } = createJob({ build, intent: sanitizePreviousIntent(rawIntent), site }, { lane: 'crossCheck' });
+      res.json({ jobId, status: 'queued' });
+    } catch (error) {
+      if (error.code === 'QUEUE_FULL') {
+        return res.status(503).json({ error: error.message });
+      }
+      console.error('[cross-check] Submit error:', error);
+      res.status(500).json({ error: 'Failed to start the cross-check.' });
+    }
   };
 };
 

@@ -71,5 +71,4 @@ export const SITE_OPTIONS = [
     notice: "CompMania BD only sells laptops and accessories right now, so it has no processors, motherboards or power supplies to build a PC from. Pick StarTech, TechLand or Ryans for a full build.",
   },
   { value: "ryans", label: "Ryans BD", short: "RY" },
-  { value: "custom", label: "Custom Site..." },
 ];

@@ -1,6 +1,6 @@
 import { useRef, useState, useId } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, Check, ChevronDown, Globe } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown } from 'lucide-react';
 import { SITE_OPTIONS } from '../lib/constants';
 import { useDismiss } from '../hooks/useDismiss';
 
@@ -10,7 +10,7 @@ function Badge({ opt }) {
       className="w-7 h-7 shrink-0 rounded-md bg-accent-soft text-accent border border-accent-line flex items-center justify-center text-[11px] font-semibold"
       aria-hidden="true"
     >
-      {opt.short || <Globe size={14} strokeWidth={1.75} />}
+      {opt.short}
     </span>
   );
 }
@@ -18,7 +18,7 @@ function Badge({ opt }) {
 // Retailer picker: a custom listbox so the open menu matches the app (a native
 // <select> popup can't be themed). Keyboard: arrows, Home/End, Enter, Esc.
 export default function StoreSelect({
-  id, value, onChange, customUrl, onCustomUrlChange, disabled = false, label = 'Store', showLabel = true, showNotice = true, className = '',
+  id, value, onChange, disabled = false, label = 'Store', showLabel = true, showNotice = true, className = '',
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -122,17 +122,6 @@ export default function StoreSelect({
           </AnimatePresence>
         </div>
       </div>
-      {value === 'custom' && (
-        <input
-          type="text"
-          inputMode="url"
-          placeholder="https://retailer.com"
-          value={customUrl}
-          onChange={(e) => onCustomUrlChange(e.target.value)}
-          aria-label="Custom retailer URL"
-          className="mt-2 w-full min-h-9 bg-surface border border-line rounded-lg px-3 text-sm text-fg placeholder:text-fg-3"
-        />
-      )}
       {showNotice && selected.notice && (
         <p role="status" className="mt-2 flex items-start gap-2 rounded-lg border border-warn-line bg-warn-soft px-3 py-2 text-xs leading-relaxed text-fg">
           <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warn" />

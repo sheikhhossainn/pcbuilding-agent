@@ -10,6 +10,7 @@ import { siteLabel, siteNotice, untrackedCategories } from '../config/sites.js';
 import { collectBuildWarnings, estimatePower } from './buildValidator.js';
 import { applyPatch, describePatch, isEmptyPatch } from './followUpPatch.js';
 import { describeRefine } from './refineExplanation.js';
+import { applyLockCascade, DEPENDS_ON } from './lockCascade.js';
 
 // A build cannot be assembled without these, so "remove" never applies to them.
 const MANDATORY_CATEGORIES = new Set(['Processor', 'Motherboard', 'RAM', 'PSU']);
@@ -379,6 +380,39 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
   // ─── Follow-up: Lock unchanged components from previous build ───
   const lockedCategories = new Set();
+
+  // Share out what the fixed parts (kept by a refine, or matched by a cross-check) leave over
+  // among the parts still to pick.
+  const reallocateAroundLocked = () => {
+    const adjustedCeiling = budgetCeiling - totalCost;
+    const adjustedMinimums = {};
+    let adjustedFloor = 0;
+    for (const cat of Object.keys(floorResult.minimums)) {
+      if (lockedCategories.has(cat)) continue;
+      adjustedMinimums[cat] = floorResult.minimums[cat] || 0;
+      adjustedFloor += adjustedMinimums[cat];
+    }
+    // A part asked to be "better" has to be sized for the better part, not the one it replaces,
+    // as long as the money for that exists; otherwise its share is left as it was.
+    const steeredFloor = adjustedFloor + Object.entries(steeringFloor)
+      .filter(([cat]) => !lockedCategories.has(cat) && cat in adjustedMinimums)
+      .reduce((sum, [cat, price]) => sum + price - adjustedMinimums[cat], 0);
+    if (steeredFloor > adjustedFloor && steeredFloor <= adjustedCeiling) {
+      for (const [cat, price] of Object.entries(steeringFloor)) {
+        if (!lockedCategories.has(cat) && cat in adjustedMinimums) adjustedMinimums[cat] = price;
+      }
+      adjustedFloor = steeredFloor;
+    }
+    dynamicBudgets = deps.budgetAllocator.allocateBudgets({
+      blueprint: intent,
+      minimums: adjustedMinimums,
+      totalFloor: adjustedFloor,
+      budgetCeiling: adjustedCeiling + adjustedFloor, // totalFloor is subtracted inside allocateBudgets
+      site,
+    });
+    for (const cat of lockedCategories) dynamicBudgets[cat] = 0;
+    console.log('[orchestrator] Budgets for the parts still to pick:', dynamicBudgets);
+  };
   const targetFloors = {}; // lowest price accepted for a part the user priced ("around 20k")
   if (prevBuild && prevIntent && prevIntent.component_strategy && !restarting) {
     const oldStrats = prevIntent.component_strategy;
@@ -427,32 +461,23 @@ export async function executeBuild(payload, deps, ctx = {}) {
       initialLocks.delete('Processor');
     }
 
-    // Apply Compatibility Cascade
-    if (!initialLocks.has('Processor')) {
-      initialLocks.delete('Motherboard');
-      initialLocks.delete('RAM');
-      
-      // Clear RAM type constraints to allow the new CPU to dictate it
-      if (intent.component_strategy?.Motherboard?.required_keywords) {
-        intent.component_strategy.Motherboard.required_keywords = 
-          intent.component_strategy.Motherboard.required_keywords.filter(k => !['ddr4', 'ddr5', 'ddr3'].includes(k.toLowerCase()));
-      }
-      if (intent.component_strategy?.RAM?.required_keywords) {
-        intent.component_strategy.RAM.required_keywords = 
-          intent.component_strategy.RAM.required_keywords.filter(k => !['ddr4', 'ddr5', 'ddr3'].includes(k.toLowerCase()));
-      }
-    } else if (!initialLocks.has('Motherboard')) {
-      initialLocks.delete('RAM');
-      
-      if (intent.component_strategy?.RAM?.required_keywords) {
-        intent.component_strategy.RAM.required_keywords = 
-          intent.component_strategy.RAM.required_keywords.filter(k => !['ddr4', 'ddr5', 'ddr3'].includes(k.toLowerCase()));
-      }
-    }
+    // Apply Compatibility Cascade: a part stays only while the parts it was chosen for stay.
+    const cpuKept = initialLocks.has('Processor');
+    const boardKept = initialLocks.has('Motherboard');
+    applyLockCascade(initialLocks, { noGpu });
 
-    // PSU sizing follows the CPU and GPU: a kept PSU is only valid while both are kept.
-    if (!initialLocks.has('Processor') || (!initialLocks.has('Graphics Card') && !noGpu)) {
-      initialLocks.delete('PSU');
+    // Clear RAM type constraints so the new CPU (or board) dictates the memory generation.
+    const dropDdrKeywords = (category) => {
+      const strat = intent.component_strategy?.[category];
+      if (strat?.required_keywords) {
+        strat.required_keywords = strat.required_keywords.filter((k) => !['ddr4', 'ddr5', 'ddr3'].includes(k.toLowerCase()));
+      }
+    };
+    if (!cpuKept) {
+      dropDdrKeywords('Motherboard');
+      dropDdrKeywords('RAM');
+    } else if (!boardKept) {
+      dropDdrKeywords('RAM');
     }
 
     // Re-apply user overrides AFTER cascade stripping so explicit DDR requests survive.
@@ -502,39 +527,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
     if (lockedCategories.size > 0) {
       console.log(`[Follow-up] Locked ${lockedCategories.size} unchanged categories, re-selecting ${Object.keys(selectedBuild).length - lockedCategories.size}`);
-      
-      // Recalculate dynamic budgets with reduced ceiling for unlocked categories
-      const adjustedCeiling = budgetCeiling - totalCost;
-      const adjustedMinimums = {};
-      let adjustedFloor = 0;
-      for (const cat of Object.keys(floorResult.minimums)) {
-        if (lockedCategories.has(cat)) continue; // Skip locked categories
-        adjustedMinimums[cat] = floorResult.minimums[cat] || 0;
-        adjustedFloor += adjustedMinimums[cat];
-      }
-      // A part asked to be "better" has to be sized for the better part, not the one it replaces,
-      // as long as the money for that exists; otherwise its share is left as it was.
-      const steeredFloor = adjustedFloor + Object.entries(steeringFloor)
-        .filter(([cat]) => !lockedCategories.has(cat) && cat in adjustedMinimums)
-        .reduce((sum, [cat, price]) => sum + price - adjustedMinimums[cat], 0);
-      if (steeredFloor > adjustedFloor && steeredFloor <= adjustedCeiling) {
-        for (const [cat, price] of Object.entries(steeringFloor)) {
-          if (!lockedCategories.has(cat) && cat in adjustedMinimums) adjustedMinimums[cat] = price;
-        }
-        adjustedFloor = steeredFloor;
-      }
-      dynamicBudgets = deps.budgetAllocator.allocateBudgets({
-        blueprint: intent,
-        minimums: adjustedMinimums,
-        totalFloor: adjustedFloor,
-        budgetCeiling: adjustedCeiling + adjustedFloor, // totalFloor is subtracted inside allocateBudgets
-        site,
-      });
-      // Zero out locked categories in dynamic budgets
-      for (const cat of lockedCategories) {
-        dynamicBudgets[cat] = 0;
-      }
-      console.log(`[Follow-up] Recalculated dynamic budgets for unlocked categories:`, dynamicBudgets);
+      reallocateAroundLocked();
     }
 
     // A price the user named for a part replaces the share the allocator would have given it.
@@ -551,6 +544,19 @@ export async function executeBuild(payload, deps, ctx = {}) {
       dynamicBudgets[cat] = maxPrice;
       targetFloors[cat] = Math.round(maxPrice * 0.75);
     }
+  }
+
+  // Cross-check: parts already matched at this store (in stock, checked against each other) are
+  // fixed, and the engine only fills in the rest. Internal only; never read from a request body.
+  if (payload._pinned && lockedCategories.size === 0) {
+    for (const [category, part] of Object.entries(payload._pinned)) {
+      if (!part || !(category in selectedBuild)) continue;
+      selectedBuild[category] = part;
+      totalCost += part.price;
+      globalRemaining -= part.price;
+      lockedCategories.add(category);
+    }
+    if (lockedCategories.size > 0) reallocateAroundLocked();
   }
 
   const availableSockets = await deps.partRepository.getAvailableSockets(site);
@@ -1011,13 +1017,15 @@ export async function executeBuild(payload, deps, ctx = {}) {
       setScope(null);
       const rebuilt = await executeBuild(
         {
-          ...payload, previousBuild: null, previousIntent: null, _intent: intentSnapshot,
+          ...payload, previousBuild: null, previousIntent: null, _intent: intentSnapshot, _pinned: null,
           _followUp: followUp && { targets: followUp.targets, absorbers: followUp.absorbers, ops: followUp.ops, interpretation: followUp.interpretation },
         },
         deps,
         ctx
       );
-      const note = `Your previous parts left too little room for ${unmet.join(', ')}, so this build was re-planned from scratch.`;
+      const note = payload._pinned
+        ? `The parts matched at ${siteLabel(site)} left too little room for ${unmet.join(', ')}, so this store's build was planned from scratch.`
+        : `Your previous parts left too little room for ${unmet.join(', ')}, so this build was re-planned from scratch.`;
       rebuilt.notes = [note, ...rebuilt.notes];
       rebuilt.warnings = [note, ...rebuilt.warnings];
       return rebuilt;
@@ -1169,7 +1177,6 @@ export async function executeBuild(payload, deps, ctx = {}) {
   // put the old one back, so "a better GPU" that finds nothing does not quietly swap the PSU.
   if (followUp && prevBuild && !restarting) {
     const named = new Set([...(followUp.ops || []).map((o) => o.category), ...Object.keys(followUp.targets || {}), ...(followUp.absorbers || [])]);
-    const DEPENDS_ON = { Motherboard: ['Processor'], RAM: ['Motherboard'], PSU: ['Processor', 'Graphics Card'] };
     for (const category of ['Motherboard', 'RAM', 'PSU']) {
       const now = selectedBuild[category];
       const old = prevBuild[category];
@@ -1211,7 +1218,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
 
   // Kept parts are not upgraded, so a follow-up can end well under budget: say so.
   const unspent = budget - totalCost;
-  if (lockedCategories.size > 0 && unspent > Math.max(budget * 0.02, 1500)) {
+  if (lockedCategories.size > 0 && !payload._pinned && unspent > Math.max(budget * 0.02, 1500)) {
     buildWarnings.push(`${unspent.toLocaleString('en-BD')} BDT of your budget is unspent because the parts you kept were left as they are. Ask for a specific upgrade to use it.`);
   }
 
@@ -1231,7 +1238,9 @@ export async function executeBuild(payload, deps, ctx = {}) {
   // ─── PHASE 6: Generate explanation ───
   setStage('explaining');
   // A refine's story is already known from the diff, so it is written here instead of by a second LLM call.
-  const explanation = followUp && prevBuild && !restarting && lockedCategories.size > 0
+  // A cross-check compares stores side by side; nobody reads a write-up per store.
+  const explanation = payload._skipExplanation ? ''
+    : followUp && prevBuild && !restarting && lockedCategories.size > 0
     ? describeRefine({
       build: selectedBuild, previousBuild: prevBuild, locked: Array.from(lockedCategories),
       followUp, total: totalCost, budget,

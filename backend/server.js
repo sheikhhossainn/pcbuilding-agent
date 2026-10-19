@@ -36,11 +36,12 @@ import { createPartSelector } from './engine/partSelector.js';
 import { createCacheManager } from './utils/cacheManager.js';
 import { createSpecInference } from './utils/specInference.js';
 import { createPartRepository } from './utils/partRepository.js';
-import { createSubmitHandler, createStatusHandler } from './routes/build.js';
+import { createSubmitHandler, createStatusHandler, createCrossCheckHandler } from './routes/build.js';
 import { createAlternativesHandler, createValidateHandler } from './routes/parts.js';
 import { sendError, ERROR_INTERNAL } from './utils/errors.js';
-import { initWorkers } from './utils/queueManager.js';
+import { initWorkers, registerLane } from './utils/queueManager.js';
 import { executeBuild } from './engine/buildOrchestrator.js';
+import { executeCrossCheck } from './engine/crossCheck.js';
 import { applyIntentOverrides } from './engine/intentOverrides.js';
 
 // ──── Setup ────
@@ -71,7 +72,7 @@ app.use((req, res, next) => {
 });
 
 // ──── Rate Limiting ────
-const { apiLimiter, refineLimiter } = createBuildLimiters();
+const { apiLimiter, refineLimiter, crossCheckLimiter } = createBuildLimiters();
 
 // Swap/validate calls are cheap (no AI), so they get a much higher ceiling than /api/build.
 const partsLimiter = rateLimit({
@@ -212,6 +213,7 @@ app.get('/health', async (req, res) => {
 
 // Build routes (queue-based)
 app.post('/api/build', apiLimiter, refineLimiter, createSubmitHandler());
+app.post('/api/build/cross-check', crossCheckLimiter, createCrossCheckHandler());
 app.get('/api/build/:jobId', createStatusHandler());
 
 // Edit-time helpers: re-check an edited build, and list compatible swap candidates
@@ -256,6 +258,20 @@ initWorkers({
   depsFactory: createDepsForKey,
   groqKeys: defaultAiKeys.length > 0 ? defaultAiKeys : ['ollama-default'],
 });
+
+// Cross-checks reuse the engine without the AI: they get their own lane (see queueManager).
+if (partRepository) {
+  const crossCheckDeps = {
+    compatibilityChecker, budgetAllocator, partSelector, partRepository, specInference,
+    intentOverrideApplier: applyIntentOverrides,
+    intentExtractor: { extract: async () => { throw new Error('A cross-check never reads a message.'); } },
+    explanationGenerator: { generate: async () => '' },
+  };
+  registerLane('crossCheck', {
+    run: (payload, ctx) => executeCrossCheck(payload, crossCheckDeps, ctx),
+    concurrency: 2,
+  });
+}
 
 // ──── Startup ────
 app.listen(port, () => {

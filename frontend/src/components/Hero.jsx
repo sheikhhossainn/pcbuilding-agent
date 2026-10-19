@@ -6,7 +6,7 @@ import StoreSelect from './StoreSelect';
 // Empty state: one prompt, five one-click starting points. No empty part cards.
 export default function Hero({
   composerProps, onPickPreset,
-  site, onSiteChange, customSiteUrl, onCustomSiteUrlChange,
+  site, onSiteChange,
   heading = 'Build a PC for your budget',
   lead = 'Describe what you need. We match live prices from Bangladeshi retailers and check compatibility.',
 }) {
@@ -37,8 +37,6 @@ export default function Hero({
           label="Retailer"
           value={site}
           onChange={onSiteChange}
-          customUrl={customSiteUrl}
-          onCustomUrlChange={onCustomSiteUrlChange}
           className="w-full max-w-xs"
         />
       </div>

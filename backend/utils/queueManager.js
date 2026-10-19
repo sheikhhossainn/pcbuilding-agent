@@ -4,6 +4,10 @@
  * Pending[]: ordered array of jobIds waiting to be processed
  * Workers: N persistent async loops, each holding one Groq key
  * Statuses: queued → processing → completed | failed
+ *
+ * Lanes: work that needs no AI key (cross-checks) runs in its own lane with its own concurrency,
+ * so it neither waits behind AI builds nor holds up their workers. Lanes share the job map, so one
+ * status endpoint serves every kind of job.
  */
 
 import { randomUUID } from 'crypto';
@@ -35,7 +39,8 @@ setInterval(purgeStaleJobs, 2 * 60 * 1000).unref();
  * @param {Object} payload - { message, site, customKeys }
  * @returns {{ jobId: string, position: number, estimatedWait: number }}
  */
-export function createJob(payload) {
+export function createJob(payload, { lane = null } = {}) {
+  if (lane) return createLaneJob(lane, payload);
   if (pending.length >= MAX_PENDING_JOBS) {
     const error = new Error('The build queue is full. Please try again in a minute.');
     error.code = 'QUEUE_FULL';
@@ -70,10 +75,12 @@ export function getJobStatus(jobId) {
   const response = { status: job.status, createdAt: job.createdAt };
 
   if (job.status === 'queued') {
-    const pos = pending.indexOf(jobId) + 1;
+    const pos = (job.lane ? lanes.get(job.lane)?.pending : pending).indexOf(jobId) + 1;
     response.position = pos > 0 ? pos : 1;
     response.estimatedWait = response.position * 12;
   }
+  // Per-part progress of a lane job (cross-check: store -> queued | matching | building | done | failed).
+  if (job.progress) response.progress = job.progress;
   if (job.status === 'processing') {
     response.position = 0;
     response.estimatedWait = 0;
@@ -160,5 +167,66 @@ async function processNext(worker) {
     worker.busy = false;
     console.log(`[queue] Worker ${worker.id} finished ${jobId.slice(0, 8)} (${job.status}) in ${job.completedAt - job.startedAt}ms`);
     tickWorkers();
+  }
+}
+
+// ─── Lanes ───
+
+const lanes = new Map();
+
+/**
+ * Register a lane for jobs that need no AI key.
+ * @param {string} name
+ * @param {{ run: (payload: object, ctx: object) => Promise<object>, concurrency?: number }} opts
+ *   run gets ctx.onProgress(key, state) to report partial progress
+ */
+export function registerLane(name, { run, concurrency = 2 }) {
+  lanes.set(name, { run, concurrency, active: 0, pending: [] });
+}
+
+function createLaneJob(name, payload) {
+  const lane = lanes.get(name);
+  if (!lane) throw new Error(`Unknown queue lane: ${name}`);
+  if (lane.pending.length >= MAX_PENDING_JOBS) {
+    const error = new Error('Too many requests are waiting. Please try again in a minute.');
+    error.code = 'QUEUE_FULL';
+    throw error;
+  }
+  const jobId = randomUUID();
+  jobs.set(jobId, {
+    status: 'queued', lane: name, payload, result: null, error: null, stage: null, progress: null,
+    createdAt: Date.now(), startedAt: null, completedAt: null,
+  });
+  lane.pending.push(jobId);
+  tickLane(lane);
+  return { jobId, position: lane.pending.indexOf(jobId) + 1 };
+}
+
+function tickLane(lane) {
+  while (lane.active < lane.concurrency && lane.pending.length > 0) {
+    const jobId = lane.pending.shift();
+    const job = jobs.get(jobId);
+    if (!job || job.status !== 'queued') continue;
+    lane.active += 1;
+    runLaneJob(lane, jobId, job);
+  }
+}
+
+async function runLaneJob(lane, jobId, job) {
+  job.status = 'processing';
+  job.startedAt = Date.now();
+  try {
+    job.result = await lane.run(job.payload, {
+      onProgress: (key, state) => { job.progress = { ...(job.progress || {}), [key]: state }; },
+    });
+    job.status = 'completed';
+  } catch (err) {
+    console.error(`[queue] ${job.lane} job ${jobId.slice(0, 8)} failed:`, err.message);
+    job.status = 'failed';
+    job.error = err.userMessage || 'Something went wrong. Please try again.';
+  } finally {
+    job.completedAt = Date.now();
+    lane.active -= 1;
+    tickLane(lane);
   }
 }

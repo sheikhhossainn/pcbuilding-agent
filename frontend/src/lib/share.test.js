@@ -32,7 +32,7 @@ test('share payload round-trips parts, budget, site and notes (including non-ASC
 });
 
 test('every store in the dropdown survives a share link', () => {
-  for (const site of SITE_OPTIONS.map((o) => o.value).filter((v) => v !== 'custom')) {
+  for (const site of SITE_OPTIONS.map((o) => o.value)) {
     const decoded = decodeShare(encodeShare({ ...session, intent: { ...session.intent, _applied_site: site } }));
     assert.equal(decoded.site, site);
     assert.equal(decoded.intent._applied_site, site);

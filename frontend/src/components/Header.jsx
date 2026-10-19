@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Key, FileDown, Plus, Menu, X, Link2 } from 'lucide-react';
+import { Copy, Key, FileDown, Plus, Menu, X, Link2, Columns3 } from 'lucide-react';
 import { LogoMark } from './Logo';
 import StoreSelect from './StoreSelect';
 
@@ -9,8 +9,9 @@ import StoreSelect from './StoreSelect';
  * header island (used for the mobile summary bar).
  */
 export default function Header({
-  site, onSiteChange, customSiteUrl, onCustomSiteUrlChange, siteDisabled,
+  site, onSiteChange, siteDisabled,
   onCopy, onShare, onExport, onClear, onOpenSettings, settingsHighlighted,
+  onCrossCheck, crossCheckDisabled = false,
   hideStore = false, busy = false,
   children,
 }) {
@@ -40,33 +41,47 @@ export default function Header({
               showLabel={false}
               value={site}
               onChange={onSiteChange}
-              customUrl={customSiteUrl}
-              onCustomUrlChange={onCustomSiteUrlChange}
               disabled={siteDisabled}
               showNotice={false}
               className="mr-1"
             />
           )}
+          {!hideStore && onCrossCheck && (
+            <button
+              type="button"
+              onClick={onCrossCheck}
+              disabled={crossCheckDisabled}
+              aria-haspopup="dialog"
+              className="btn"
+              title="Price this build at every store"
+            >
+              <Columns3 size={14} strokeWidth={1.75} aria-hidden="true" />
+              <span>Compare stores</span>
+            </button>
+          )}
           <button type="button" onClick={onShare} className="btn" title="Copy a link to this build">
             <Link2 size={14} strokeWidth={1.75} aria-hidden="true" />
             <span>Share</span>
           </button>
-          <button type="button" onClick={onCopy} className="btn" title="Copy formatted spec sheet">
+          {/* Secondary actions drop their labels on narrower desktops so the header never overflows. */}
+          <button type="button" onClick={onCopy} className="btn" title="Copy formatted spec sheet" aria-label="Copy spec">
             <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span>Copy spec</span>
+            <span className="hidden xl:inline">Copy spec</span>
           </button>
           <button
             type="button"
             onClick={onOpenSettings}
             aria-haspopup="dialog"
+            aria-label="API key"
+            title="Use your own API key"
             className={`btn ${settingsHighlighted ? 'bg-warn-soft border-warn-line text-warn' : ''}`}
           >
             <Key size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span>API key</span>
+            <span className="hidden xl:inline">API key</span>
           </button>
-          <button type="button" onClick={onExport} className="btn" title="Print or save as PDF">
+          <button type="button" onClick={onExport} className="btn" title="Print or save as PDF" aria-label="Export">
             <FileDown size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span>Export</span>
+            <span className="hidden xl:inline">Export</span>
           </button>
           {!hideStore && (
             <button type="button" onClick={onClear} className="btn border-line-strong text-fg" title="Clear this build and start a new one">
@@ -103,11 +118,21 @@ export default function Header({
               showLabel={false}
               value={site}
               onChange={onSiteChange}
-              customUrl={customSiteUrl}
-              onCustomUrlChange={onCustomSiteUrlChange}
               disabled={siteDisabled}
             />
             <div className="grid grid-cols-2 gap-2">
+              {!hideStore && onCrossCheck && (
+                <button
+                  type="button"
+                  onClick={closeThen(onCrossCheck)}
+                  disabled={crossCheckDisabled}
+                  aria-haspopup="dialog"
+                  className="btn btn-touch col-span-2"
+                >
+                  <Columns3 size={16} aria-hidden="true" />
+                  <span>Compare stores</span>
+                </button>
+              )}
               <button type="button" onClick={closeThen(onShare)} className="btn btn-touch">
                 <Link2 size={16} aria-hidden="true" />
                 <span>Share link</span>
