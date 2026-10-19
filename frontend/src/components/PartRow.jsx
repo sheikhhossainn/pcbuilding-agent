@@ -8,6 +8,7 @@ import { getSpecChips } from '../lib/telemetry';
 import { describeFreshness } from '../lib/time';
 import RowMenu from './RowMenu';
 import PartImage from './PartImage';
+import AnimatedPrice from './AnimatedPrice';
 
 // `label` names the part being searched again, so a refine shows which rows are working.
 export function SkeletonRow({ label }) {
@@ -26,12 +27,13 @@ export function SkeletonRow({ label }) {
   );
 }
 
+// Rows assemble in category order (core parts first) when a build lands.
 const rowMotion = (index) => ({
   layout: true,
-  initial: { opacity: 0, y: 6 },
-  animate: { opacity: 1, y: 0 },
+  initial: { opacity: 0, y: 12, scale: 0.985 },
+  animate: { opacity: 1, y: 0, scale: 1 },
   exit: { opacity: 0, transition: tween.exit },
-  transition: { ...spring.smooth, opacity: tween.base, delay: stagger(index) },
+  transition: { ...spring.smooth, opacity: tween.base, delay: stagger(index, 0.04) },
 });
 
 const BADGE = {
@@ -199,7 +201,7 @@ export default function PartRow({
               <span className={`num text-xs font-medium ${deltaTone(change.delta)}`}>{formatDelta(change.delta)}</span>
             </span>
           )}
-          <span className="num text-sm font-semibold text-fg sm:hidden">{formatPrice(item.price)}</span>
+          <AnimatedPrice value={item.price} from={0} delay={stagger(index, 0.04)} className="num text-sm font-semibold text-fg sm:hidden" />
           {chips.length > 0 && (
             <span className="hidden sm:flex items-center gap-1.5">
               {chips.map((chip) => (
@@ -227,7 +229,7 @@ export default function PartRow({
       </div>
 
       <div className="hidden sm:block text-right min-w-24">
-        <div className="num font-semibold text-lg text-fg whitespace-nowrap">{formatPrice(item.price)}</div>
+        <AnimatedPrice value={item.price} from={0} delay={stagger(index, 0.04)} className="block num font-semibold text-lg text-fg whitespace-nowrap" />
         {freshness && (
           <div
             className={`text-xs whitespace-nowrap ${freshness.stale ? 'text-warn' : 'text-fg-3'}`}

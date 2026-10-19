@@ -1,10 +1,20 @@
 import { useRef, useEffect } from 'react';
+import { m } from 'framer-motion';
+import { spring } from '../lib/motion';
 import { Send, RefreshCw } from 'lucide-react';
 import ModifiersMenu from './ModifiersMenu';
 import { LogoMark } from './Logo';
 
 const MAX_HEIGHT_NARROW = 120;
 const MAX_HEIGHT_WIDE = 200;
+
+// The hero box and the dock are one element to the eye: when the first build starts, the
+// prompt box glides from the middle of the page into the dock (and back on "New build").
+const morph = {
+  layoutId: 'composer',
+  transition: { layout: spring.smooth },
+  style: { borderRadius: 16 },
+};
 
 /**
  * Prompt input in two forms:
@@ -94,9 +104,9 @@ export default function Composer({
 
   if (isHero) {
     return (
-      <form onSubmit={handleSubmit} className="composer card surface-float p-3 sm:p-4">
-        {textarea}
-        <div className="flex items-center justify-between gap-2 pt-3 mt-1 border-t border-line">
+      <m.form {...morph} onSubmit={handleSubmit} className="composer card surface-float p-3 sm:p-4">
+        <m.div layout="position">{textarea}</m.div>
+        <m.div layout="position" className="flex items-center justify-between gap-2 pt-3 mt-1 border-t border-line">
           <ModifiersMenu onPick={addModifier} disabled={isBusy} />
           {sendOrStop || (
             <button type="submit" disabled={!canSubmit} className="btn btn-primary btn-touch px-5 gap-2">
@@ -104,8 +114,8 @@ export default function Composer({
               <Send size={16} strokeWidth={2.2} aria-hidden="true" />
             </button>
           )}
-        </div>
-      </form>
+        </m.div>
+      </m.form>
     );
   }
 
@@ -117,14 +127,14 @@ export default function Composer({
         <div className="relative lg:col-span-8 max-w-2xl lg:max-w-none mx-auto w-full pointer-events-auto">
           {/* Desktop: the fade stays over the parts column and leaves the summary rail readable. */}
           <div className="hidden lg:block absolute inset-x-0 -top-10 -bottom-3 bg-gradient-to-t from-bg via-bg/90 to-transparent pointer-events-none" aria-hidden="true" />
-          <div className="composer card surface-float rounded-2xl relative">
+          <m.div {...morph} className="composer card surface-float relative">
             {isBusy ? (
-              <div className="flex items-center gap-2.5 px-3.5 pt-2.5 text-sm text-fg-2 min-w-0">
+              <m.div layout="position" className="flex items-center gap-2.5 px-3.5 pt-2.5 text-sm text-fg-2 min-w-0">
                 <LogoMark size={18} animated className="shrink-0" />
                 <span className="truncate">{loadingMessage}</span>
-              </div>
+              </m.div>
             ) : isRefining && (
-              <div className="flex items-center gap-2 pl-3.5 pt-2 min-w-0">
+              <m.div layout="position" className="flex items-center gap-2 pl-3.5 pt-2 min-w-0">
                 <span className="flex items-center gap-1.5 text-xs font-medium text-accent shrink-0">
                   <RefreshCw size={12} aria-hidden="true" />
                   {versionNumber > 1 ? `Refining version ${versionNumber}` : 'Refining'}
@@ -147,10 +157,10 @@ export default function Composer({
                     ))}
                   </div>
                 )}
-              </div>
+              </m.div>
             )}
 
-            <form onSubmit={handleSubmit} className="p-1.5 flex items-end gap-1">
+            <m.form layout="position" onSubmit={handleSubmit} className="p-1.5 flex items-end gap-1">
               <ModifiersMenu onPick={addModifier} disabled={isBusy} />
               {textarea}
               {sendOrStop || (
@@ -164,8 +174,8 @@ export default function Composer({
                   <Send size={18} strokeWidth={2.2} className="ml-0.5" aria-hidden="true" />
                 </button>
               )}
-            </form>
-          </div>
+            </m.form>
+          </m.div>
         </div>
       </div>
     </div>

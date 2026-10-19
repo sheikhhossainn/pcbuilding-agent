@@ -561,13 +561,16 @@ h1 {
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 
-/* Active pipeline step breathes */
-.progress-pulse {
-  animation: progress-pulse 1.2s ease-in-out infinite;
+/* Active pipeline step: a light sheen runs along the bar while it fills */
+.progress-sheen {
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: progress-sheen 1.4s var(--motion-ease-in-out) infinite;
 }
-@keyframes progress-pulse {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 1; }
+@keyframes progress-sheen {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
 }
 
 /* Composer: one focus ring around the whole field, not a box around the textarea */

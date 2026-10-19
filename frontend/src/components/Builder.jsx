@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
+import { AnimatePresence, m } from 'framer-motion';
+import { fadeIn, spring } from '../lib/motion';
 import AmbientBackground from './AmbientBackground';
 import BuildProgress from './BuildProgress';
 import { useBuild } from '../hooks/useBuild';
@@ -154,6 +155,12 @@ function Builder({ page = null }) {
     if (next !== settings.sound) toggleSound();
   };
 
+  // Back to the top first, so the dock is measured where it is seen when it glides into the hero.
+  const startOver = () => {
+    window.scrollTo(0, 0);
+    buildSession.clear();
+  };
+
   const closeSettings = useCallback(() => setShowSettings(false), []);
   const openSettings = useCallback(() => setShowSettings(true), []);
   const closeSwap = useCallback(() => setSwapCategory(null), []);
@@ -195,6 +202,15 @@ function Builder({ page = null }) {
 
   // No parts and nothing in flight: show the focused start screen instead of 12 empty rows.
   const showHero = telemetry.configuredCount === 0 && !isBusy && !previousIntent;
+
+  // Switching between the start screen and the builder starts at the top of the page, before
+  // paint: the new screen is seen from its start, and the composer glides between two boxes that
+  // are both in view (a fixed dock and a scrolled page measure differently otherwise).
+  const wasHero = useRef(showHero);
+  useLayoutEffect(() => {
+    if (wasHero.current !== showHero) window.scrollTo(0, 0);
+    wasHero.current = showHero;
+  }, [showHero]);
 
   const composerProps = {
     value: chatInput,
@@ -290,7 +306,7 @@ function Builder({ page = null }) {
         onCopy={handleCopySpecSheet}
         onShare={handleShare}
         onExport={handleExport}
-        onClear={buildSession.clear}
+        onClear={startOver}
         onCrossCheck={openCrossCheck}
         crossCheckDisabled={isBusy || !crossCheckReady}
         onOpenSettings={openSettings}
@@ -345,8 +361,12 @@ function Builder({ page = null }) {
           </Notice>
         )}
 
+        {/* popLayout: the outgoing screen leaves the flow at once, so the incoming one never
+            jumps, and the shared composer can glide between them. */}
+        <AnimatePresence mode="popLayout" initial={false}>
         {showHero ? (
           <Hero
+            key="hero"
             composerProps={composerProps}
             onPickPreset={pickPreset}
             site={site}
@@ -355,7 +375,11 @@ function Builder({ page = null }) {
             lead={page?.lead}
           />
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
+        <m.div
+          key="builder"
+          {...fadeIn(10, spring.gentle)}
+          className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start"
+        >
           <div className="lg:col-span-8 space-y-6">
             <div className="flex items-center justify-between gap-2 sm:gap-4">
               <div>
@@ -438,8 +462,9 @@ function Builder({ page = null }) {
             onCrossCheck={openCrossCheck}
             crossCheckDisabledReason={crossCheckDisabledReason}
           />
-        </div>
+        </m.div>
         )}
+        </AnimatePresence>
         {showHero && <SeoContent page={page} onStart={scrollToComposer} />}
       </main>
 

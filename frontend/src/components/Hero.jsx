@@ -5,7 +5,9 @@ import Composer from './Composer';
 import StoreSelect from './StoreSelect';
 
 // Empty state: one prompt, five one-click starting points. No empty part cards.
+// `ref` reaches the root so AnimatePresence (popLayout) can measure it on exit.
 export default function Hero({
+  ref,
   composerProps, onPickPreset,
   site, onSiteChange,
   heading = 'Build a PC for your budget',
@@ -13,6 +15,7 @@ export default function Hero({
 }) {
   return (
     <m.section
+      ref={ref}
       aria-label="Start a new build"
       {...fadeIn(8, spring.gentle)}
       className="max-w-2xl mx-auto pt-4 sm:pt-12"

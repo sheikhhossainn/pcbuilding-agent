@@ -1,4 +1,6 @@
+import { m } from 'framer-motion';
 import { ShieldCheck } from 'lucide-react';
+import { spring } from '../../lib/motion';
 import { formatPrice } from '../../lib/format';
 import { TOTAL_PARTS } from '../../lib/constants';
 import AnimatedPrice from '../AnimatedPrice';
@@ -30,9 +32,12 @@ export default function TotalCard({ total, configuredCount, budget }) {
             aria-valuemax={100}
             aria-valuenow={pct}
           >
-            <div
-              className={`h-full rounded-full transition-[width] duration-500 ${isOver ? 'bg-bad' : 'bg-accent'}`}
-              style={{ width: `${pct}%` }}
+            {/* Fills with a spring (transform only), in step with the total counting up. */}
+            <m.div
+              className={`h-full rounded-full origin-left transition-colors duration-300 ${isOver ? 'bg-bad' : 'bg-accent'}`}
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: pct / 100 }}
+              transition={{ ...spring.gentle, delay: 0.1 }}
             />
           </div>
           <div className={`mt-1.5 text-xs ${isOver ? 'text-bad' : 'text-fg-3'}`}>
