@@ -7,6 +7,7 @@ import { formatPrice } from '../lib/format';
 import { getSpecChips } from '../lib/telemetry';
 import { describeFreshness } from '../lib/time';
 import { useDialogFocus } from '../hooks/useDialogFocus';
+import PartImage from './PartImage';
 
 const EMPTY = { key: null, items: [], error: '' };
 
@@ -163,13 +164,15 @@ export default function SwapDrawer({ category, current, site, build, intent, isN
                           onClick={() => onPick(part)}
                           className="tactile-btn card w-full p-3 flex items-start gap-3 text-left hover:bg-surface-2 hover:border-line-strong"
                         >
-                          {part.image ? (
-                            <img src={part.image} alt="" className="w-11 h-11 object-contain rounded-lg bg-white p-0.5 border border-line shrink-0" />
-                          ) : (
-                            <span className="w-11 h-11 rounded-lg bg-surface-2 text-fg-2 flex items-center justify-center shrink-0" aria-hidden="true">
-                              <Icon size={20} strokeWidth={1.5} />
-                            </span>
-                          )}
+                          <PartImage
+                            src={part.image}
+                            className="w-11 h-11 object-contain rounded-lg bg-white p-0.5 border border-line shrink-0"
+                            fallback={(
+                              <span className="w-11 h-11 rounded-lg bg-surface-2 text-fg-2 flex items-center justify-center shrink-0" aria-hidden="true">
+                                <Icon size={20} strokeWidth={1.5} />
+                              </span>
+                            )}
+                          />
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-medium text-fg leading-snug line-clamp-2">{part.name}</span>
                             {chips.length > 0 && (

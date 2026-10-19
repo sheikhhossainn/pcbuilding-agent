@@ -6,6 +6,7 @@ import { formatDelta, deltaTone } from '../lib/buildDiff';
 import { getSpecChips } from '../lib/telemetry';
 import { describeFreshness } from '../lib/time';
 import RowMenu from './RowMenu';
+import PartImage from './PartImage';
 
 // `label` names the part being searched again, so a refine shows which rows are working.
 export function SkeletonRow({ label }) {
@@ -70,13 +71,15 @@ function RemovedRow({ category, part, delta, index, Icon }) {
         transition={settle}
         aria-hidden="true"
       >
-        {part.image ? (
-          <img src={part.image} alt="" className="w-full h-full object-contain bg-white p-0.5 border border-line rounded-lg" />
-        ) : (
-          <div className="w-full h-full bg-surface-2 text-fg-3 flex items-center justify-center">
-            <Icon size={18} strokeWidth={1.5} />
-          </div>
-        )}
+        <PartImage
+          src={part.image}
+          className="w-full h-full object-contain bg-white p-0.5 border border-line rounded-lg"
+          fallback={(
+            <div className="w-full h-full bg-surface-2 text-fg-3 flex items-center justify-center">
+              <Icon size={18} strokeWidth={1.5} />
+            </div>
+          )}
+        />
       </motion.div>
 
       <div className="min-w-0">
@@ -167,22 +170,20 @@ export default function PartRow({
           aria-hidden="true"
         />
       )}
-      {item.image ? (
-        <img
-          src={item.image}
-          alt=""
-          className="w-10 h-10 object-contain rounded-lg bg-white p-0.5 border border-line shrink-0"
-        />
-      ) : (
-        <div
-          className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-            isCore ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-fg-2'
-          }`}
-          aria-hidden="true"
-        >
-          <Icon size={20} strokeWidth={1.5} />
-        </div>
-      )}
+      <PartImage
+        src={item.image}
+        className="w-10 h-10 object-contain rounded-lg bg-white p-0.5 border border-line shrink-0"
+        fallback={(
+          <div
+            className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+              isCore ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-fg-2'
+            }`}
+            aria-hidden="true"
+          >
+            <Icon size={20} strokeWidth={1.5} />
+          </div>
+        )}
+      />
 
       <div className="min-w-0">
         <div className="flex items-center justify-between sm:justify-start gap-2">
