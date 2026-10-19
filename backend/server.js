@@ -42,6 +42,7 @@ import { sendError, ERROR_INTERNAL } from './utils/errors.js';
 import { initWorkers, registerLane } from './utils/queueManager.js';
 import { executeBuild } from './engine/buildOrchestrator.js';
 import { executeCrossCheck } from './engine/crossCheck.js';
+import { buildWithViewableImages } from './utils/partImages.js';
 import { applyIntentOverrides } from './engine/intentOverrides.js';
 
 // ──── Setup ────
@@ -253,8 +254,14 @@ const defaultAiKeys = [
   process.env.GROQ_API_KEY_2
 ].filter(Boolean);
 
+// Photos from stores whose image host refuses browsers are swapped for the same product elsewhere.
+const viewable = (build) => (partRepository ? buildWithViewableImages(build, partRepository) : build);
+
 initWorkers({
-  buildFn: executeBuild,
+  buildFn: async (payload, deps, ctx) => {
+    const result = await executeBuild(payload, deps, ctx);
+    return { ...result, build: await viewable(result.build) };
+  },
   depsFactory: createDepsForKey,
   groqKeys: defaultAiKeys.length > 0 ? defaultAiKeys : ['ollama-default'],
 });
@@ -268,7 +275,11 @@ if (partRepository) {
     explanationGenerator: { generate: async () => '' },
   };
   registerLane('crossCheck', {
-    run: (payload, ctx) => executeCrossCheck(payload, crossCheckDeps, ctx),
+    run: async (payload, ctx) => {
+      const report = await executeCrossCheck(payload, crossCheckDeps, ctx);
+      const results = await Promise.all(report.results.map(async (r) => (r.build ? { ...r, build: await viewable(r.build) } : r)));
+      return { ...report, results };
+    },
     concurrency: 2,
   });
 }

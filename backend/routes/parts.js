@@ -7,6 +7,7 @@
  * are re-inferred from names server-side instead of trusting client-supplied specs.
  */
 
+import { withViewableImages } from '../utils/partImages.js';
 import { API } from '../config/thresholds.js';
 import { SWAPPABLE_CATEGORIES, findAlternatives } from '../engine/alternatives.js';
 import { collectBuildWarnings, estimatePower } from '../engine/buildValidator.js';
@@ -117,9 +118,10 @@ export const createAlternativesHandler = ({ partRepository, specInference, compa
         { partRepository, compatibilityChecker, budgetAllocator }
       );
 
+      const viewable = await withViewableImages(alternatives, partRepository);
       res.json({
         category,
-        alternatives: alternatives.map((part) => ({
+        alternatives: viewable.map((part) => ({
           name: part.name,
           price: part.price,
           url: part.url,

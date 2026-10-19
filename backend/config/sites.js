@@ -5,6 +5,7 @@
  * `untracked`: categories that store's catalog does not carry. The engine gives them no budget
  * there and warns when the user asked for one.
  * `notice`: why a build at that store can't be completed right now. Shown when a build fails there.
+ * `blockedImageHost`: the store's image host refuses browsers, so its photos can't be shown.
  */
 export const SITES = {
   startech: { label: 'StarTech BD' },
@@ -14,7 +15,8 @@ export const SITES = {
     untracked: ['Monitor', 'Mouse', 'Keyboard'],
     notice: 'CompMania BD only sells laptops and accessories right now, so it has no processors, motherboards or power supplies to build a PC from. Pick StarTech, TechLand or Ryans for a full build.',
   },
-  ryans: { label: 'Ryans BD' },
+  // Its image host challenges every hotlinked request, so photos are borrowed (utils/partImages.js).
+  ryans: { label: 'Ryans BD', blockedImageHost: 'ryans.com' },
 };
 
 export const VALID_SITES = Object.keys(SITES);
