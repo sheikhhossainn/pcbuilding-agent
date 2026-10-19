@@ -13,7 +13,7 @@ export const HOME = {
   path: '/',
   title: 'BuildMyPC — AI PC Builder for Bangladesh | Custom PC Build in BDT',
   description:
-    'Tell BuildMyPC your budget in BDT and your use case. Get a compatible PC build with live prices from Bangladesh retailers like StarTech and Techland.',
+    'Tell BuildMyPC your budget in BDT and your use case. Get a compatible PC build with live prices from Bangladesh retailers like StarTech, Techland and Ryans.',
   h1: 'Build a PC for your budget',
   lead: 'Describe what you need. We match live prices from Bangladeshi retailers and check compatibility.',
 };
@@ -29,7 +29,7 @@ export const HOW_IT_WORKS = [
   },
   {
     title: 'Live prices, real links',
-    text: 'Every part comes from a Bangladeshi retailer catalog (StarTech, Techland) with its current price and a link to the product page. Swap any part and the build is re-checked.',
+    text: 'Every part comes from a Bangladeshi retailer catalog (StarTech, Techland, Ryans) with its current price and a link to the product page. Swap any part and the build is re-checked.',
   },
 ];
 
@@ -44,7 +44,7 @@ export const FAQ = [
   },
   {
     q: 'Which shops do the prices come from?',
-    a: 'Prices come from Bangladeshi PC retailer catalogs, currently StarTech and Techland. You can pick the retailer before you build. Stock and prices change often, so confirm on the shop page before ordering.',
+    a: 'Prices come from Bangladeshi PC retailer catalogs, currently StarTech, Techland and Ryans. You can pick the retailer before you build. Stock and prices change often, so confirm on the shop page before ordering.',
   },
   {
     q: 'Can I change a part after the build is made?',

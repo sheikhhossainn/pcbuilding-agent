@@ -6,6 +6,7 @@
 
 import { BUDGET } from '../config/budget.js';
 import { API } from '../config/thresholds.js';
+import { siteLabel, untrackedCategories } from '../config/sites.js';
 import { collectBuildWarnings, estimatePower } from './buildValidator.js';
 import { applyPatch, describePatch, isEmptyPatch } from './followUpPatch.js';
 import { describeRefine } from './refineExplanation.js';
@@ -357,12 +358,12 @@ export async function executeBuild(payload, deps, ctx = {}) {
     buildWarnings.push(...floorResult.degradations);
   }
 
-  if (site === 'computermania') {
+  const untracked = untrackedCategories(site);
+  if (untracked.length > 0) {
     const rawMsg = (message || '').toLowerCase();
-    const requestedPeripherals = ['Monitor', 'Mouse', 'Keyboard'].some(p => intent.component_strategy?.[p]?.required) ||
-      rawMsg.includes('monitor') || rawMsg.includes('mouse') || rawMsg.includes('keyboard');
-    if (requestedPeripherals) {
-      buildWarnings.push('Monitor, mouse, and keyboard are not tracked in ComputerMania catalog and were omitted from this build.');
+    const requested = untracked.filter((c) => intent.component_strategy?.[c]?.required || rawMsg.includes(c.toLowerCase()));
+    if (requested.length > 0) {
+      buildWarnings.push(`${new Intl.ListFormat('en', { type: 'conjunction' }).format(untracked)} are not tracked in the ${siteLabel(site)} catalog and were omitted from this build.`);
     }
   }
 
@@ -768,7 +769,7 @@ export async function executeBuild(payload, deps, ctx = {}) {
       } else {
         console.warn(`⚠ ${category}: No component found within budget`);
         // Anything the build asked for and could not get is worth telling the user about.
-        buildWarnings.push(`Could not find a suitable **${category}** matching your request at ${site} within budget. It may be out of stock.`);
+        buildWarnings.push(`Could not find a suitable **${category}** matching your request at ${siteLabel(site)} within budget. It may be out of stock.`);
       }
     } catch (error) {
       console.error(`✗ ${category}: Selection error:`, error.message);
@@ -1027,14 +1028,8 @@ export async function executeBuild(payload, deps, ctx = {}) {
     const missing = ['Processor', 'Motherboard', 'RAM', 'PSU'].filter(c => !selectedBuild[c]);
     
     // Provide diagnostic info about inventory at chosen site
-    let diagnosticMsg = `Could not assemble a complete build at **${site}**. Missing: ${missing.join(', ')}. `;
-    
-    // Check if this is a ComputerMania inventory issue
-    if (site === 'computermania') {
-      diagnosticMsg += `ComputerMania may have limited inventory for this budget/use case. Try StarTech or TechLand, or increase your budget.`;
-    } else {
-      diagnosticMsg += `Try adjusting your budget or selecting a different retailer.`;
-    }
+    const diagnosticMsg = `Could not assemble a complete build at **${siteLabel(site)}**. Missing: ${missing.join(', ')}. `
+      + `Try adjusting your budget or selecting a different retailer.`;
     
     console.error(`[orchestrator] Build validation failed at ${site}:`, missing);
     throw new BuildError(400, diagnosticMsg, 'INVENTORY_INSUFFICIENT');

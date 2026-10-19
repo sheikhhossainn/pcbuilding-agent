@@ -6,6 +6,7 @@
 import { BUDGET } from '../config/budget.js';
 import { CPU_TDP, GPU_TDP, PSU_SIZING, PSU_WATTAGE } from '../config/tdpHeuristics.js';
 import { PART_SELECTION } from '../config/thresholds.js';
+import { siteTracks } from '../config/sites.js';
 
 const CORE_COMPONENTS = ['Processor', 'Motherboard', 'RAM', 'Graphics Card', 'PSU', 'Storage', 'Casing', 'Monitor'];
 
@@ -72,10 +73,7 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
     // Calculate total weight for required components
     for (const cat of categories) {
       const strat = blueprint.component_strategy[cat];
-      const isPeripheral = ['Monitor', 'Mouse', 'Keyboard'].includes(cat);
-      const isComputermania = site === 'computermania' && isPeripheral;
-
-      if (strat && strat.required && !isComputermania) {
+      if (strat && strat.required && siteTracks(site, cat)) {
         totalWeight += strat.weight || 1;
       }
     }
@@ -86,10 +84,7 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
     // Allocate to each component
     for (const cat of categories) {
       const strat = blueprint.component_strategy[cat];
-      const isPeripheral = ['Monitor', 'Mouse', 'Keyboard'].includes(cat);
-      const isComputermania = site === 'computermania' && isPeripheral;
-
-      if (strat && strat.required && !isComputermania) {
+      if (strat && strat.required && siteTracks(site, cat)) {
         const weight = strat.weight || 1;
         const minPrice = minimums?.[cat] || blueprint.minimums?.[cat] || 0;
         dynamicBudgets[cat] = Math.round(minPrice + ((weight / totalWeight) * leftoverBudget));
@@ -135,10 +130,7 @@ export const createBudgetAllocator = ({ partRepository, compatChecker }) => {
     for (const category of categories) {
       const strategy = blueprint.component_strategy[category];
       console.log(`[Floor] Checking ${category}: required=${strategy?.required}, site=${site}`);
-      const isPeripheral = ['Monitor', 'Mouse', 'Keyboard'].includes(category);
-      const isComputermania = site === 'computermania' && isPeripheral;
-
-      if (!strategy || !strategy.required || isComputermania) {
+      if (!strategy || !strategy.required || !siteTracks(site, category)) {
         minimums[category] = 0;
         continue;
       }

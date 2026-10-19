@@ -58,9 +58,11 @@ export const PROMPT_MODIFIERS = [
   { label: "+ 32GB RAM", append: ", must have 32GB RAM" },
 ];
 
+// `short` is the two-letter badge shown next to the store name.
 export const SITE_OPTIONS = [
-  { value: "startech", label: "StarTech BD" },
-  { value: "techland", label: "TechLand BD" },
-  { value: "computermania", label: "CompMania BD" },
+  { value: "startech", label: "StarTech BD", short: "ST" },
+  { value: "techland", label: "TechLand BD", short: "TL" },
+  { value: "computermania", label: "CompMania BD", short: "CM" },
+  { value: "ryans", label: "Ryans BD", short: "RY" },
   { value: "custom", label: "Custom Site..." },
 ];

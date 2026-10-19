@@ -13,7 +13,7 @@ const MAX_TEXT = 300;
 const MAX_EXPLANATION = 1500;
 const MAX_WARNINGS = 12;
 const USE_CASES = new Set(['gaming', 'editing', 'office', 'general']);
-const SITES = new Set(['startech', 'techland', 'computermania']);
+const SITES = new Set(['startech', 'techland', 'computermania', 'ryans']);
 
 function toBase64Url(text) {
   const bytes = new TextEncoder().encode(text);

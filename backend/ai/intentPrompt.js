@@ -2,6 +2,8 @@
  * System prompt for intent extraction (free text -> structured build blueprint).
  * Kept in its own module so evals and the server use the exact same text.
  */
+import { VALID_SITES } from '../config/sites.js';
+
 export const INTENT_PROMPT = `
 You are a PC building assistant for the Bangladesh market.
 Extract the user's requirements and return ONLY a valid JSON object, no explanation.
@@ -23,7 +25,7 @@ Extract the user's requirements and return ONLY a valid JSON object, no explanat
     "UPS": { "weight": number, "required_keywords": [], "exclude_keywords": [], "structured_reqs": {}, "required": boolean }
   },
   "no_gpu": boolean,
-  "preferred_site": "startech" | "techland" | "computermania" | null,
+  "preferred_site": ${VALID_SITES.map((s) => `"${s}"`).join(' | ')} | null,
   "preferred_cpu_brand": "amd" | "intel" | null,
   "preferred_gpu_brand": "nvidia" | "amd" | null,
   "use_case": "gaming" | "editing" | "office" | "general"
@@ -35,6 +37,7 @@ Rules:
 - Keyword Constraints: Use only 1-2 standard retail terms. Never use subjective adjectives.
 - Structured First: For numerical requirements (min_gb, min_hz, min_tb, min_wattage), use structured_reqs.
 - Exclusions: Use exclude_keywords for "no RGB", "no combo", etc.
+- preferred_site: set only when the user names a store. "Star Tech" -> "startech", "Tech Land" -> "techland", "Computer Mania" / "CompMania" -> "computermania", "Ryans" / "Ryans Computers" / "ryans.com" -> "ryans".
 - If user requests no dedicated GPU / APU build, set "no_gpu": true and set Graphics Card "required": false and "weight": 0. Otherwise set "no_gpu": false.
 - Default needs_monitor, needs_mouse, needs_keyboard to true unless user says they have them.
 - Return ONLY valid JSON.

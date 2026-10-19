@@ -5,6 +5,8 @@
  * Frontend can rely on status codes, not parsing JSON for errors.
  */
 
+import { VALID_SITES } from '../config/sites.js';
+
 /**
  * Create a standardized error response
  * @param {number} status - HTTP status code
@@ -43,7 +45,7 @@ export const ERROR_INVALID_MESSAGE = createError(
 
 export const ERROR_INVALID_SITE = createError(
   400,
-  'Invalid site selected. Choose from: startech, techland, computermania',
+  `Invalid site selected. Choose from: ${VALID_SITES.join(', ')}`,
   'INVALID_SITE'
 );
 

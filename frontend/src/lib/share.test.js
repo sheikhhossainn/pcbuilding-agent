@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { encodeShare, decodeShare } from './share.js';
 import { describeFreshness } from './time.js';
+import { SITE_OPTIONS } from './constants.js';
 
 const session = {
   build: {
@@ -28,6 +29,14 @@ test('share payload round-trips parts, budget, site and notes (including non-ASC
   assert.equal(decoded.intent.use_case, 'gaming');
   assert.equal(decoded.site, 'startech');
   assert.deepEqual(decoded.notes, ['Storage was downgraded to 512GB.']);
+});
+
+test('every store in the dropdown survives a share link', () => {
+  for (const site of SITE_OPTIONS.map((o) => o.value).filter((v) => v !== 'custom')) {
+    const decoded = decodeShare(encodeShare({ ...session, intent: { ...session.intent, _applied_site: site } }));
+    assert.equal(decoded.site, site);
+    assert.equal(decoded.intent._applied_site, site);
+  }
 });
 
 test('a decoded link carries a full blueprint so a follow-up refine stays coherent', () => {

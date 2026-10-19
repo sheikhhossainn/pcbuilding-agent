@@ -52,7 +52,7 @@ and returns a full build: every part is **in stock**, **compatible**, **priced f
 | **Iterative refinement** | Follow-ups lock unchanged categories, so one tweak never reshuffles the whole build. |
 | **Swap and validate** | Swap any part for alternatives, remove parts you own, and re-validate the whole build on every change. |
 | **Shareable builds** | A build encodes into the URL hash; nothing is stored server-side. |
-| **Live inventory** | Python scraper keeps StarTech, TechLand and ComputerMania prices and stock fresh in Turso. |
+| **Live inventory** | Python scraper keeps StarTech, TechLand, ComputerMania and Ryans prices and stock fresh in Turso. |
 | **Resilient backend** | Async job queue with position and ETA, per-IP rate limits, bounded queue, response caching with stampede protection. |
 | **SEO-ready** | Prerendered budget landing pages, structured data and a generated sitemap. |
 
@@ -71,7 +71,7 @@ flowchart LR
     V --> UI
     DB[(Turso / libSQL<br/>components)] <--> F
     DB <--> S
-    SC[Python scraper<br/>StarTech · TechLand · ComputerMania] --> DB
+    SC[Python scraper<br/>StarTech · TechLand · ComputerMania · Ryans] --> DB
 ```
 
 1. **Intent extraction**: an LLM turns the message into a typed blueprint (budget, use case, brand and DDR preferences, per-category weights). Deterministic overrides then re-parse the hard facts (budget, "no GPU", retailer) so a model slip cannot change your numbers.
@@ -244,7 +244,7 @@ The stress harness drives the real engine against a catalog snapshot and asserts
 │   ├── routes/               Build, status, validate and alternatives handlers
 │   ├── utils/                Part repository, cache, queue, spec inference, capacity parsing
 │   └── tests/                Unit, property, stress and LLM eval suites
-├── scraper/                  Python ETL for StarTech, TechLand and ComputerMania
+├── scraper/                  Python ETL for StarTech, TechLand, ComputerMania and Ryans
 ├── scripts/apply_schema.js   Create the Turso schema
 └── turso_schema.sql
 ```
@@ -256,6 +256,7 @@ The stress harness drives the real engine against a catalog snapshot and asserts
 | StarTech BD | Supported |
 | TechLand BD | Supported |
 | ComputerMania BD | Supported |
+| Ryans BD | Supported |
 
 All eleven categories are covered: CPU, motherboard, RAM, storage, GPU, PSU, casing, CPU cooler, monitor, mouse and keyboard, plus UPS.
 

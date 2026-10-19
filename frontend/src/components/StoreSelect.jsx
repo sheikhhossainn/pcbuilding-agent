@@ -4,18 +4,13 @@ import { Check, ChevronDown, Globe } from 'lucide-react';
 import { SITE_OPTIONS } from '../lib/constants';
 import { useDismiss } from '../hooks/useDismiss';
 
-function initials(label) {
-  // "StarTech BD" -> ST, "CompMania BD" -> CM
-  return (label.replace(/ BD$/, '').match(/[A-Z]/g) || [label[0]]).slice(0, 2).join('');
-}
-
 function Badge({ opt }) {
   return (
     <span
       className="w-7 h-7 shrink-0 rounded-md bg-accent-soft text-accent border border-accent-line flex items-center justify-center text-[11px] font-semibold"
       aria-hidden="true"
     >
-      {opt.value === 'custom' ? <Globe size={14} strokeWidth={1.75} /> : initials(opt.label)}
+      {opt.short || <Globe size={14} strokeWidth={1.75} />}
     </span>
   );
 }

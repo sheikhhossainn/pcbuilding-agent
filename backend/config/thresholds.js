@@ -3,6 +3,8 @@
  * Used for GPU adequacy, CPU balancing, and part filtering
  */
 
+import { VALID_SITES } from './sites.js';
+
 export const GPU_ADEQUACY = {
   // Minimum VRAM for editing/professional work (GB)
   MIN_VRAM_EDITING_GB: 4,
@@ -66,8 +68,8 @@ export const API = {
   // Maximum message length for build requests (characters)
   MAX_MESSAGE_LENGTH: 2000,
 
-  // Valid site identifiers
-  VALID_SITES: ['startech', 'techland', 'computermania'],
+  // Valid site identifiers (from config/sites.js)
+  VALID_SITES,
 };
 
 export const AI = {

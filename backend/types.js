@@ -27,7 +27,7 @@ export const ComponentStrategy = {};
  * @typedef {Object} BuildIntent
  * @property {number|null} budget_bdt - User's budget in Bangladeshi Taka
  * @property {Object.<string, ComponentStrategy>} component_strategy - Strategy per component category
- * @property {string|null} preferred_site - Preferred vendor: 'startech' | 'techland' | 'computermania'
+ * @property {string|null} preferred_site - Preferred vendor: one of VALID_SITES in config/sites.js
  * @property {string|null} preferred_cpu_brand - CPU preference: 'amd' | 'intel'
  * @property {string|null} preferred_gpu_brand - GPU preference: 'nvidia' | 'amd'
  * @property {string} use_case - Build purpose: 'gaming' | 'editing' | 'office' | 'general'
