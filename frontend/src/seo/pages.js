@@ -9,11 +9,22 @@ export const LAST_MODIFIED =
   globalThis.process?.env?.BUILD_DATE ||
   new Date().toISOString().split('T')[0];
 
+// What the web app does, for structured data (schema.org featureList).
+export const FEATURES = [
+  'Compatible PC builds from a budget in BDT and a plain-language description',
+  'Live prices from StarTech, TechLand, Ryans and ComputerMania',
+  'Compare the same build across stores and find the cheapest',
+  'Socket, DDR memory, power supply and cooler compatibility checks',
+  'Swap or remove any part and re-check the build',
+  'Refine with follow-ups such as "make it AMD" or "add a UPS"',
+  'Shareable build links',
+];
+
 export const HOME = {
   path: '/',
-  title: 'BuildMyPC — AI PC Builder for Bangladesh | Custom PC Build in BDT',
+  title: 'BuildMyPC — AI PC Builder & Price Comparison for Bangladesh',
   description:
-    'Tell BuildMyPC your budget in BDT and your use case. Get a compatible PC build with live prices from Bangladesh retailers like StarTech, Techland and Ryans.',
+    'Get a compatible PC build for your BDT budget, then compare its price at StarTech, TechLand, Ryans and ComputerMania to see where it is cheapest.',
   h1: 'Build a PC for your budget',
   lead: 'Describe what you need. We match live prices from Bangladeshi retailers and check compatibility.',
 };
@@ -29,7 +40,7 @@ export const HOW_IT_WORKS = [
   },
   {
     title: 'Live prices, real links',
-    text: 'Every part comes from a Bangladeshi retailer catalog (StarTech, Techland, Ryans) with its current price and a link to the product page. Swap any part and the build is re-checked.',
+    text: 'Every part comes from a Bangladeshi retailer catalog (StarTech, TechLand, Ryans, ComputerMania) with its current price and a link to the product page. Swap any part and the build is re-checked, then compare stores to see which shop sells the whole build for less.',
   },
 ];
 
@@ -44,7 +55,11 @@ export const FAQ = [
   },
   {
     q: 'Which shops do the prices come from?',
-    a: 'Prices come from Bangladeshi PC retailer catalogs, currently StarTech, Techland and Ryans. You can pick the retailer before you build. Stock and prices change often, so confirm on the shop page before ordering.',
+    a: 'Prices come from Bangladeshi PC retailer catalogs: StarTech, TechLand, Ryans and ComputerMania. You can pick the retailer before you build. Stock and prices change often, so confirm on the shop page before ordering.',
+  },
+  {
+    q: 'Which shop in Bangladesh sells my PC build cheapest?',
+    a: 'After a build is made, tap Compare stores. BuildMyPC prices the same build at every other supported retailer, using the same model where it is in stock and an equivalent part with the same key specs where it is not, then shows the cheapest complete store and how much you save. You can switch your build to that store in one tap.',
   },
   {
     q: 'Can I change a part after the build is made?',
@@ -53,6 +68,10 @@ export const FAQ = [
   {
     q: 'Is BuildMyPC free?',
     a: 'Yes, it is free to use. There is no account and nothing to install.',
+  },
+  {
+    q: 'Can I share a PC build with a friend?',
+    a: 'Yes. Copy the share link and send it. The whole build is stored in the link itself, so it does not expire. The prices shown are the ones from when you shared it, so check the shop pages before buying.',
   },
 ];
 

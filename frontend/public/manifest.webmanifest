@@ -1,0 +1,16 @@
+{
+  "name": "BuildMyPC — AI PC Builder for Bangladesh",
+  "short_name": "BuildMyPC",
+  "description": "Get a compatible PC build for your BDT budget and see which Bangladeshi store sells it cheapest.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0c10",
+  "theme_color": "#0b0c10",
+  "lang": "en",
+  "categories": ["shopping", "utilities"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

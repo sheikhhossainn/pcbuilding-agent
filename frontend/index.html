@@ -7,6 +7,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0b0c10" media="(prefers-color-scheme: dark)" />
@@ -19,8 +20,8 @@
       } catch (e) {}
     </script>
 
-    <title>BuildMyPC — AI PC Builder for Bangladesh | Custom PC Build Under Your Budget</title>
-    <meta name="description" content="Tell BuildMyPC your budget in BDT and your use case. Get a compatible PC build with live prices from Bangladesh retailers like StarTech, Techland and Ryans." />
+    <title>BuildMyPC — AI PC Builder & Price Comparison for Bangladesh</title>
+    <meta name="description" content="Get a compatible PC build for your BDT budget, then compare its price at StarTech, TechLand, Ryans and ComputerMania to see where it is cheapest." />
     <meta name="author" content="BuildMyPC" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://buildmypc-eight.vercel.app/" />
@@ -28,17 +29,19 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="BuildMyPC" />
     <meta property="og:title" content="BuildMyPC — AI PC Builder for Bangladesh" />
-    <meta property="og:description" content="Describe your budget and use case. Get a compatible PC build with live Bangladesh prices in seconds." />
+    <meta property="og:description" content="Describe your budget and use case. Get a compatible PC build with live Bangladesh prices, and see which store sells it cheapest." />
     <meta property="og:url" content="https://buildmypc-eight.vercel.app/" />
     <meta property="og:locale" content="en_BD" />
     <meta property="og:image" content="https://buildmypc-eight.vercel.app/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:alt" content="BuildMyPC — AI PC builder for Bangladesh" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://buildmypc-eight.vercel.app/og-image.png" />
+    <meta name="twitter:image:alt" content="BuildMyPC — AI PC builder for Bangladesh" />
     <meta name="twitter:title" content="BuildMyPC — AI PC Builder for Bangladesh" />
-    <meta name="twitter:description" content="Describe your budget and use case. Get a compatible PC build with live Bangladesh prices in seconds." />
+    <meta name="twitter:description" content="Describe your budget and use case. Get a compatible PC build with live Bangladesh prices, and see which store sells it cheapest." />
 
     <script type="application/ld+json">
     {
@@ -60,7 +63,10 @@
           "applicationCategory": "UtilitiesApplication",
           "operatingSystem": "Any",
           "browserRequirements": "Requires JavaScript",
-          "description": "Generates compatible custom PC builds from a budget in BDT and a use case, using live prices from Bangladesh PC retailers.",
+          "description": "Generates compatible custom PC builds from a budget in BDT and a use case, using live prices from Bangladesh PC retailers, and compares the build across stores.",
+          "inLanguage": "en",
+          "areaServed": { "@type": "Country", "name": "Bangladesh" },
+          "image": "https://buildmypc-eight.vercel.app/og-image.png",
           "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BDT" }
         }
       ]

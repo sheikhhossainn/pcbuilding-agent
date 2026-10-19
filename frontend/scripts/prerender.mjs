@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
-  SITE_URL, SITE_NAME, LAST_MODIFIED, HOME, HOW_IT_WORKS, FAQ, LANDING_PAGES,
+  SITE_URL, SITE_NAME, LAST_MODIFIED, HOME, HOW_IT_WORKS, FAQ, LANDING_PAGES, FEATURES,
   absoluteUrl, faqJsonLd,
 } from '../src/seo/pages.js';
 import { generateSitemapXml } from '../src/seo/sitemap.js';
@@ -45,7 +45,11 @@ function structuredData(page, faq) {
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Any',
       browserRequirements: 'Requires JavaScript',
-      description: 'Generates compatible custom PC builds from a budget in BDT and a use case, using live prices from Bangladesh PC retailers.',
+      description: 'Generates compatible custom PC builds from a budget in BDT and a use case, using live prices from Bangladesh PC retailers, and compares the build across stores.',
+      featureList: FEATURES,
+      inLanguage: 'en',
+      areaServed: { '@type': 'Country', name: 'Bangladesh' },
+      image: `${SITE_URL}/og-image.png`,
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'BDT' },
     },
     faqJsonLd(faq),

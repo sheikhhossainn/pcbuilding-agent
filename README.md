@@ -4,9 +4,9 @@
 
 # BuildMyPC
 
-**Describe the PC you want. Get a compatible build with live Bangladeshi prices in seconds.**
+**Describe the PC you want. Get a compatible build with live Bangladeshi prices in seconds, then see which store sells it cheapest.**
 
-AI-assisted PC configurator for the Bangladesh market: budget in BDT in, compatibility-checked parts list out.
+AI-assisted PC configurator for the Bangladesh market: budget in BDT in, compatibility-checked parts list out, priced across StarTech, TechLand, ComputerMania and Ryans.
 
 [![Live demo](https://img.shields.io/badge/live%20demo-buildmypc--eight.vercel.app-6366F1?style=for-the-badge)](https://buildmypc-eight.vercel.app)
 
@@ -19,6 +19,7 @@ AI-assisted PC configurator for the Bangladesh market: budget in BDT in, compati
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
 [Live demo](https://buildmypc-eight.vercel.app) ·
+[Features](#features) ·
 [How it works](#how-it-works) ·
 [Quick start](#quick-start) ·
 [Configuration](#configuration) ·
@@ -39,7 +40,7 @@ Picking parts in Bangladesh means juggling retailer tabs, fluctuating prices and
 
 > *"Gaming PC under 80k, Intel CPU, Nvidia GPU, 144Hz monitor"*
 
-and returns a full build: every part is **in stock**, **compatible**, **priced from a real retailer catalog**, and linked to its product page. Ask a follow-up ("make it AMD", "add a UPS", "I already have a monitor") and only the affected parts change.
+and returns a full build: every part is **in stock**, **compatible**, **priced from a real retailer catalog**, and linked to its product page. Ask a follow-up ("make it AMD", "add a UPS", "I already have a monitor") and only the affected parts change. One more tap prices the same build at every other supported store, so you know where to buy it.
 
 ## Features
 
@@ -51,10 +52,14 @@ and returns a full build: every part is **in stock**, **compatible**, **priced f
 | **Honest refusals** | If no compatible build exists at a price, it says what the cheapest viable build costs instead of returning a broken one. |
 | **Iterative refinement** | Follow-ups lock unchanged categories, so one tweak never reshuffles the whole build. |
 | **Swap and validate** | Swap any part for alternatives, remove parts you own, and re-validate the whole build on every change. |
-| **Shareable builds** | A build encodes into the URL hash; nothing is stored server-side. |
-| **Live inventory** | Python scraper keeps StarTech, TechLand, ComputerMania and Ryans prices and stock fresh in Turso. |
+| **Compare stores** | Prices the finished build at every other retailer: the same part where it is stocked, an equivalent with the same key specs, or a compatible substitute. Shows the cheapest complete store, the saving, and a part-by-part table, and switches your build to that store in one tap. No AI call, so it is fast and free. |
+| **Version history** | Every build and refinement is kept as a version you can step back to. |
+| **Shareable builds** | A build encodes into the URL hash; nothing is stored server-side, so links never expire. They keep the prices from when they were shared. |
+| **Bring your own key** | Paste an Ollama Cloud or Groq key in Settings to skip the public queue. The key is saved in your browser and sent only with your own build requests. |
+| **Polished, native-feeling UI** | Spring-based motion, light and dark themes (or follow the system), soft synthesized sound effects and haptics that can be turned off, swipe-to-dismiss sheets and toasts, and full `prefers-reduced-motion` support. Works from 320 px phones to wide desktops. |
+| **Live inventory** | Python scraper keeps StarTech, TechLand, ComputerMania and Ryans prices and stock fresh in Turso. A store that cannot supply a full build right now (ComputerMania currently stocks only laptops and accessories) is flagged with a notice. |
 | **Resilient backend** | Async job queue with position and ETA, per-IP rate limits, bounded queue, response caching with stampede protection. |
-| **SEO-ready** | Prerendered budget landing pages, structured data and a generated sitemap. |
+| **SEO-ready** | Prerendered budget landing pages, FAQ and breadcrumb structured data, a web app manifest and a generated sitemap. |
 
 ## How it works
 
@@ -69,6 +74,9 @@ flowchart LR
     S --> R[5. Rebalance<br/>spend the surplus]
     R --> V[6. Validation<br/>and explanation]
     V --> UI
+    UI -- POST /api/build/cross-check --> X[Cross-check<br/>match parts per store]
+    X --> UI
+    DB <--> X
     DB[(Turso / libSQL<br/>components)] <--> F
     DB <--> S
     SC[Python scraper<br/>StarTech · TechLand · ComputerMania · Ryans] --> DB
@@ -81,11 +89,13 @@ flowchart LR
 5. **Rebalance**: remaining budget upgrades the parts that matter most for the use case, within caps.
 6. **Validation and explanation**: the finished build is re-checked end to end, and a short plain-language rationale is generated.
 
+**Compare stores** runs separately and never calls the AI. For each other store it looks for the same model of every part, then an equivalent with matching key specs. Matches that still fit together are locked, and the normal engine fills any gaps from that store's stock using the original build's intent. Each part is labelled *Same part*, *Equivalent*, *Substitute*, *Not in stock* or *Added* (for example a cooler a hotter CPU now needs), so you can see exactly what changes before switching.
+
 ## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19, Vite, Tailwind CSS 4, Framer Motion |
+| Frontend | React 19, Vite, Tailwind CSS 4, Framer Motion, Web Audio (synthesized sound effects, no audio files) |
 | Backend | Node.js, Express 5, `express-rate-limit` |
 | Database | [Turso](https://turso.tech) (libSQL / SQLite) |
 | AI | Any OpenAI-compatible endpoint: Ollama Cloud by default, Groq supported |
@@ -192,6 +202,7 @@ In our runs `gemma4:31b` matched `gpt-oss:120b` at 100% accuracy with roughly ha
 |---|---|---|
 | `POST` | `/api/build` | Submit a prompt; returns a `jobId` |
 | `GET` | `/api/build/:jobId` | Poll status, queue position and the finished build |
+| `POST` | `/api/build/cross-check` | Price a finished build at every other store (no AI call) |
 | `POST` | `/api/build/validate` | Re-validate an edited build (no AI call) |
 | `POST` | `/api/parts/alternatives` | Compatible swaps for one category |
 | `GET` | `/health` | Liveness + database check (`503` if the database is down) |
@@ -234,15 +245,17 @@ The stress harness drives the real engine against a catalog snapshot and asserts
 ```text
 .
 ├── frontend/                 React + Vite app
-│   ├── src/components/       Builder, Hero, part rows, swap drawer, settings, SEO content
+│   ├── src/components/       Builder, Hero, part rows, swap drawer, compare stores dialog, settings, toasts, SEO content
+│   ├── src/hooks/            Build session, cross-check, settings, toasts, sheet drag
+│   ├── src/lib/              Share links, motion tokens, sound and haptics, theme, formatting
 │   ├── src/seo/              Landing page copy, FAQ and structured data
 │   ├── scripts/prerender.mjs Static HTML + sitemap generation
 │   └── public/               Icons, social card, robots.txt
 ├── backend/
 │   ├── ai/                   Intent prompt, extractor, explanation generator
-│   ├── engine/               Orchestrator, budget allocator, part selector, validators
-│   ├── routes/               Build, status, validate and alternatives handlers
-│   ├── utils/                Part repository, cache, queue, spec inference, capacity parsing
+│   ├── engine/               Orchestrator, budget allocator, part selector, validators, cross-check
+│   ├── routes/               Build, status, cross-check, validate and alternatives handlers
+│   ├── utils/                Part repository, cache, queue, spec inference, product matching
 │   └── tests/                Unit, property, stress and LLM eval suites
 ├── scraper/                  Python ETL for StarTech, TechLand, ComputerMania and Ryans
 ├── scripts/apply_schema.js   Create the Turso schema
