@@ -41,6 +41,7 @@ env/
 
 # Scraper State & Generated Data
 scraper/sync_state.json
+scraper/.profiles/
 backend/parts.json
 *.json
 !package.json

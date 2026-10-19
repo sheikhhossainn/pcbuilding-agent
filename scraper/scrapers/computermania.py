@@ -22,14 +22,16 @@ URL_MAP = {
 STORAGE_HDD_URL = "https://computermania.com.bd/product-category/desktop-components/hard-disk-drive/"
 
 
-def clean_price(text):
-    """Extract numeric price from WooCommerce bdi text like '13,800৳ '."""
-    if not text:
-        return None
-    digits = re.sub(r'[^\d]', '', text)
-    if not digits:
-        return None
-    return int(digits)
+import os
+from pathlib import Path
+
+try:
+    from scrapers._common import clean_price
+except ImportError:
+    from _common import clean_price
+
+PORT = 9222
+PROFILE_DIR = Path(__file__).resolve().parent.parent / ".profiles" / "computermania"
 
 
 def wait_for_cloudflare(page, timeout=300):
@@ -153,10 +155,13 @@ def scrape(category: str, price_min=None, price_max=None, sort_order=None):
     all_products = []
 
     # ── Launch browser ──
+    os.makedirs(PROFILE_DIR, exist_ok=True)
     co = ChromiumOptions()
     co.set_argument('--window-position=-2000,-2000')
     co.set_argument('--no-sandbox')
     co.set_argument('--disable-gpu')
+    co.set_local_port(PORT)
+    co.set_user_data_path(str(PROFILE_DIR))
     page = ChromiumPage(co)
 
     def get_max_pages():
