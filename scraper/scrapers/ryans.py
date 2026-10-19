@@ -3,9 +3,9 @@ import re
 from lxml import html
 
 try:
-    from scrapers._common import clean_price, strip_tracking
+    from scrapers._common import strip_tracking
 except ImportError:
-    from _common import clean_price, strip_tracking
+    from _common import strip_tracking
 
 # Ryans Computers category URLs (every value is a list of category endpoints)
 URL_MAP = {

@@ -8,3 +8,5 @@ DrissionPage
 sse-starlette
 jinja2
 python-dotenv
+lxml
+cssselect
