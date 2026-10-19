@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { pollJob } from '../lib/pollJob';
-import { crossCheckSignature, toCrossCheckBuild } from '../lib/crossCheck';
+import { crossCheckSignature, toCrossCheckBuild, bestStore } from '../lib/crossCheck';
+import { feedback } from '../lib/feedback';
 
 const IDLE = { status: 'idle', progress: {}, data: null, error: '', signature: null };
 
@@ -50,11 +51,15 @@ export function useCrossCheck({ build, intent, site }) {
 
       if (final.status === 'completed') {
         setState((prev) => ({ ...prev, status: 'done', data: final.result, progress: final.progress || prev.progress }));
+        // A cheaper store is the payoff of this feature: mark it.
+        if (bestStore(final.result).saving > 0) feedback('reward');
       } else {
         setState((prev) => ({ ...prev, status: 'error', error: final.error || 'The check failed. Please try again.' }));
+        feedback('error');
       }
     } catch (err) {
       if (axios.isCancel(err) || controller.signal.aborted) return;
+      feedback('error');
       setState((prev) => ({
         ...prev,
         status: 'error',

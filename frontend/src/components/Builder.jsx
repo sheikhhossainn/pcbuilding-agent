@@ -13,6 +13,7 @@ import { formatPrice } from '../lib/format';
 import { TOTAL_PARTS, partRowId } from '../lib/constants';
 import { buildShareUrl, readShareFromLocation, clearShareFromLocation } from '../lib/share';
 import { canCrossCheck, adoptedExplanation } from '../lib/crossCheck';
+import { feedback, setFeedbackPrefs } from '../lib/feedback';
 import Header from './Header';
 import MobileSummaryBar from './MobileSummaryBar';
 import Notice from './Notice';
@@ -140,6 +141,19 @@ function Builder({ page = null }) {
     setCrossCheckOpen(false);
   };
 
+  // Turning sound on plays a tick right away, so the user hears what they enabled.
+  const toggleSound = () => {
+    const next = !settings.sound;
+    settings.setSound(next);
+    if (next) {
+      setFeedbackPrefs({ sound: true });
+      feedback('copy');
+    }
+  };
+  const changeSound = (next) => {
+    if (next !== settings.sound) toggleSound();
+  };
+
   const closeSettings = useCallback(() => setShowSettings(false), []);
   const openSettings = useCallback(() => setShowSettings(true), []);
   const closeSwap = useCallback(() => setSwapCategory(null), []);
@@ -162,8 +176,8 @@ function Builder({ page = null }) {
       build, intent: previousIntent, notes, explanation, site: swapSite,
     });
     navigator.clipboard.writeText(url).then(
-      () => showToast("Link copied"),
-      () => showToast("Couldn't copy the link")
+      () => { showToast("Link copied"); feedback('copy'); },
+      () => { showToast("Couldn't copy the link"); feedback('error'); }
     );
   };
 
@@ -259,8 +273,8 @@ function Builder({ page = null }) {
     text += `\nBuilt with BuildMyPC AI Configurator`;
 
     navigator.clipboard.writeText(text).then(
-      () => showToast("Spec sheet copied"),
-      () => showToast("Unable to copy to clipboard")
+      () => { showToast("Spec sheet copied"); feedback('copy'); },
+      () => { showToast("Unable to copy to clipboard"); feedback('error'); }
     );
   };
 
@@ -280,6 +294,8 @@ function Builder({ page = null }) {
         onCrossCheck={openCrossCheck}
         crossCheckDisabled={isBusy || !crossCheckReady}
         onOpenSettings={openSettings}
+        soundOn={settings.sound}
+        onToggleSound={toggleSound}
         settingsHighlighted={showTrafficWarning}
         hideStore={showHero}
         busy={isBusy}
@@ -462,6 +478,10 @@ function Builder({ page = null }) {
         onGroqKeyChange={settings.setGroqKey}
         ollamaKey={settings.ollamaKey}
         onOllamaKeyChange={settings.setOllamaKey}
+        sound={settings.sound}
+        onSoundChange={changeSound}
+        haptics={settings.haptics}
+        onHapticsChange={settings.setHaptics}
       />
 
       <Toast toast={toast} />

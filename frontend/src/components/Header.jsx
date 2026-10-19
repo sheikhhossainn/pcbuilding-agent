@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { menu } from '../lib/motion';
-import { Copy, Key, FileDown, Plus, Menu, X, Link2, Columns3 } from 'lucide-react';
+import { Copy, Key, FileDown, Plus, Menu, X, Link2, Columns3, Volume2, VolumeX } from 'lucide-react';
 import { LogoMark } from './Logo';
 import StoreSelect from './StoreSelect';
 
@@ -13,11 +13,14 @@ export default function Header({
   site, onSiteChange, siteDisabled,
   onCopy, onShare, onExport, onClear, onOpenSettings, settingsHighlighted,
   onCrossCheck, crossCheckDisabled = false,
+  soundOn = true, onToggleSound,
   hideStore = false, busy = false,
   children,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const closeThen = (fn) => () => { fn(); setMenuOpen(false); };
+  const SoundIcon = soundOn ? Volume2 : VolumeX;
+  const soundLabel = soundOn ? 'Mute sounds' : 'Turn sounds on';
 
   return (
     <div className="sticky top-0 z-40 pt-2 pb-2 sm:pt-4 sm:pb-0 px-3 sm:px-6 bg-bg/95 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none print:hidden">
@@ -80,6 +83,18 @@ export default function Header({
             <Key size={14} strokeWidth={1.75} aria-hidden="true" />
             <span className="hidden xl:inline">API key</span>
           </button>
+          {onToggleSound && (
+            <button
+              type="button"
+              onClick={onToggleSound}
+              className="btn btn-icon-sm"
+              aria-pressed={soundOn}
+              aria-label="Sound effects"
+              title={soundLabel}
+            >
+              <SoundIcon size={15} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          )}
           <button type="button" onClick={onExport} className="btn" title="Print or save as PDF" aria-label="Export">
             <FileDown size={14} strokeWidth={1.75} aria-hidden="true" />
             <span className="hidden xl:inline">Export</span>
@@ -147,7 +162,13 @@ export default function Header({
                 <FileDown size={16} aria-hidden="true" />
                 <span>Export PDF</span>
               </button>
-              <button type="button" onClick={closeThen(onClear)} className="btn btn-touch col-span-2 border-line-strong text-fg">
+              {onToggleSound && (
+                <button type="button" onClick={onToggleSound} aria-pressed={soundOn} className="btn btn-touch">
+                  <SoundIcon size={16} aria-hidden="true" />
+                  <span>{soundOn ? 'Sound on' : 'Sound off'}</span>
+                </button>
+              )}
+              <button type="button" onClick={closeThen(onClear)} className={`btn btn-touch border-line-strong text-fg ${onToggleSound ? '' : 'col-span-2'}`}>
                 <Plus size={16} aria-hidden="true" />
                 <span>New build</span>
               </button>

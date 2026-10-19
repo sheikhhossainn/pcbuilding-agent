@@ -1,7 +1,38 @@
 import { m, AnimatePresence } from 'framer-motion';
 import { backdrop, dialog } from '../lib/motion';
-import { Key, X } from 'lucide-react';
+import { Key, X, Volume2, Vibrate } from 'lucide-react';
 import { useDialogFocus } from '../hooks/useDialogFocus';
+
+// Desktop Chrome has navigator.vibrate but no motor; only offer the switch on touch devices.
+const canVibrate = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function'
+  && typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
+function Switch({ id, icon: Icon, label, hint, checked, onChange }) {
+  return (
+    <label htmlFor={id} className="flex items-center gap-3 min-h-11 cursor-pointer">
+      <Icon size={16} className="text-fg-3 shrink-0" aria-hidden="true" />
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-medium text-fg">{label}</span>
+        <span className="block text-xs text-fg-3">{hint}</span>
+      </span>
+      <input
+        id={id}
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className="relative w-10 h-6 shrink-0 rounded-full border border-line-strong bg-surface-2 transition-colors
+          peer-checked:bg-accent peer-checked:border-accent peer-focus-visible:outline-2 peer-focus-visible:outline-accent peer-focus-visible:outline-offset-2
+          after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-[18px] after:h-[18px] after:rounded-full after:bg-fg
+          after:transition-transform after:duration-200 after:ease-[var(--motion-ease-out)] peer-checked:after:translate-x-4"
+      />
+    </label>
+  );
+}
 
 const PROVIDERS = [
   { value: 'ollama', label: 'Ollama Cloud' },
@@ -13,6 +44,7 @@ export default function SettingsDialog({
   provider, onProviderChange,
   groqKey, onGroqKeyChange,
   ollamaKey, onOllamaKeyChange,
+  sound, onSoundChange, haptics, onHapticsChange,
 }) {
   const dialogRef = useDialogFocus(open, onClose);
 
@@ -39,7 +71,7 @@ export default function SettingsDialog({
             <div className="flex items-center justify-between p-5 border-b border-line">
               <h3 id="settings-title" className="text-lg font-semibold flex items-center gap-2 text-fg">
                 <Key className="text-accent" size={18} strokeWidth={1.75} aria-hidden="true" />
-                <span>AI settings</span>
+                <span>Settings</span>
               </h3>
               <button type="button" onClick={onClose} aria-label="Close settings" className="btn btn-icon">
                 <X size={18} aria-hidden="true" />
@@ -132,6 +164,28 @@ export default function SettingsDialog({
                   </p>
                 </div>
               )}
+
+              <div className="pt-4 border-t border-line space-y-1">
+                <h4 className="text-sm font-semibold text-fg mb-1">Sound &amp; haptics</h4>
+                <Switch
+                  id="pref-sound"
+                  icon={Volume2}
+                  label="Sound effects"
+                  hint="Soft sounds when a build is ready, a part is swapped or a link is copied."
+                  checked={sound}
+                  onChange={onSoundChange}
+                />
+                {canVibrate && (
+                  <Switch
+                    id="pref-haptics"
+                    icon={Vibrate}
+                    label="Vibration"
+                    hint="A light tap on supported phones."
+                    checked={haptics}
+                    onChange={onHapticsChange}
+                  />
+                )}
+              </div>
             </div>
 
             <div className="p-5 border-t border-line flex justify-end bg-surface-2">

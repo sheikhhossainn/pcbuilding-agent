@@ -5,6 +5,7 @@ import { sumBuild } from '../lib/format';
 import { diffBuilds } from '../lib/buildDiff';
 import { keepLastingNotes } from '../lib/staleNotes';
 import { pollJob } from '../lib/pollJob';
+import { feedback } from '../lib/feedback';
 
 const SESSION_KEY = 'buildmypc.session.v1';
 const REVALIDATE_DEBOUNCE_MS = 400;
@@ -211,6 +212,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     refineSnapshotRef.current = null;
     validatedSignatureRef.current = '';
     if (!hadContent) return;
+    feedback('remove');
     showToast("Build cleared", hadParts ? {
       label: 'Undo',
       onClick: () => {
@@ -226,6 +228,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
         setCurrentVersionId(cleared.currentVersionId);
         validatedSignatureRef.current = cleared.validatedSignature;
         dismissToast();
+        feedback('remove');
       },
     } : null);
   }, [
@@ -243,6 +246,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setQueuePosition(0);
     setShowTrafficWarning(false);
     showToast("Build generation stopped");
+    feedback('remove');
   }, [cancelInFlight, showToast]);
 
   const removePart = useCallback((category) => {
@@ -254,6 +258,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setRemovedCategories((prev) => (prev.includes(category) ? prev : [...prev, category]));
     setPreviousBuild((prev) => (prev ? { ...prev, [category]: null } : prev));
 
+    feedback('remove');
     showToast(`Removed ${category}`, {
       label: 'Undo',
       onClick: () => {
@@ -261,6 +266,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
         setRemovedCategories((prev) => prev.filter((c) => c !== category));
         setPreviousBuild((prev) => (prev ? { ...prev, [category]: removed } : prev));
         dismissToast();
+        feedback('remove');
       },
     });
   }, [build, showToast, dismissToast]);
@@ -273,12 +279,14 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setPreviousBuild((prev) => (prev ? { ...prev, [category]: part } : prev));
     setRemovedCategories((prev) => prev.filter((c) => c !== category));
 
+    feedback('swap');
     showToast(`Swapped ${category}`, before ? {
       label: 'Undo',
       onClick: () => {
         setBuild((prev) => ({ ...prev, [category]: before }));
         setPreviousBuild((prev) => (prev ? { ...prev, [category]: before } : prev));
         dismissToast();
+        feedback('remove');
       },
     } : null);
   }, [build, showToast, dismissToast]);
@@ -305,6 +313,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setLastRefine(null);
     refineSnapshotRef.current = null;
     showToast("Restored your previous build");
+    feedback('swap');
   }, [cancelInFlight, showToast]);
 
   /** Make an earlier version the working build. Newer versions stay in the list. */
@@ -328,6 +337,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     setErrorMsg("");
     refineSnapshotRef.current = null;
     showToast(`Restored "${version.label}"`);
+    feedback('swap');
   }, [versions, isBusy, cancelInFlight, showToast]);
 
   /**
@@ -391,6 +401,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
     });
     setCurrentVersionId(version.id);
 
+    feedback('swap');
     showToast(label, {
       label: 'Undo',
       onClick: () => {
@@ -405,6 +416,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
         setCurrentVersionId(before.versionId);
         validatedSignatureRef.current = before.validatedSignature;
         dismissToast();
+        feedback('remove');
       },
     });
   }, [
@@ -460,6 +472,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
       if (submitRes.data.error) {
         setErrorMsg(failureText(submitRes.data.error));
         setLoadingState("error");
+        feedback('error');
         return;
       }
 
@@ -557,6 +570,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
             setShowTrafficWarning(false);
             if (onSuccess) onSuccess();
             showToast("Build ready");
+            feedback('success');
           }
 
           if (data.status === 'failed') {
@@ -569,6 +583,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
             } else {
               setErrorMsg(failureText(data.error || "Build failed unexpectedly."));
               setLoadingState("error");
+              feedback('error');
             }
             setStage(null);
             setQueuePosition(0);
@@ -586,6 +601,7 @@ export function useBuild({ site, customKeys, showToast, dismissToast, initialSes
         setErrorMsg(failureText(err.response?.data?.error || "Failed to connect to the AI builder engine."));
       }
       setLoadingState("error");
+      feedback('error');
     }
   }, [
     apiBaseUrl, site, customKeys, previousIntent, previousBuild, removedCategories, isBusy,
