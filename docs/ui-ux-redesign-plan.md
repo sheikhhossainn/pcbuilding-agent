@@ -188,3 +188,18 @@ No backend changes.
 
 1. **Sound default**: on (quiet) or off with a hint? The recommendation is on, quiet, and only after the first click.
 2. **Light theme**: this time, or later? The recommendation is to include it in Phase 2, since it's cheap once the tokens exist.
+
+## Phase 5 results
+
+- **Bundle**: main JS 159.7 -> 167.0 KB gzip (+7.3 KB, budget +15); CSS 9.0 -> 10.9 KB gzip.
+- **Layout shift**: a finished build/refine measured 0.34 CLS at first (the progress card and the
+  "clarify" banner left the flow in one frame). Both now leave via `AnimatePresence mode="popLayout"`
+  while the blocks below glide up with layout animations; re-measured at about 0.00.
+- **Contrast**: every text/background pair in both themes is at least 4.5:1 (lowest: light error red 4.83).
+- **Reduced motion**: `MotionConfig reducedMotion="user"` snaps transform animations to their end
+  state; CSS keyframes stop; opacity/colour fades stay; the toast countdown bar is hidden.
+- **Prerender/SEO**: `npm run build` still prerenders 9 pages; the pre-paint theme script is in the HTML.
+- **Sound in real Chrome**: the audio context is now resumed on every gesture (including touch-end) until
+  it is running, and again before any sound that finds it suspended; the same sound is throttled per kind.
+- **Not measured**: 4x CPU-throttled frame rate and a real-phone drag test.
+

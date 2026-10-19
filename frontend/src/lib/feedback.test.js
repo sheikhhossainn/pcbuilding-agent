@@ -6,6 +6,8 @@ function fakeContext() {
   const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} });
   const ctx = {
     state: 'running',
+    resumes: 0,
+    resume() { ctx.resumes += 1; ctx.state = 'running'; return Promise.resolve(); },
     currentTime: 0,
     destination: {},
     oscillators: 0,
@@ -54,6 +56,36 @@ test('throttles sounds that arrive too close together', () => {
   assert.equal(fb.play('copy'), false);
   tick(1);
   assert.equal(fb.play('copy'), true);
+});
+
+test('different sounds close together both play; the same one is throttled', () => {
+  const { fb } = setup();
+  fb.unlock();
+  assert.equal(fb.play('swap'), true);
+  assert.equal(fb.play('success'), true);
+  assert.equal(fb.play('swap'), false);
+});
+
+test('a context that was suspended is resumed before the sound plays', async () => {
+  const { fb, ctx } = setup();
+  fb.unlock();
+  ctx.state = 'suspended';
+  const before = ctx.oscillators;
+  assert.equal(fb.play('success'), true);
+  assert.equal(ctx.oscillators, before, 'nothing is scheduled while suspended');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(ctx.resumes >= 1, true);
+  assert.equal(ctx.oscillators, before + SOUNDS.success.length);
+});
+
+test('unlock reports whether the context is running, so a refused resume is retried on the next gesture', async () => {
+  const { fb, ctx } = setup();
+  ctx.resume = () => Promise.resolve(); // browser refuses: state stays suspended
+  ctx.state = 'suspended';
+  assert.equal(await fb.unlock(), false);
+  ctx.resume = () => { ctx.state = 'running'; return Promise.resolve(); };
+  assert.equal(await fb.unlock(), true);
 });
 
 test('stays silent when muted or when the tab is hidden', () => {

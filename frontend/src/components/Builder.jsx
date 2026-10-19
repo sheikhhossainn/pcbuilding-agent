@@ -72,7 +72,7 @@ function Builder({ page = null }) {
   useEffect(() => {
     if (!sharedBuild) return;
     clearShareFromLocation();
-    showToast("Opened a shared build");
+    showToast("Opened a shared build", null, { tone: 'info' });
     // Runs once on load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -128,7 +128,7 @@ function Builder({ page = null }) {
   const crossCheckDisabledReason = crossCheckReady ? '' : 'Needs a CPU, motherboard, RAM and PSU first.';
   const openCrossCheck = () => {
     if (!crossCheckReady) {
-      showToast('Add a CPU, motherboard, RAM and PSU before comparing stores');
+      showToast('Add a CPU, motherboard, RAM and PSU before comparing stores', null, { tone: 'info' });
       return;
     }
     setCrossCheckOpen(true);
@@ -179,7 +179,7 @@ function Builder({ page = null }) {
 
   const handleShare = () => {
     if (telemetry.configuredCount === 0) {
-      showToast("Build a PC first, then share it");
+      showToast("Build a PC first, then share it", null, { tone: 'info' });
       return;
     }
     const url = buildShareUrl({
@@ -278,7 +278,7 @@ function Builder({ page = null }) {
   const handleCopySpecSheet = () => {
     const items = Object.entries(build).filter(([, item]) => Boolean(item));
     if (items.length === 0) {
-      showToast("No parts to copy yet");
+      showToast("No parts to copy yet", null, { tone: 'info' });
       return;
     }
 
@@ -336,7 +336,7 @@ function Builder({ page = null }) {
       </Header>
 
       <main className="max-w-7xl mx-auto mt-6 px-3 sm:px-6">
-        <AnimatePresence>
+        <AnimatePresence mode="popLayout" initial={false}>
           {showTrafficWarning && (
             <Notice key="traffic" tone="warn" onDismiss={buildSession.dismissTrafficWarning}>
               <strong>The shared AI queue is busy.</strong> Add your own{' '}
@@ -357,18 +357,20 @@ function Builder({ page = null }) {
           )}
         </AnimatePresence>
 
-        {errorMsg && (
-          <Notice tone="bad" role="alert">
-            <p className="font-medium">{errorMsg}</p>
-          </Notice>
-        )}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {errorMsg && (
+            <Notice key="error" tone="bad" role="alert">
+              <p className="font-medium">{errorMsg}</p>
+            </Notice>
+          )}
 
-        {clarify && (
-          <Notice tone="info" role="status" onDismiss={buildSession.dismissClarify}>
-            <p className="font-medium">{clarify}</p>
-            <p className="text-fg-2 mt-1">Your build was not changed. Type your answer below and send it again.</p>
-          </Notice>
-        )}
+          {clarify && (
+            <Notice key="clarify" tone="info" role="status" onDismiss={buildSession.dismissClarify}>
+              <p className="font-medium">{clarify}</p>
+              <p className="text-fg-2 mt-1">Your build was not changed. Type your answer below and send it again.</p>
+            </Notice>
+          )}
+        </AnimatePresence>
 
         {/* popLayout: the outgoing screen leaves the flow at once, so the incoming one never
             jumps, and the shared composer can glide between them. */}
@@ -386,6 +388,7 @@ function Builder({ page = null }) {
         ) : (
         <m.div
           key="builder"
+          layout="position"
           {...fadeIn(10, spring.gentle)}
           className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start"
         >
@@ -412,7 +415,10 @@ function Builder({ page = null }) {
               </label>
             </div>
 
-            <AnimatePresence>
+            {/* popLayout: the card leaves the flow the moment it starts to exit, and the blocks below
+                glide up with layout animations (transforms), so nothing jumps and nothing counts as a
+                layout shift. */}
+            <AnimatePresence mode="popLayout" initial={false}>
               {isBusy && (
                 <BuildProgress
                   key="progress"
@@ -425,6 +431,7 @@ function Builder({ page = null }) {
             </AnimatePresence>
 
             {!isBusy && lastRefine && (
+              <m.div layout="position" transition={spring.smooth}>
               <RefineSummary
                 refine={lastRefine}
                 total={total}
@@ -438,10 +445,16 @@ function Builder({ page = null }) {
                   buildSession.submit('Make it cheaper', () => setChatInput(''));
                 }}
               />
+              </m.div>
             )}
 
-            {!isBusy && <WarningsBanner warnings={warnings} onFocusPart={focusPart} />}
+            {!isBusy && warnings.length > 0 && (
+              <m.div layout="position" transition={spring.smooth}>
+                <WarningsBanner warnings={warnings} onFocusPart={focusPart} />
+              </m.div>
+            )}
 
+            <m.div layout="position" transition={spring.smooth} className="space-y-6">
             <BuildList
               build={build}
               hideEmpty={hideEmpty}
@@ -453,8 +466,13 @@ function Builder({ page = null }) {
               onSwap={swapSite ? setSwapCategory : undefined}
               activeCategory={swapCategory}
             />
+            </m.div>
 
-            <RationaleCard explanation={explanation} />
+            {explanation && (
+              <m.div layout="position" transition={spring.smooth}>
+                <RationaleCard explanation={explanation} />
+              </m.div>
+            )}
           </div>
 
           <SummaryRail

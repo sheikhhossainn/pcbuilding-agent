@@ -6,7 +6,11 @@
  * Rules:
  * - No AudioContext exists until the user's first click or key press (browser autoplay rules,
  *   and a page should never make noise on its own when it loads).
- * - At most one sound per THROTTLE_MS, and none while the tab is hidden.
+ * - Chrome only lets a context start from a real activation (mouse down, key down, or touch
+ *   END: a touch's pointerdown does not count), and may suspend it again later. So the context
+ *   is resumed on every gesture until it is running, and again right before any sound that
+ *   finds it suspended.
+ * - The same sound is not repeated within THROTTLE_MS, and none play while the tab is hidden.
  * - Sound is never the only signal: every event also has visible text.
  */
 
@@ -73,21 +77,37 @@ export function createFeedback({
   let ctx = null;
   let master = null;
   let unlocked = false;
-  let lastAt = -Infinity;
+  const lastAt = new Map();
   const prefs = { sound: true, haptics: true };
+
+  function ensureContext() {
+    if (ctx) return ctx;
+    ctx = createContext();
+    if (!ctx) return null;
+    master = ctx.createGain();
+    master.gain.value = MASTER_GAIN;
+    master.connect(ctx.destination);
+    return ctx;
+  }
+
+  /** Resolves true once the context is running. Safe to call repeatedly. */
+  function resume() {
+    if (!ctx) return Promise.resolve(false);
+    if (ctx.state === 'running') return Promise.resolve(true);
+    if (ctx.state === 'closed') return Promise.resolve(false);
+    try {
+      return Promise.resolve(ctx.resume?.()).then(() => ctx.state === 'running', () => false);
+    } catch {
+      return Promise.resolve(false);
+    }
+  }
 
   /** Called from a user gesture. Creates (or resumes) the audio context. */
   function unlock() {
     unlocked = true;
-    if (!prefs.sound) return;
-    if (!ctx) {
-      ctx = createContext();
-      if (!ctx) return;
-      master = ctx.createGain();
-      master.gain.value = MASTER_GAIN;
-      master.connect(ctx.destination);
-    }
-    if (ctx.state === 'suspended') ctx.resume?.();
+    if (!prefs.sound) return Promise.resolve(false);
+    if (!ensureContext()) return Promise.resolve(false);
+    return resume();
   }
 
   function playNotes(notes) {
@@ -121,11 +141,17 @@ export function createFeedback({
     if (prefs.haptics && HAPTICS[kind]) vibrate(HAPTICS[kind]);
     if (!prefs.sound || !unlocked || isHidden()) return false;
     const t = now();
-    if (t - lastAt < THROTTLE_MS) return false;
-    if (!ctx) unlock();
-    if (!ctx || ctx.state === 'closed') return false;
-    lastAt = t;
-    playNotes(notes);
+    if (t - (lastAt.get(kind) ?? -Infinity) < THROTTLE_MS) return false;
+    if (!ensureContext() || ctx.state === 'closed') return false;
+    lastAt.set(kind, t);
+
+    if (ctx.state === 'running') {
+      playNotes(notes);
+      return true;
+    }
+    // Suspended (Chrome does this to idle or backgrounded pages): start it, then play. If the
+    // browser refuses because there has been no gesture, the sound is simply skipped.
+    resume().then((ok) => { if (ok && !isHidden()) playNotes(notes); });
     return true;
   }
 
@@ -156,17 +182,22 @@ const engine = createFeedback();
 
 /** Play the sound and haptic for an event. Safe to call anywhere; respects the user's settings. */
 export const feedback = (kind) => engine.play(kind);
+/** Resume the audio context from a gesture handler (e.g. the sound toggle). */
+export const unlockFeedback = () => engine.unlock();
 export const setFeedbackPrefs = (prefs) => engine.setPrefs(prefs);
 
-/** Creates the audio context on the first click, tap or key press. Call once at startup. */
+/**
+ * Creates the audio context on a user gesture. The listeners stay until the context is actually
+ * running (a touch's pointerdown cannot start it, but its pointerup can), then remove themselves.
+ */
 export function installFeedbackUnlock() {
   if (typeof window === 'undefined') return;
+  const events = ['pointerdown', 'pointerup', 'touchend', 'mousedown', 'click', 'keydown'];
   const opts = { capture: true, passive: true };
   const onGesture = () => {
-    engine.unlock();
-    window.removeEventListener('pointerdown', onGesture, opts);
-    window.removeEventListener('keydown', onGesture, opts);
+    engine.unlock().then((running) => {
+      if (running) events.forEach((name) => window.removeEventListener(name, onGesture, opts));
+    });
   };
-  window.addEventListener('pointerdown', onGesture, opts);
-  window.addEventListener('keydown', onGesture, opts);
+  events.forEach((name) => window.addEventListener(name, onGesture, opts));
 }

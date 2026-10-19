@@ -4,11 +4,15 @@ export const MAX_TOASTS = 3;
 const DURATION_MS = 2800;
 const DURATION_WITH_ACTION_MS = 6000;
 
+const ERROR_TEXT = /^(couldn'?t|could not|unable|failed|can'?t|cannot)(?![a-z])/i;
+
 /**
  * A short stack of toasts, newest first (like macOS notifications). Each one times out on its own.
  * Showing a message that is already up restarts it instead of stacking a copy ("Link copied" twice).
  *
- * toasts: Array<{ id, message, action?: { label, onClick } }>
+ * toasts: Array<{ id, message, tone, duration, action?: { label, onClick } }>
+ * tone: 'success' | 'info' | 'error'. Pass it as `{ tone }` in the third argument; when left out,
+ * messages that say something failed ("Couldn't ...", "Unable to ...") are shown as errors.
  */
 export function useToast() {
   const [toasts, setToasts] = useState([]);
@@ -36,8 +40,10 @@ export function useToast() {
     return undefined;
   }, [remove]);
 
-  const showToast = useCallback((message, action = null) => {
+  const showToast = useCallback((message, action = null, options = {}) => {
     const id = nextId.current++;
+    const tone = options.tone || (ERROR_TEXT.test(message) ? 'error' : 'success');
+    const duration = action ? DURATION_WITH_ACTION_MS : DURATION_MS;
     const wrapped = action ? {
       label: action.label,
       onClick: () => {
@@ -58,7 +64,7 @@ export function useToast() {
         timersRef.current.delete(same.id);
       }
       const rest = prev.filter((t) => t.message !== message);
-      const next = [{ id, message, action: wrapped }, ...rest];
+      const next = [{ id, message, tone, duration, action: wrapped }, ...rest];
       // Oldest beyond the cap leave at once.
       next.slice(MAX_TOASTS).forEach((t) => {
         clearTimeout(timersRef.current.get(t.id));
@@ -66,7 +72,7 @@ export function useToast() {
       });
       return next.slice(0, MAX_TOASTS);
     });
-    timersRef.current.set(id, setTimeout(() => remove(id), action ? DURATION_WITH_ACTION_MS : DURATION_MS));
+    timersRef.current.set(id, setTimeout(() => remove(id), duration));
     return id;
   }, [remove]);
 

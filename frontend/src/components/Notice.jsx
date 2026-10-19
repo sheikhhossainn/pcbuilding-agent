@@ -9,10 +9,12 @@ const TONES = {
 };
 
 // Dismissible inline banner for traffic warnings and request errors.
-export default function Notice({ tone = 'warn', role, onDismiss, children }) {
+// `ref` reaches the root so AnimatePresence (popLayout) can take it out of the flow on exit.
+export default function Notice({ ref, tone = 'warn', role, onDismiss, children }) {
   const { box, icon, Icon } = TONES[tone];
   return (
     <m.div
+      ref={ref}
       role={role}
       {...fadeIn(-6)}
       className={`mb-6 flex items-start gap-3 rounded-xl border p-4 text-sm leading-relaxed ${box}`}

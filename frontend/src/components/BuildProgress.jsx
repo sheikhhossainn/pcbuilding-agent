@@ -58,11 +58,13 @@ function Check() {
  * @param {string} [request] - the refine message being worked on
  * @param {Array<{label: string, text: string}>|null} [interpretation]
  */
-export default function BuildProgress({ stage, message, request = '', interpretation = null }) {
+// `ref` reaches the root so AnimatePresence (popLayout) can take the card out of the flow on exit.
+export default function BuildProgress({ ref, stage, message, request = '', interpretation = null }) {
   const current = STEPS.findIndex((s) => s.stage === stage);
 
   return (
     <m.div
+      ref={ref}
       {...fadeIn(6)}
       className="card p-4 sm:p-5 border-accent-line"
     >
